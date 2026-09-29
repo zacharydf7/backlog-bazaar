@@ -5,6 +5,7 @@
 
 import type { CoOpPact, Game } from "../types";
 import type { EconGame } from "./economy";
+import { nonDlcCopies, ownedPlatforms } from "./copies";
 import { catalogKey, resolveIdentityKey } from "./ownershipMerge";
 
 /** Pact states still in play — everything else is history. */
@@ -54,22 +55,31 @@ export function canInviteToPact(pacts: CoOpPact[], game: Game): boolean {
 }
 
 /** Whether accepting this pact means joining as Player 2: a pending incoming
- *  invite for a game the player holds no owned (non-wishlist) copy of, so the
- *  server auto-adds it to their library at accept — standard
- *  activation fee due (covered by the inviter when the pact carries that
- *  offer). A wishlist-only entry still joins this way: it stays a want-list
- *  for a copy of their own, and the Player 2 card is created alongside it.
+ *  invite for a game the player holds no owned (non-wishlist) copy of on the
+ *  inviter's platform, so the server auto-adds a card on that platform to
+ *  their library at accept — standard activation fee due (covered by the
+ *  inviter when the pact carries that offer). A wishlist-only entry still
+ *  joins this way (it stays a want-list for a copy of their own), and so does
+ *  a copy on another platform: the Player 2 card is created alongside it.
  *
- *  The server already resolved which copy would bind (myCandidateGameId,
- *  crosswalk applied) — trust it, and fall back to a local identity match only
- *  for offline/local mode, where there is no server to ask. */
+ *  The server alone decides which copy would bind (myCandidateGameId —
+ *  crosswalk and platform rule applied; null = none). Pacts only exist in
+ *  cloud mode, and the inviter's platform can be privacy-hidden from this
+ *  side, so no local guess is attempted. */
 export function isPlayer2Join(pact: CoOpPact, games: Game[]): boolean {
   if (pact.status !== "pending" || pact.iAmInviter) return false;
-  if (pact.myCandidateGameId != null) {
-    return !games.some((g) => g.id === pact.myCandidateGameId && g.status !== "wishlist");
-  }
+  return !games.some((g) => g.id === pact.myCandidateGameId && g.status !== "wishlist");
+}
+
+/** The platforms the player already owns this pact's game on — for a Player 2
+ *  join, necessarily other than the inviter's — so the join flow can say the
+ *  new card sits next to those copies instead of claiming they don't own it. */
+export function pactOwnedPlatforms(pact: CoOpPact, games: Game[]): string[] {
   const key = resolveIdentityKey(pact.gameKey);
-  return !games.some((g) => g.status !== "wishlist" && catalogKey(g) === key);
+  const platforms = games
+    .filter((g) => g.status !== "wishlist" && catalogKey(g) === key)
+    .flatMap((g) => ownedPlatforms(nonDlcCopies(g.copies)));
+  return [...new Set(platforms)];
 }
 
 /** The pending Player 2 invites (newest first, list_co_op_pacts order): with no

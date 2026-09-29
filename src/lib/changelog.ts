@@ -56,6 +56,17 @@ export function orderReleaseItems(items: (string | ReleaseItem)[]): ReleaseItem[
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-09-29-pact-player2-other-platform",
+    date: "2026-09-29",
+    title: "Co-op Pacts across platforms",
+    items: [
+      {
+        text: "Invited to a Co-op Pact for a game you own on a different platform? Accepting now adds a Player 2 copy on your friend's platform next to your own, instead of starting your other copy. If you own it on the same platform, that copy starts as before.",
+        tag: "fix",
+      },
+    ],
+  },
+  {
     id: "2026-09-16-uniform-game-tiles",
     date: "2026-09-16",
     title: "A gentler economy, tidier shelves, truer journeys",

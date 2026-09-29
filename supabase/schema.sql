@@ -14896,11 +14896,48 @@ alter table public.activity_events add constraint activity_events_kind_check
 -- reach for the narrower spelling again.
 drop function if exists public.co_op_game_key(integer, uuid);
 
+-- Pact versions (2026-09-29): a pact is played on the INVITER's copy, so on the
+-- invitee's side only a card on that same platform is "the copy they already
+-- own". A copy on another platform stays their own separate playthrough —
+-- accepting joins as Player 2 with a new card on the inviter's platform, next
+-- to it (one card per game × platform). These two helpers are the single
+-- definition every pact path shares: the partner picker, the invite/fee-offer
+-- deep links, the pending-invite preview and the accept itself.
+--
+-- The platform a pact is played on: the card's first base (non-DLC) platform —
+-- also the platform the Player 2 join stamps on the new card. Null when the
+-- card records none.
+create or replace function public.co_op_pact_platform(p_copies jsonb)
+returns text
+language sql immutable set search_path = public
+as $$
+  select c->>'platform'
+    from jsonb_array_elements(coalesce(p_copies, '[]'::jsonb)) c
+   where coalesce(c->>'format', '') <> 'dlc'
+     and btrim(coalesce(c->>'platform', '')) <> ''
+   limit 1
+$$;
+
+-- Whether a card holds a base copy on p_platform. A null platform (the
+-- inviter's card records none) matches any card — there is nothing to tell
+-- the versions apart by, so the pre-2026-09-29 any-platform rule stands.
+create or replace function public.co_op_card_on_platform(p_copies jsonb, p_platform text)
+returns boolean
+language sql immutable set search_path = public
+as $$
+  select p_platform is null or exists (
+    select 1 from jsonb_array_elements(coalesce(p_copies, '[]'::jsonb)) c
+     where coalesce(c->>'format', '') <> 'dlc'
+       and lower(btrim(coalesce(c->>'platform', ''))) = lower(btrim(p_platform))
+  )
+$$;
+
 -- Friends eligible for a pact on this game: EVERY accepted friend who isn't
 -- blocked or hard-private and has no live pact with anyone on it. owns_game
--- tells the picker whether they hold the same catalog identity (any platform,
--- not wishlist) — a friend who doesn't would join as Player 2 on the caller's
--- copy (the game is auto-added to their library at accept). Owners sort first.
+-- tells the picker whether they hold the same catalog identity on the caller's
+-- platform (not wishlist) — a friend who doesn't (or owns it only on another
+-- platform) would join as Player 2 on the caller's copy (the game is auto-added
+-- to their library at accept). Owners sort first.
 -- Dropped first: owns_game was added (RETURNS TABLE shape change).
 drop function if exists public.co_op_partner_options(uuid);
 create or replace function public.co_op_partner_options(p_game uuid)
@@ -14909,15 +14946,18 @@ language plpgsql security definer set search_path = public
 as $$
 #variable_conflict use_column
 declare
-  v_me   uuid := auth.uid();
-  v_keys text[];
+  v_me       uuid := auth.uid();
+  v_keys     text[];
+  v_platform text;
 begin
   if v_me is null then raise exception 'Not authenticated'; end if;
 
   -- Every spelling this card answers to (see game_identity_keys): a copy owned
   -- through one provider must still recognize a friend's copy of the same game
   -- bought through the other.
-  select public.game_identity_keys(g.rawg_id, g.igdb_id, g.catalog_id) into v_keys
+  select public.game_identity_keys(g.rawg_id, g.igdb_id, g.catalog_id),
+         public.co_op_pact_platform(g.copies)
+    into v_keys, v_platform
     from public.games g where g.id = p_game and g.user_id = v_me;
   if v_keys is null or cardinality(v_keys) = 0 then return; end if;
 
@@ -14931,6 +14971,7 @@ begin
               -- own it" and can offer to cover the fee.
               and not coalesce(g.stealth, false)
               and public.game_identity_keys(g.rawg_id, g.igdb_id, g.catalog_id) && v_keys
+              and public.co_op_card_on_platform(g.copies, v_platform)
          ) as owns_game
   from public.profiles p
   join (
@@ -14973,6 +15014,7 @@ declare
   v_pact         uuid;
   v_name         text;
   v_partner_game uuid;
+  v_platform     text;
 begin
   if v_me is null then raise exception 'Not authenticated'; end if;
   if p_partner = v_me then raise exception 'You can''t pact with yourself'; end if;
@@ -14991,8 +15033,8 @@ begin
   -- full key set, so both providers' copies of this game qualify.
   select public.game_identity_key(g.rawg_id, g.igdb_id, g.catalog_id),
          public.game_identity_keys(g.rawg_id, g.igdb_id, g.catalog_id),
-         g.title
-    into v_key, v_keys, v_title
+         g.title, public.co_op_pact_platform(g.copies)
+    into v_key, v_keys, v_title, v_platform
     from public.games g
    where g.id = p_game and g.user_id = v_me and g.status <> 'wishlist';
   if not found then raise exception 'Game not available for a pact'; end if;
@@ -15009,14 +15051,16 @@ begin
     raise exception 'A pact for this game already exists';
   end if;
 
-  -- The partner's copy, if any — preferring an owned card over a wishlist
-  -- entry — so the notification can deep-link to it. A partner with no card at
-  -- all gets a 'coop:' link instead (opens the Player 2 join flow; they have
-  -- no game page to land on).
+  -- The partner's copy, if any — preferring an owned card on this platform
+  -- (the one an accept binds) over a wishlist entry — so the notification can
+  -- deep-link to it. A partner with no such card — none at all, or owned only
+  -- on other platforms — gets a 'coop:' link instead (opens the Player 2 join
+  -- flow, which adds the card on this platform).
   select g.id into v_partner_game
     from public.games g
    where g.user_id = p_partner
      and public.game_identity_keys(g.rawg_id, g.igdb_id, g.catalog_id) && v_keys
+     and (g.status = 'wishlist' or public.co_op_card_on_platform(g.copies, v_platform))
    order by (g.status <> 'wishlist') desc, g.added_at desc
    limit 1;
 
@@ -15072,6 +15116,7 @@ declare
   v_pact         public.co_op_pacts%rowtype;
   v_name         text;
   v_partner_game uuid;
+  v_platform     text;
 begin
   if v_me is null then raise exception 'Not authenticated'; end if;
 
@@ -15087,12 +15132,15 @@ begin
   values (p_id, v_me, v_pact.invitee, 'fee_offer', v_pact.title,
           jsonb_build_object('cover', coalesce(p_cover, false)));
 
-  -- Deep-link like the invite: the invitee's own card when they hold one,
-  -- else the Player 2 join flow.
+  -- Deep-link like the invite: the invitee's own card when they hold one on
+  -- the inviter's platform, else the Player 2 join flow.
+  select public.co_op_pact_platform(g.copies) into v_platform
+    from public.games g where g.id = v_pact.inviter_game;
   select g.id into v_partner_game
     from public.games g
    where g.user_id = v_pact.invitee
      and v_pact.game_key = any(public.game_identity_keys(g.rawg_id, g.igdb_id, g.catalog_id))
+     and (g.status = 'wishlist' or public.co_op_card_on_platform(g.copies, v_platform))
    order by (g.status <> 'wishlist') desc, g.added_at desc
    limit 1;
 
@@ -15113,18 +15161,21 @@ end;
 $$;
 
 -- Accept or decline a pending pact addressed to the caller. Accepting binds one
--- of the caller's copies (p_game, or the single matching copy when omitted):
+-- of the caller's copies ON THE INVITER'S PLATFORM (p_game, or the single
+-- matching copy when omitted — see co_op_card_on_platform):
 --   - a Bazaar (backlog) copy is activated through the STANDARD buy path
 --     (apply_purchase: client-computed price, chosen lane, coin/slot checks);
 --   - a copy already in Now Playing attaches as-is (nothing to pay);
 --   - a finished (non-retired) copy attaches with that half already cleared.
--- Player 2 join (2026-07-18): when the caller owns NO copy and p_player2 is
--- true, the game is first auto-added to their library from the inviter's card
--- (catalog metadata only — never the inviter's personal state) with a single
--- 'player2' copy on the inviter's platform, then activated through the same
--- standard buy path. The charter is waived by design; the activation fee is
--- not. A wishlist-only entry is left untouched (it stays a want-list for a
--- copy of their own).
+-- Player 2 join (2026-07-18): when the caller owns NO copy on that platform and
+-- p_player2 is true, the game is first auto-added to their library from the
+-- inviter's card (catalog metadata only — never the inviter's personal state)
+-- with a single 'player2' copy on the inviter's platform, then activated
+-- through the same standard buy path. The charter is waived by design; the
+-- activation fee is not. A wishlist-only entry is left untouched (it stays a
+-- want-list for a copy of their own), and so is a copy on another platform in
+-- any status (2026-09-29): the Player 2 card sits beside it as its own
+-- version, and a clear on that other copy is not this pact's half.
 -- Gifted fee: if the pact carries covers_fee and the copy needs buying, the
 -- fee is debited from the INVITER when they can afford it right now (the card
 -- then activates at price_paid 0, voucher-style — no later refund).
@@ -15201,11 +15252,16 @@ begin
 
   -- Resolve the copy to bind: the requested one, or the single matching copy.
   -- Matched on the card's whole key set, so a copy from the other provider (or
-  -- one linked into the crosswalk after the invite went out) still binds.
+  -- one linked into the crosswalk after the invite went out) still binds — but
+  -- only on the platform the pact is played on (the inviter's copy's).
+  select public.co_op_pact_platform(g.copies) into v_platform
+    from public.games g
+   where g.id = v_pact.inviter_game and g.user_id = v_pact.inviter;
   select g.* into v_game
     from public.games g
    where g.user_id = v_me and g.status <> 'wishlist'
      and v_pact.game_key = any(public.game_identity_keys(g.rawg_id, g.igdb_id, g.catalog_id))
+     and public.co_op_card_on_platform(g.copies, v_platform)
      and (p_game is null or g.id = p_game)
    order by (g.status = 'playing') desc, g.added_at desc
    limit 1;
@@ -15284,7 +15340,11 @@ begin
 
   if v_game.id is null then
     if not coalesce(p_player2, false) then
-      raise exception 'You don''t own this game';
+      -- A client that still offers to bind an other-platform copy (a list
+      -- fetched before 2026-09-29) lands here — point it at the join flow.
+      raise exception '%', case when v_platform is null then 'You don''t own this game'
+        else 'You don''t own this game on ' || v_platform
+             || ' — refresh to join as Player 2 on your partner''s copy' end;
     end if;
     -- Player 2 join: no copy of their own — add the game from the inviter's
     -- card. Catalog/metadata columns only (a custom cover stays personal: the
@@ -15298,11 +15358,7 @@ begin
     if v_src.id is null then
       raise exception 'The inviter''s copy is gone — ask them to re-invite';
     end if;
-    select c->>'platform' into v_platform
-      from jsonb_array_elements(coalesce(v_src.copies, '[]'::jsonb)) c
-     where coalesce(c->>'format', '') <> 'dlc'
-       and btrim(coalesce(c->>'platform', '')) <> ''
-     limit 1;
+    -- v_platform (resolved above from this same card) is the seat's platform.
     select coalesce(display_name, 'A friend') into v_inviter_name
       from public.profiles where id = v_pact.inviter;
     -- Clear Streak carve-out (issue 89bda3e6): this seat isn't a game the joiner
@@ -15514,14 +15570,18 @@ begin
   join public.profiles p
     on p.id = case when cp.inviter = v_me then cp.invitee else cp.inviter end
   -- The caller's own owned copy of this game, for a pact that hasn't bound one
-  -- yet (their side of a pending invite). Same preference order as the accept
-  -- path in respond_co_op_pact, so the client previews the copy that will
-  -- actually bind.
+  -- yet (their side of a pending invite). Same platform rule and preference
+  -- order as the accept path in respond_co_op_pact, so the client previews the
+  -- copy that will actually bind — null means accepting joins as Player 2.
   left join lateral (
     select g.id from public.games g
      where g.user_id = v_me and g.status <> 'wishlist'
        and (case when cp.inviter = v_me then cp.inviter_game else cp.invitee_game end) is null
        and cp.game_key = any(public.game_identity_keys(g.rawg_id, g.igdb_id, g.catalog_id))
+       and public.co_op_card_on_platform(g.copies,
+             (select public.co_op_pact_platform(ig.copies)
+                from public.games ig
+               where ig.id = cp.inviter_game and ig.user_id = cp.inviter))
      order by (g.status = 'playing') desc, g.added_at desc
      limit 1
   ) mine on true
@@ -15800,6 +15860,8 @@ create trigger games_co_op_pact_deleted
 
 revoke execute on function public.co_op_pact_game_guard()        from public, anon, authenticated;
 revoke execute on function public.co_op_pact_game_deleted()      from public, anon, authenticated;
+revoke execute on function public.co_op_pact_platform(jsonb)     from public, anon, authenticated;
+revoke execute on function public.co_op_card_on_platform(jsonb, text) from public, anon, authenticated;
 revoke execute on function public.co_op_partner_options(uuid)    from public, anon;
 revoke execute on function public.invite_co_op_pact(uuid, uuid, boolean) from public, anon;
 revoke execute on function public.respond_co_op_pact(uuid, boolean, uuid, integer, uuid, boolean, boolean, boolean, boolean, boolean) from public, anon;

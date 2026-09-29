@@ -8,6 +8,7 @@ import {
   isPlayer2Join,
   pactForGame,
   pactJoinDraft,
+  pactOwnedPlatforms,
   pactStatusLine,
   player2Invites,
 } from "../lib/coopPacts";
@@ -23,8 +24,9 @@ import { ConfirmDialog } from "./ConfirmDialog";
 
 /** Pick a friend and send them a Co-op Pact invite (issue d57afe4f). The list
  *  comes from the server (co_op_partner_options): every accepted friend with no
- *  live pact on this game — friends who don't own it join as Player 2 on the
- *  inviter's copy (it's auto-added to their library when they accept). The
+ *  live pact on this game — friends who don't own it on the inviter's platform
+ *  join as Player 2 on the inviter's copy (it's auto-added to their library
+ *  when they accept). The
  *  inviter can also offer to cover the partner's activation fee. */
 export function CoOpInviteModal({ game, onClose }: { game: Game; onClose: () => void }) {
   const { fetchCoOpPartnerOptions, inviteCoOpPact, coins, economy, economyEnabled } = useStore();
@@ -83,7 +85,7 @@ export function CoOpInviteModal({ game, onClose }: { game: Game; onClose: () => 
         </div>
         <p className="mb-3 text-xs text-muted">
           Pledge to finish <span className="font-medium text-ink">{game.title}</span> together.
-          Friends who don&apos;t own it can join as{" "}
+          Friends who don&apos;t own it on your platform can join as{" "}
           <span className="font-medium text-ink">Player 2</span> on your copy. While the pact is
           in play your card sits in the Co-op lane — no Focus slot used.
         </p>
@@ -109,7 +111,7 @@ export function CoOpInviteModal({ game, onClose }: { game: Game; onClose: () => 
                   <span className="min-w-0 flex-1 truncate text-sm text-ink">{o.displayName}</span>
                   {!o.ownsGame && (
                     <span
-                      title="Doesn't own this game — they'd join as Player 2 on your copy"
+                      title="Doesn't own it on your platform — they'd join as Player 2 on your copy"
                       className="inline-flex shrink-0 items-center gap-1 rounded-full border border-line bg-panel px-1.5 py-0.5 text-[10px] font-medium text-muted"
                     >
                       <Users size={10} /> Player 2
@@ -155,8 +157,9 @@ export function CoOpInviteModal({ game, onClose }: { game: Game; onClose: () => 
   );
 }
 
-/** The accept surface for an invite on a game the player doesn't own: previews
- *  the game from the inviter's card, explains the Player 2 copy, and prices the
+/** The accept surface for an invite on a game the player doesn't own on the
+ *  inviter's platform: previews the game from the inviter's card, explains the
+ *  Player 2 copy (beside any copy they own elsewhere), and prices the
  *  activation (or shows it covered). Accepting auto-adds the game and starts it
  *  in the Co-op lane. */
 export function PactJoinModal({ pact, onClose }: { pact: CoOpPact; onClose: () => void }) {
@@ -174,6 +177,9 @@ export function PactJoinModal({ pact, onClose }: { pact: CoOpPact; onClose: () =
   // binds their own copy instead of creating one — say so instead of the
   // Player 2 pitch.
   const joining = isPlayer2Join(pact, games);
+  // Copies they hold on other platforms stay as they are — the Player 2 card
+  // is a separate version beside them.
+  const ownedElsewhere = joining ? pactOwnedPlatforms(pact, games) : [];
   // Economy off: the seat is free (the store sends a forced-zero fee).
   const price = economyEnabled ? computeFormula(pactJoinDraft(pact), economy.price) : 0;
   const canAfford =
@@ -220,10 +226,14 @@ export function PactJoinModal({ pact, onClose }: { pact: CoOpPact; onClose: () =
 
         {joining ? (
           <p className="mb-3 text-xs text-muted">
-            You don&apos;t own this game — accepting adds it to your library as a{" "}
+            {ownedElsewhere.length > 0
+              ? `You own it on ${ownedElsewhere.join(", ")} — accepting adds a separate`
+              : "You don't own this game — accepting adds it to your library as a"}{" "}
             <span className="font-medium text-ink">Player 2</span> copy
             {pact.partnerGamePlatform ? ` on ${pact.partnerGamePlatform}` : ""} (you&apos;ll play
-            on {name}&apos;s copy). It starts right away in your Co-op lane.
+            on {name}&apos;s copy)
+            {ownedElsewhere.length > 0 ? ", next to the one you own" : ""}. It starts right away
+            in your Co-op lane.
           </p>
         ) : (
           <p className="mb-3 text-xs text-muted">
@@ -372,11 +382,11 @@ export function CoOpPactBanner({ game }: { game: Game }) {
   const pact = pactForGame(coOpPacts, game);
   if (!pact) return null;
 
-  // A wishlist-only entry can't bind (it stays a want-list for a copy of your
-  // own) — an incoming invite on it goes through the Player 2 join flow, which
-  // creates the playing copy alongside it.
-  const wishlistJoin =
-    game.status === "wishlist" && pact.status === "pending" && !pact.iAmInviter;
+  // No copy of yours binds — a wishlist entry stays a want-list for a copy of
+  // your own, and a copy on another platform than the inviter's is its own
+  // version — so an incoming invite seen from such a card goes through the
+  // Player 2 join flow, which creates the playing copy alongside it.
+  const joinFlow = isPlayer2Join(pact, games);
 
   // The activation fee an accept would charge for a Bazaar copy — the same
   // math as the buy button, so the fee shown is the fee paid. An inviter
@@ -427,7 +437,7 @@ export function CoOpPactBanner({ game }: { game: Game }) {
 
       {pact.status === "pending" && !pact.iAmInviter && (
         <span className="flex flex-wrap items-center gap-2">
-          {wishlistJoin ? (
+          {joinFlow ? (
             <button
               type="button"
               disabled={working}
@@ -481,7 +491,7 @@ export function CoOpPactBanner({ game }: { game: Game }) {
               yourself, or wait for them to top up.
             </span>
           )}
-          {needsBuy && !canAfford && (
+          {needsBuy && !joinFlow && !canAfford && (
             <span className="text-[11px] text-danger">Not enough coins</span>
           )}
         </span>

@@ -329,8 +329,9 @@ export interface CoOpPact {
   /** The copy on MY shelf this pact concerns: the bound card once there is
    *  one, else the copy an accept would attach to — the server's answer,
    *  resolved through the shared identity crosswalk, so an invite for an
-   *  IGDB-keyed game still finds the RAWG-keyed copy I already own. Null means
-   *  I own none, which is what makes it a Player 2 join. */
+   *  IGDB-keyed game still finds the RAWG-keyed copy I already own. Only a copy
+   *  on the inviter's platform counts; null means I own none there, which is
+   *  what makes it a Player 2 join. */
   myCandidateGameId: string | null;
 }
 

@@ -6,6 +6,7 @@ import {
   isPlayer2Join,
   pactForGame,
   pactJoinDraft,
+  pactOwnedPlatforms,
   pactStatusLine,
   player2Invites,
   playtimeLockedByPact,
@@ -107,22 +108,58 @@ describe("pactStatusLine", () => {
 describe("isPlayer2Join / player2Invites", () => {
   const invite = pact({ status: "pending", iAmInviter: false, myGameId: null });
 
-  it("is a Player 2 join only for a pending incoming invite with no owned copy", () => {
+  it("is a Player 2 join only for a pending incoming invite with no copy to bind", () => {
     expect(isPlayer2Join(invite, [])).toBe(true);
     // A wishlist-only entry still joins as Player 2 (the want-list survives).
     expect(isPlayer2Join(invite, [game({ status: "wishlist" })])).toBe(true);
-    // Any owned copy of the identity routes through the normal accept instead.
-    expect(isPlayer2Join(invite, [game({ status: "backlog" })])).toBe(false);
-    expect(isPlayer2Join(invite, [game({ status: "finished" })])).toBe(false);
+    // The copy the server named routes through the normal accept instead.
+    const bound = { ...invite, myCandidateGameId: "g1" };
+    expect(isPlayer2Join(bound, [game({ status: "backlog" })])).toBe(false);
+    expect(isPlayer2Join(bound, [game({ status: "finished" })])).toBe(false);
     // Only the invitee's side of a PENDING pact joins.
     expect(isPlayer2Join(pact({ status: "pending", myGameId: null }), [])).toBe(false);
     expect(isPlayer2Join(pact({ status: "active", iAmInviter: false }), [])).toBe(false);
   });
 
+  it("joins as Player 2 when the only owned copies are on another platform", () => {
+    // Regression: the server binds only a copy on the inviter's platform and
+    // names none here — a same-identity Switch card (any status) must not be
+    // mistaken for the copy that binds.
+    const onSwitch = (status: Game["status"]) =>
+      game({ status, copies: [{ id: "c", platform: "Nintendo Switch", format: "digital" }] });
+    expect(isPlayer2Join(invite, [onSwitch("backlog")])).toBe(true);
+    expect(isPlayer2Join(invite, [onSwitch("playing")])).toBe(true);
+    expect(isPlayer2Join(invite, [onSwitch("finished")])).toBe(true);
+  });
+
   it("player2Invites keeps only the joinable invites", () => {
-    const owned = pact({ id: "p2", status: "pending", iAmInviter: false, myGameId: null });
+    const owned = pact({
+      id: "p2",
+      status: "pending",
+      iAmInviter: false,
+      myGameId: null,
+      myCandidateGameId: "g1",
+    });
     expect(player2Invites([invite, pact()], []).map((p) => p.id)).toEqual(["p1"]);
     expect(player2Invites([owned], [game({ status: "backlog" })])).toEqual([]);
+  });
+
+  it("pactOwnedPlatforms lists the platforms already owned (base copies, no wishlist)", () => {
+    const games = [
+      game({
+        id: "a",
+        status: "backlog",
+        copies: [
+          { id: "c1", platform: "Nintendo Switch", format: "digital" },
+          { id: "c2", platform: "PC", format: "dlc" },
+        ],
+      }),
+      game({ id: "b", status: "finished", copies: [{ id: "c3", platform: "Nintendo Switch" }] }),
+      game({ id: "w", status: "wishlist", copies: [{ id: "c4", platform: "Xbox Series X" }] }),
+      game({ id: "x", rawgId: 8, status: "backlog", copies: [{ id: "c5", platform: "PC" }] }),
+    ];
+    expect(pactOwnedPlatforms(invite, games)).toEqual(["Nintendo Switch"]);
+    expect(pactOwnedPlatforms(invite, [])).toEqual([]);
   });
 
   it("trusts the server's crosswalked candidate over a local key comparison", () => {

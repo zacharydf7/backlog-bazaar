@@ -68,7 +68,9 @@ describe("CoOpPactBanner", () => {
     act(() =>
       useStore.setState({
         games: [g],
-        coOpPacts: [pact({ status: "pending", iAmInviter: false, myGameId: null })],
+        coOpPacts: [
+          pact({ status: "pending", iAmInviter: false, myGameId: null, myCandidateGameId: "g1" }),
+        ],
       }),
     );
     render(<CoOpPactBanner game={g} />);
@@ -84,7 +86,9 @@ describe("CoOpPactBanner", () => {
       useStore.setState({
         games: [g],
         acceptCoOpPact: accept,
-        coOpPacts: [pact({ status: "pending", iAmInviter: false, myGameId: null })],
+        coOpPacts: [
+          pact({ status: "pending", iAmInviter: false, myGameId: null, myCandidateGameId: "g1" }),
+        ],
       }),
     );
     render(<CoOpPactBanner game={g} />);
@@ -131,7 +135,13 @@ describe("CoOpPactBanner", () => {
         games: [g],
         coins: 0, // broke — but the fee is on Sam
         coOpPacts: [
-          pact({ status: "pending", iAmInviter: false, myGameId: null, coversFee: true }),
+          pact({
+            status: "pending",
+            iAmInviter: false,
+            myGameId: null,
+            myCandidateGameId: "g1",
+            coversFee: true,
+          }),
         ],
       }),
     );
@@ -152,6 +162,37 @@ describe("CoOpPactBanner", () => {
     render(<CoOpPactBanner game={g} />);
     fireEvent.click(screen.getByRole("button", { name: /Review invite/ }));
     expect(screen.getByText(/Player 2/)).toBeTruthy();
+  });
+
+  it("routes an invite seen from a copy on another platform through the Player 2 join flow", () => {
+    // Regression: owning the game on Switch used to bind (and charge to start)
+    // that Switch card for a pact played on the inviter's PS5 copy. The server
+    // names no candidate there, so the card offers the join flow instead.
+    const g = game({
+      status: "backlog",
+      copies: [{ id: "c1", platform: "Nintendo Switch", format: "digital" }],
+    });
+    act(() =>
+      useStore.setState({
+        games: [g],
+        coins: 0,
+        coOpPacts: [
+          pact({
+            status: "pending",
+            iAmInviter: false,
+            myGameId: null,
+            partnerGamePlatform: "PlayStation 5",
+          }),
+        ],
+      }),
+    );
+    render(<CoOpPactBanner game={g} />);
+    expect(screen.queryByRole("button", { name: /Accept/ })).toBeNull();
+    // The Switch card's own price is irrelevant — no coin warning for it here.
+    expect(screen.queryByText(/Not enough coins/)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /Review invite/ }));
+    expect(screen.getByText(/You own it on Nintendo Switch/)).toBeTruthy();
+    expect(screen.getByText(/next to the one you own/)).toBeTruthy();
   });
 
   it("offers Withdraw (not Dissolve) on a pending outgoing invite", () => {
@@ -201,7 +242,13 @@ describe("CoOpPactBanner", () => {
         coins: 500,
         acceptCoOpPact: accept,
         coOpPacts: [
-          pact({ status: "pending", iAmInviter: false, myGameId: null, coversFee: true }),
+          pact({
+            status: "pending",
+            iAmInviter: false,
+            myGameId: null,
+            myCandidateGameId: "g1",
+            coversFee: true,
+          }),
         ],
       }),
     );
@@ -320,11 +367,29 @@ describe("PactInviteStrip", () => {
   it("renders nothing when the invite's game is already owned (the card banner hosts it)", () => {
     act(() =>
       useStore.setState({
-        coOpPacts: [pact({ status: "pending", iAmInviter: false, myGameId: null })],
+        coOpPacts: [
+          pact({ status: "pending", iAmInviter: false, myGameId: null, myCandidateGameId: "g1" }),
+        ],
         games: [game({ status: "backlog" })],
       }),
     );
     const { container } = render(<PactInviteStrip />);
     expect(container.firstChild).toBeNull();
+  });
+
+  it("lists an invite for a game owned only on another platform (it joins as Player 2)", () => {
+    act(() =>
+      useStore.setState({
+        coOpPacts: [pact({ status: "pending", iAmInviter: false, myGameId: null })],
+        games: [
+          game({
+            status: "finished",
+            copies: [{ id: "c1", platform: "Nintendo Switch", format: "digital" }],
+          }),
+        ],
+      }),
+    );
+    render(<PactInviteStrip />);
+    expect(screen.getByText("Pact invites")).toBeTruthy();
   });
 });

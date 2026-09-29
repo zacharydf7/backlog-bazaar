@@ -468,11 +468,12 @@ export function AboutPage() {
               Playing through the same game as a friend? Open the game card&apos;s ⋮ menu and{" "}
               <strong className="text-ink">Invite to Co-op Pact</strong> — any friend can be
               invited, on any platform, <strong className="text-ink">even if they don&apos;t own
-              the game</strong>. A friend who owns it accepts with their own copy (standard
-              activation fee if it isn&apos;t already active); a friend who doesn&apos;t accepts as{" "}
+              the game</strong>. A friend who owns it on your platform accepts with that copy
+              (standard activation fee if it isn&apos;t already active); a friend who doesn&apos;t
+              — or owns it only on another platform — accepts as{" "}
               <strong className="text-ink">Player 2</strong> — the game is added to their library
-              automatically with a Player 2 copy on your platform (they play on your copy; only
-              the activation fee applies). You can also offer to{" "}
+              automatically with a Player 2 copy on your platform, next to any copy they already
+              own (they play on your copy; only the activation fee applies). You can also offer to{" "}
               <strong className="text-ink">cover their activation fee</strong> — when sending the
               invite, or any time while it&apos;s still pending — and it&apos;s charged to you the
               moment they accept, so coins never stand between you. If your balance comes up short
