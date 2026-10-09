@@ -245,7 +245,10 @@ export function AddGameModal({
   const [open, setOpen] = useState(false);
   const [loadingLength, setLoadingLength] = useState(false);
   const [hltb, setHltb] = useState<HltbTimes | null>(null);
-  const [playstyle, setPlaystyle] = useState<keyof HltbTimes>("main");
+  // An approved community length for the picked game; offered as its own
+  // chip ("catalog") ahead of the HowLongToBeat ones, and preselected.
+  const [catalogHours, setCatalogHours] = useState<number | null>(null);
+  const [playstyle, setPlaystyle] = useState<keyof HltbTimes | "catalog">("main");
 
   const reqId = useRef(0); // discards out-of-order responses
   const skipSearch = useRef(false); // don't re-search right after a pick
@@ -314,6 +317,7 @@ export function AddGameModal({
     // Tentative length from RAWG; HowLongToBeat overrides it below when available.
     setHours(formatLength(meta.hours));
     setHltb(null);
+    setCatalogHours(null);
     setPlaystyle("main");
     setPicked({
       rawgId: meta.rawgId,
@@ -370,6 +374,8 @@ export function AddGameModal({
           if (c.hours != null) {
             // Treat the approved length as authoritative so HLTB doesn't override it.
             hoursEdited.current = true;
+            setCatalogHours(c.hours);
+            setPlaystyle("catalog");
             setHours(formatLength(c.hours));
           }
         })
@@ -388,8 +394,10 @@ export function AddGameModal({
           : times.mainExtra
             ? "mainExtra"
             : "completionist";
-        setPlaystyle(style);
-        if (!hoursEdited.current) setHours(formatLength(times[style]));
+        if (!hoursEdited.current) {
+          setPlaystyle(style);
+          setHours(formatLength(times[style]));
+        }
       })
       .catch(() => {})
       .finally(() => setLoadingLength(false));
@@ -402,9 +410,9 @@ export function AddGameModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  function selectPlaystyle(style: keyof HltbTimes) {
+  function selectPlaystyle(style: keyof HltbTimes | "catalog") {
     setPlaystyle(style);
-    const value = hltb?.[style];
+    const value = style === "catalog" ? catalogHours : hltb?.[style];
     if (value) {
       hoursEdited.current = false;
       setHours(formatLength(value));
@@ -975,15 +983,26 @@ export function AddGameModal({
                 How do you want to play?{" "}
                 <span className="text-xs text-subtle">— sets the length (HowLongToBeat)</span>
               </span>
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-                {PLAYSTYLES.map((ps) => {
-                  const value = hltb[ps.key];
+              <div
+                className={
+                  "grid grid-cols-1 gap-2 " +
+                  (catalogHours != null ? "sm:grid-cols-2" : "sm:grid-cols-3")
+                }
+              >
+                {[
+                  ...(catalogHours != null
+                    ? [{ key: "catalog" as const, title: "Community", desc: "Approved length", value: catalogHours }]
+                    : []),
+                  ...PLAYSTYLES.map((ps) => ({ ...ps, value: hltb[ps.key] })),
+                ].map((ps) => {
+                  const value = ps.value;
                   if (!value) return null;
                   const active = playstyle === ps.key;
                   return (
                     <button
                       key={ps.key}
                       type="button"
+                      aria-pressed={active}
                       onClick={() => selectPlaystyle(ps.key)}
                       className={
                         "rounded-xl border px-3 py-2 text-left transition " +
@@ -1014,10 +1033,11 @@ export function AddGameModal({
 
           {/* Length is HLTB-driven when times exist: the playstyle chips above
               are then the only length control, so the free-text field only
-              shows when HowLongToBeat has nothing. (When an approved catalog
-              length exists it stays authoritative via hoursEdited until a chip
-              is explicitly clicked.) The release date is no longer entered —
-              a recognized pick still carries it silently into the catalog. */}
+              shows when HowLongToBeat has nothing. (An approved catalog length
+              rides along as a preselected "Community" chip, so the highlighted
+              chip is always the length that's saved.) The release date is no
+              longer entered — a recognized pick still carries it silently into
+              the catalog. */}
           {!ongoing && !hltb && (
             <label className="text-sm text-muted">
               Length

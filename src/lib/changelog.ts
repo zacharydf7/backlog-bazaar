@@ -68,6 +68,10 @@ export const RELEASES: Release[] = [
         text: "Length estimates from HowLongToBeat are back: a change on their side meant newly added games came in without a suggested length.",
         tag: "fix",
       },
+      {
+        text: "When a game has a community-approved length, Add Game now shows it as its own Community option next to the HowLongToBeat estimates, already selected. Before, a HowLongToBeat estimate looked selected while the community length was the one being saved.",
+        tag: "fix",
+      },
     ],
   },
   {

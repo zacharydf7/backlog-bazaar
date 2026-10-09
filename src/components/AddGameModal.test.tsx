@@ -262,6 +262,57 @@ describe("AddGameModal field locking (verified data)", () => {
     expect(screen.queryByLabelText(/^Length/i)).toBeNull();
   });
 
+  it("preselects an approved community length as its own chip, and saves it", async () => {
+    // Regression: the HLTB "Mainline it" chip used to be highlighted while
+    // the hidden community length was the one actually saved.
+    const gd = await import("../lib/gamedata");
+    vi.mocked(gd.fetchHltbTimes).mockResolvedValueOnce({ main: 80, mainExtra: 112, completionist: 168 });
+    useStore.setState({ games: [] }); // an earlier test's real add leaves Zelda owned
+    const catalogSpy = vi.spyOn(useStore.getState(), "fetchCatalogGame").mockResolvedValue({
+      catalogId: "cat1", title: "", image: "", platforms: [], genres: [], developers: [],
+      released: "", hours: 132, screenshots: [], isLiveService: false,
+    });
+    const addSpy = vi.spyOn(useStore.getState(), "addGame").mockResolvedValue(null);
+    render(<AddGameModal onClose={() => {}} />);
+    await pickZelda();
+    const community = await screen.findByRole("button", { name: /Community/ });
+    await screen.findByText("Mainline it");
+    expect(community.getAttribute("aria-pressed")).toBe("true");
+    expect(community.textContent).toContain("132h");
+    expect(screen.getByRole("button", { name: /Mainline it/ }).getAttribute("aria-pressed")).toBe("false");
+
+    addCopyOn("PC");
+    fireEvent.click(screen.getByRole("button", { name: /Add to Bazaar/i }));
+    await waitFor(() => expect(addSpy).toHaveBeenCalled());
+    expect(addSpy.mock.calls[0][0].hours).toBe(132);
+    catalogSpy.mockRestore();
+    addSpy.mockRestore();
+    useStore.setState({ games: [] });
+  });
+
+  it("switches to a HowLongToBeat estimate when its chip is picked over the community length", async () => {
+    const gd = await import("../lib/gamedata");
+    vi.mocked(gd.fetchHltbTimes).mockResolvedValueOnce({ main: 80, mainExtra: 112, completionist: 168 });
+    useStore.setState({ games: [] });
+    const catalogSpy = vi.spyOn(useStore.getState(), "fetchCatalogGame").mockResolvedValue({
+      catalogId: "cat1", title: "", image: "", platforms: [], genres: [], developers: [],
+      released: "", hours: 132, screenshots: [], isLiveService: false,
+    });
+    const addSpy = vi.spyOn(useStore.getState(), "addGame").mockResolvedValue(null);
+    render(<AddGameModal onClose={() => {}} />);
+    await pickZelda();
+    await screen.findByRole("button", { name: /Community/ });
+    fireEvent.click(await screen.findByRole("button", { name: /Mainline it/ }));
+
+    addCopyOn("PC");
+    fireEvent.click(screen.getByRole("button", { name: /Add to Bazaar/i }));
+    await waitFor(() => expect(addSpy).toHaveBeenCalled());
+    expect(addSpy.mock.calls[0][0].hours).toBe(80);
+    catalogSpy.mockRestore();
+    addSpy.mockRestore();
+    useStore.setState({ games: [] });
+  });
+
   it("keeps Length editable when HLTB returns nothing", async () => {
     render(<AddGameModal onClose={() => {}} />);
     await pickZelda(); // default mock resolves null
