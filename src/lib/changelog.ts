@@ -58,10 +58,14 @@ export const RELEASES: Release[] = [
   {
     id: "2026-10-09-cancel-replay-keeps-history",
     date: "2026-10-09",
-    title: "Backing out of a replay keeps your history",
+    title: "Replays keep their history, and length estimates are back",
     items: [
       {
         text: "Cancelling a replay, or abandoning a 100% run, no longer records a fresh Beat dated today or tells your friends you beat the game again. The game goes back to Finished with its original clear date, and a cancelled replay's Started entry goes with it.",
+        tag: "fix",
+      },
+      {
+        text: "Length estimates from HowLongToBeat are back: a change on their side meant newly added games came in without a suggested length.",
         tag: "fix",
       },
     ],

@@ -4,7 +4,8 @@ import type { VercelRequest, VercelResponse } from "@vercel/node";
 // so it can set Referer/Origin headers and keep the browser request same-origin.
 // HLTB requires a two-step handshake: fetch a short-lived token from an init
 // endpoint, then POST the search to its sibling with that token in the headers
-// + payload. The endpoint PAIR moves every few months (search → find → seek →
+// + payload (older generations also handed out an hpKey/hpVal honeypot pair to
+// echo back; it was dropped in 2026-10). The endpoint PAIR moves every few months (search → find → seek →
 // bleed → search/site…), so the known pairs are tried first and, when they all
 // 404, the current one is scraped out of HLTB's own page bundle (the same way
 // the community scrapers keep up) and remembered for the life of the instance.
@@ -37,8 +38,9 @@ const DISCOVERY_TTL = 6 * 60 * 60 * 1000;
 
 interface InitResp {
   token: string;
-  hpKey: string;
-  hpVal: string;
+  /** Honeypot pair, only on older handshake generations. */
+  hpKey?: string;
+  hpVal?: string;
 }
 interface HltbGame {
   game_name: string;
@@ -71,8 +73,8 @@ async function initToken(endpoints: Endpoints, signal: AbortSignal): Promise<Ini
   if (res.status === 404) throw new EndpointGone(endpoints.init);
   if (!res.ok) throw new Error(`init ${res.status}`);
   const body = (await res.json()) as Partial<InitResp>;
-  if (!body.token || !body.hpKey) throw new Error("init shape");
-  return { token: body.token, hpKey: body.hpKey, hpVal: body.hpVal ?? "" };
+  if (!body.token) throw new Error("init shape");
+  return body as InitResp;
 }
 
 async function searchWith(
@@ -95,7 +97,11 @@ async function searchWith(
         sortCategory: "popular",
         rangeCategory: "main",
         rangeTime: { min: null, max: null },
-        gameplay: { perspective: "", flow: "", genre: "", difficulty: "" },
+        gameplay: {
+          perspective: { mode: "include", values: [] },
+          flow: { mode: "include", values: [] },
+          genre: { mode: "include", values: [] },
+        },
         year: { mode: "include", values: [] },
         modifier: "",
       },
@@ -107,17 +113,21 @@ async function searchWith(
     },
     useCache: true,
   };
-  payload[init.hpKey] = init.hpVal;
+  const headers: Record<string, string> = {
+    ...commonHeaders(),
+    "Content-Type": "application/json",
+    "x-auth-token": init.token,
+  };
+  if (init.hpKey) {
+    const hpVal = init.hpVal ?? "";
+    payload[init.hpKey] = hpVal;
+    headers["x-hp-key"] = init.hpKey;
+    headers["x-hp-val"] = hpVal;
+  }
 
   const res = await fetch(`${BASE}${endpoints.search}`, {
     method: "POST",
-    headers: {
-      ...commonHeaders(),
-      "Content-Type": "application/json",
-      "x-auth-token": init.token,
-      "x-hp-key": init.hpKey,
-      "x-hp-val": init.hpVal,
-    },
+    headers,
     body: JSON.stringify(payload),
     signal,
   });
