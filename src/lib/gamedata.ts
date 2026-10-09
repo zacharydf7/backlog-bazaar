@@ -79,11 +79,11 @@ const LENGTH_TTL = 1000 * 60 * 60 * 24 * 30; // 30 days
 // blank must not stick for a month (the 2026-09 outage left every game added
 // that week without an estimate until this was shortened).
 const NO_LENGTH_TTL = 1000 * 60 * 60; // 1 hour
-// Cache namespace + request version. Bumped together on 2026-09-05 so blanks
-// cached during the outage — in localStorage (30d) and at the CDN edge (7d),
-// both keyed by title — are bypassed rather than waited out.
-const LENGTH_CACHE_NS = "hltb2";
-const LENGTH_REQUEST_VERSION = "2";
+// Cache namespace + request version. Bumped together after each outage
+// (2026-09-05, 2026-10-09) so blanks cached during it — in localStorage and at
+// the CDN edge, both keyed by title — are bypassed rather than waited out.
+const LENGTH_CACHE_NS = "hltb3";
+const LENGTH_REQUEST_VERSION = "3";
 
 /** Main-story / main+extras / completionist lengths (hours) from HowLongToBeat. */
 export interface HltbTimes {
