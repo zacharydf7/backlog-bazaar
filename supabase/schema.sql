@@ -7577,36 +7577,66 @@ end;
 $$;
 
 -- Abort a replay: send a game that's currently in a Replay slot straight back to
--- Finished WITHOUT paying any bounty (the inverse of apply_replay). No coins move
--- — the replay was free, so backing out is free too. The game must be the caller's,
--- playing, and sitting in one of their replay-kind slots. The games_log_status
--- trigger records the playing → finished transition for the audit trail.
+-- Finished WITHOUT paying any bounty — the inverse of enter_replay, as if it had
+-- never been pulled back. No coins move — the replay was free, so backing out is
+-- free too. The game must be the caller's, playing, and resumed (or sitting in a
+-- pre-flag replay-kind slot). The games_log_status trigger still records the
+-- playing → finished transition for the audit trail, but it is NOT a clear: the
+-- undo GUC keeps the milestone capture and the activity feed from logging a Beat
+-- and a bounty card dated today, finished_at goes back to when the game last
+-- really reached Finished, and the Started milestone the replay's entry
+-- auto-logged is retracted. Returns the restored finished_at for the client.
+-- Dropped first because the return type changed (void → timestamptz).
+drop function if exists public.abort_replay(uuid);
 create or replace function public.abort_replay(p_game uuid)
-returns void
+returns timestamptz
 language plpgsql
 security definer set search_path = public
 as $$
+declare
+  v_started_at timestamptz;
+  v_entered    timestamptz;
+  v_finished   timestamptz;
 begin
   if auth.uid() is null then raise exception 'Not authenticated'; end if;
 
   -- Any resumed game (a finished game pulled back for free, in a Replay or
   -- Endless slot) can be sent straight back to Finished. The slot-kind check
   -- stays for pre-flag replay-slot games.
-  if not exists (
-    select 1
-      from public.games g
-      left join public.user_slots us on us.id = g.slot_id
-      left join public.slot_definitions d on d.id = us.definition_id
-     where g.id = p_game and g.user_id = auth.uid() and g.status = 'playing'
-       and (coalesce(g.resumed, false) or d.kind = 'replay')
-  ) then
+  select g.started_at into v_started_at
+    from public.games g
+    left join public.user_slots us on us.id = g.slot_id
+    left join public.slot_definitions d on d.id = us.definition_id
+   where g.id = p_game and g.user_id = auth.uid() and g.status = 'playing'
+     and (coalesce(g.resumed, false) or d.kind = 'replay');
+  if not found then
     raise exception 'Game is not a resumed game';
   end if;
 
+  -- When the replay began (its move to playing) and when the game last really
+  -- reached Finished, both read from the immutable status log.
+  select max(e.created_at) filter (where e.to_status = 'playing'),
+         coalesce(max(e.created_at) filter (where e.to_status = 'finished'), now())
+    into v_entered, v_finished
+    from public.game_status_events e
+   where e.game_id = p_game;
+
+  perform set_config('app.undo_in_progress', '1', true);
+
   update public.games
-     set status = 'finished', finished_at = now(), slot_id = null, resumed = false,
+     set status = 'finished', finished_at = v_finished, slot_id = null, resumed = false,
          in_rotation = false
    where id = p_game and user_id = auth.uid() and status = 'playing';
+
+  -- The Started row entering the replay auto-logged (stamped with its
+  -- started_at). One the owner has since re-dated is theirs, so it stays.
+  delete from public.game_milestones m
+   where m.game_id = p_game and m.user_id = auth.uid()
+     and m.kind = 'started' and m.source = 'auto'
+     and m.created_at >= v_entered
+     and m.occurred_on = v_started_at::date;
+
+  return v_finished;
 end;
 $$;
 
@@ -7753,16 +7783,27 @@ $$;
 -- before the run (resumed = true) — it has a Finished state to return to; a
 -- never-beaten game would be marked finished prematurely (the client shelves those to
 -- the Bazaar instead). Earns NO coins and is tagged 'beaten' (campaign cleared,
--- mastery aborted). The games_log_status trigger records the playing → finished move.
+-- mastery aborted). The games_log_status trigger records the playing → finished move,
+-- but it is NOT a fresh clear: the undo GUC keeps the milestone capture and the
+-- activity feed from logging a Beat and a bounty card dated today, and finished_at
+-- goes back to when the game last really reached Finished (returned for the client).
+-- Dropped first because the return type changed (void → timestamptz).
+drop function if exists public.abandon_completion(uuid);
 create or replace function public.abandon_completion(p_game uuid)
-returns void
+returns timestamptz
 language plpgsql
 security definer set search_path = public
 as $$
+declare
+  v_finished timestamptz;
 begin
   if auth.uid() is null then raise exception 'Not authenticated'; end if;
+  select coalesce(max(e.created_at), now()) into v_finished
+    from public.game_status_events e
+   where e.game_id = p_game and e.to_status = 'finished';
+  perform set_config('app.undo_in_progress', '1', true);
   update public.games
-     set status = 'finished', finished_at = now(), completionist = false,
+     set status = 'finished', finished_at = v_finished, completionist = false,
          resumed = false, in_rotation = false, slot_id = null,
          finish_tag = 'beaten'
    where id = p_game and user_id = auth.uid()
@@ -7770,6 +7811,7 @@ begin
   if not found then
     raise exception 'Only a previously-finished game can be abandoned to Finished';
   end if;
+  return v_finished;
 end;
 $$;
 

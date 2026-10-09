@@ -5555,26 +5555,27 @@ export const useStore = create<BazaarState>((set, get) => ({
     if (laneOf(game) !== "replay") return;
 
     // Back to Finished, free: no bounty, no coin change. The game was already
-    // fully owned, so price_paid stays 0 and reward stays cleared.
-    const apply = (g: Game): Game =>
+    // fully owned, so price_paid stays 0 and reward stays cleared. The server
+    // restores the finish date the replay cleared and returns it.
+    const apply = (finishedAt: number) => (g: Game): Game =>
       g.id === id
-        ? { ...g, status: "finished", finishedAt: Date.now(), slotId: null, resumed: false, inRotation: false, coOp: false }
+        ? { ...g, status: "finished", finishedAt, slotId: null, resumed: false, inRotation: false, coOp: false }
         : g;
 
     if (!cloud) {
-      const next = games.map(apply);
+      const next = games.map(apply(Date.now()));
       set({ games: next });
       saveLocal(coins, next);
       toast(`${game.title} sent back to Finished`, Trophy);
       return;
     }
     if (!supabase) return;
-    const { error } = await supabase.rpc("abort_replay", { p_game: id });
+    const { data, error } = await supabase.rpc("abort_replay", { p_game: id });
     if (error) {
       set({ error: error.message });
       return;
     }
-    set({ games: get().games.map(apply) });
+    set({ games: get().games.map(apply(Date.parse(data as string))) });
     toast(`${game.title} sent back to Finished`, Trophy);
   },
 
@@ -5689,25 +5690,26 @@ export const useStore = create<BazaarState>((set, get) => ({
     if (!game || game.status !== "playing" || !game.completionist || !game.resumed) return;
 
     // Conclude to Finished, tag Beaten, no coins (mastery aborted, campaign cleared).
-    const apply = (g: Game): Game =>
+    // The server restores the earlier finish date and returns it.
+    const apply = (finishedAt: number) => (g: Game): Game =>
       g.id === id
-        ? { ...g, status: "finished", finishedAt: Date.now(), completionist: false, resumed: false, inRotation: false, coOp: false, slotId: null, finishTag: "beaten" }
+        ? { ...g, status: "finished", finishedAt, completionist: false, resumed: false, inRotation: false, coOp: false, slotId: null, finishTag: "beaten" }
         : g;
 
     if (!cloud) {
-      const next = games.map(apply);
+      const next = games.map(apply(Date.now()));
       set({ games: next });
       saveLocal(coins, next);
       toast(`Abandoned the 100% run on ${game.title}`, Trophy);
       return;
     }
     if (!supabase) return;
-    const { error } = await supabase.rpc("abandon_completion", { p_game: id });
+    const { data, error } = await supabase.rpc("abandon_completion", { p_game: id });
     if (error) {
       set({ error: error.message });
       return;
     }
-    set({ games: get().games.map(apply) });
+    set({ games: get().games.map(apply(Date.parse(data as string))) });
     toast(`Abandoned the 100% run on ${game.title}`, Trophy);
   },
 

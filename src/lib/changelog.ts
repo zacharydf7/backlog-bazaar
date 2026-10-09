@@ -56,6 +56,17 @@ export function orderReleaseItems(items: (string | ReleaseItem)[]): ReleaseItem[
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-10-09-cancel-replay-keeps-history",
+    date: "2026-10-09",
+    title: "Backing out of a replay keeps your history",
+    items: [
+      {
+        text: "Cancelling a replay, or abandoning a 100% run, no longer records a fresh Beat dated today or tells your friends you beat the game again. The game goes back to Finished with its original clear date, and a cancelled replay's Started entry goes with it.",
+        tag: "fix",
+      },
+    ],
+  },
+  {
     id: "2026-09-29-pact-player2-other-platform",
     date: "2026-09-29",
     title: "Co-op Pacts across platforms",
