@@ -18,6 +18,7 @@ import {
   Mail,
   Handshake,
   PiggyBank,
+  Sparkles,
   type LucideIcon,
 } from "lucide-react";
 import { useStore } from "../store";
@@ -52,6 +53,7 @@ const TYPE_ICON: Record<string, LucideIcon> = {
   loan_granted: PiggyBank,
   loan_declined: PiggyBank,
   loan_repaid: PiggyBank,
+  cosmetic_granted: Sparkles,
 };
 
 /** A fallback destination derived from a notification's type, for older

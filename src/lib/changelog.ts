@@ -56,6 +56,21 @@ export function orderReleaseItems(items: (string | ReleaseItem)[]): ReleaseItem[
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-10-11-earned-cosmetic-alerts",
+    date: "2026-10-11",
+    title: "Never miss an earned cosmetic",
+    items: [
+      {
+        text: "When you earn a cosmetic, like a seasonal reward for visiting, you now also get a notification in your alerts. Tap it to go to My Cosmetics and equip it.",
+        tag: "feature",
+      },
+      {
+        text: "A cosmetic you already own no longer shows its shop arrival date (for example \"Arrives Nov 2\") on its shop card.",
+        tag: "fix",
+      },
+    ],
+  },
+  {
     id: "2026-10-09-cancel-replay-keeps-history",
     date: "2026-10-09",
     title: "Replays keep their history, and length estimates are back",

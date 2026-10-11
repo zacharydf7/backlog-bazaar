@@ -316,6 +316,15 @@ export default function App() {
       setOpenCompilationId(null);
       setOpenListId(null);
       setView("community-recs");
+    } else if (link === "cosmetics") {
+      // An earned cosmetic (seasonal visit reward, achievement unlock) lands
+      // on My Cosmetics, where it can be equipped.
+      closeUserBazaar();
+      setAlertsOpen(false);
+      setOpenGameId(null);
+      setOpenCompilationId(null);
+      setOpenListId(null);
+      setView("cosmetics");
     } else if (link.startsWith("list:")) {
       // Collaborative-list alerts (issue b2059a55): invite, removal request,
       // ruling — all land on the list's own page.

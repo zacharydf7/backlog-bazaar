@@ -21015,3 +21015,28 @@ begin
   end if;
 end;
 $halloween_tier_price$;
+
+-- Earned-cosmetic alerts: every new grant (seasonal visit reward, achievement
+-- unlock) leaves a lasting notification, so a missed toast isn't the only
+-- announcement. The grant is the system rewarding the player, not their own
+-- action, so the recipient is notified even though their session ran it (the
+-- preorder_released precedent). AFTER INSERT only: revocations stay silent,
+-- and the alert commits or rolls back with its grant. No backfill — grants made
+-- before this trigger existed get no retroactive alert.
+create or replace function public.notify_cosmetic_grant() returns trigger
+language plpgsql security definer set search_path=public as $$
+begin
+  if new.user_id is not null then
+    insert into public.notifications(user_id,type,title,body,link)
+    values(new.user_id,'cosmetic_granted',
+      'You earned ' || coalesce(new.item_snapshot->>'name','a cosmetic') || '!',
+      case when new.source_kind='event' then 'A seasonal event reward' else 'An achievement reward' end
+        || ' — it''s yours to keep. Equip it any time from My Cosmetics.',
+      'cosmetics');
+  end if;
+  return new;
+end; $$;
+revoke all on function public.notify_cosmetic_grant() from public, anon, authenticated;
+drop trigger if exists cosmetic_grant_notify on public.cosmetic_grants;
+create trigger cosmetic_grant_notify after insert on public.cosmetic_grants
+for each row execute function public.notify_cosmetic_grant();

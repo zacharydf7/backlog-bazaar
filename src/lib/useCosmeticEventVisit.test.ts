@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   from: vi.fn(),
   toast: vi.fn(),
   fetch: vi.fn(),
+  fetchNotifications: vi.fn(),
 }));
 vi.mock("./supabase", async (original) => ({
   ...(await original<typeof import("./supabase")>()),
@@ -18,6 +19,7 @@ beforeEach(() => {
   vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
   mocks.rpc.mockResolvedValue({ data: [], error: null });
   mocks.fetch.mockResolvedValue(undefined);
+  mocks.fetchNotifications.mockResolvedValue(undefined);
   mocks.from.mockImplementation(() => {
     const chain = {
       select: () => chain,
@@ -26,7 +28,12 @@ beforeEach(() => {
     };
     return chain;
   });
-  useStore.setState({ cloud: true, userId: "user", fetchShop: mocks.fetch });
+  useStore.setState({
+    cloud: true,
+    userId: "user",
+    fetchShop: mocks.fetch,
+    fetchNotifications: mocks.fetchNotifications,
+  });
 });
 afterEach(() => vi.restoreAllMocks());
 describe("foreground reward visits", () => {
@@ -40,7 +47,7 @@ describe("foreground reward visits", () => {
       expect(mocks.rpc).toHaveBeenCalledWith("record_cosmetic_event_visit"),
     );
   });
-  it("refreshes ownership and announces a newly earned reward", async () => {
+  it("refreshes ownership, lights the notification bell, and announces a newly earned reward", async () => {
     mocks.rpc.mockResolvedValue({
       data: [{ item_id: "pumpkin", name: "Pumpkin Patch" }],
       error: null,
@@ -48,6 +55,7 @@ describe("foreground reward visits", () => {
     renderHook(() => useCosmeticEventVisit());
     await waitFor(() => expect(mocks.toast).toHaveBeenCalledTimes(1));
     expect(mocks.fetch).toHaveBeenCalledTimes(1);
+    expect(mocks.fetchNotifications).toHaveBeenCalledTimes(1);
     expect(mocks.toast.mock.calls[0][0]).toContain("Pumpkin Patch");
   });
   it("ignores a late award response after switching accounts", async () => {
@@ -64,6 +72,7 @@ describe("foreground reward visits", () => {
       finish({ data: [{ name: "Pumpkin Patch" }], error: null }),
     );
     expect(mocks.fetch).not.toHaveBeenCalled();
+    expect(mocks.fetchNotifications).not.toHaveBeenCalled();
     expect(mocks.toast).not.toHaveBeenCalled();
   });
   it("does not call the event service while signed out", () => {

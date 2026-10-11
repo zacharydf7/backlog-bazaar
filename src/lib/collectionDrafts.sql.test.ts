@@ -47,6 +47,7 @@ beforeAll(async () => {
   create table app_config(id integer,shop_open boolean);insert into app_config values(1,true);
   create table profiles(id uuid primary key,coins integer);insert into profiles values('${user}',500);
   create function economy_enabled(uuid) returns boolean language sql as $$select true$$;
+  create table notifications(id uuid primary key default gen_random_uuid(),user_id uuid not null,type text not null,title text not null,body text,link text,read_at timestamptz,created_at timestamptz not null default now());
   create function log_coin_event(uuid,text,integer,integer,integer,integer,uuid,text,text,jsonb) returns void language plpgsql as $$begin return;end;$$;
   insert into badges(id,slug,name,kind,icon,prestige) values('${badge}','reward','Reward','shop','award',3);
   insert into shop_sets(key,name,badge_id) values('a','Alpha','${badge}'),('b','Beta',null);
@@ -430,6 +431,16 @@ describe("seasonal reward eligibility", () => {
     await db.exec("create function fail_event_grant() returns trigger language plpgsql as $$begin raise exception 'Test failure';end;$$;create trigger fail_event_grant before insert on cosmetic_grants for each row execute function fail_event_grant();");
     await expect(visit()).rejects.toThrow(/Test failure/);
     expect(await query("select * from cosmetic_event_visits")).toHaveLength(0);
+    expect(await query("select * from notifications")).toHaveLength(0);
+  });
+  it("leaves the recipient one lasting notification per new grant, never for repeats or revokes",async()=>{
+    await setup(true);
+    await visit();await visit();
+    await query("update cosmetic_grants set revoked_at=now()");
+    const rows=await query("select user_id,type,title,body,link from notifications");
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({user_id:user,type:'cosmetic_granted',title:'You earned Beta Frame!',link:'cosmetics'});
+    expect(rows[0].body).toMatch(/^A seasonal event reward/);
   });
   it("keeps visit history private and prevents client edits to definitions or timestamps",async()=>{
     await setup(true);await visit();

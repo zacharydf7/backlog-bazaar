@@ -27,6 +27,8 @@ export function useCosmeticEventVisit() {
           !data.length
         )
           return;
+        // The server left a lasting notification for each grant — light the bell.
+        void useStore.getState().fetchNotifications();
         await useStore.getState().fetchShop();
         const badges = await client
           .from("user_badges")
