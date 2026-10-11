@@ -500,10 +500,12 @@ function ShopStockManager() {
               key={item.id}
               className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl border border-line bg-panel px-3 py-2 text-sm"
             >
-              <span className="w-28 shrink-0 text-xs uppercase tracking-wide text-subtle">
+              {/* Phones: the kind is a small eyebrow and the name gets its own
+                  full-width, wrapping line; from sm up it's one truncated row. */}
+              <span className="shrink-0 text-xs uppercase tracking-wide text-subtle sm:w-28">
                 {SHOP_KIND_META[item.kind].label}
               </span>
-              <span className="min-w-0 flex-1 truncate font-medium text-ink">
+              <span className="min-w-0 basis-full break-words font-medium text-ink sm:flex-1 sm:basis-0 sm:truncate">
                 {item.name} <span className="text-xs text-subtle">({item.slug})</span>
               </span>
               {item.setKey && <button type="button" className="min-h-11 max-w-full rounded-lg border border-brand/30 bg-brand/5 px-2 py-1 text-xs text-ink" onClick={() => setCollectionFilter(item.setKey!)}>
@@ -538,7 +540,8 @@ function ShopStockManager() {
                 type="button"
                 onClick={() => edit(item)}
                 title="Edit"
-                className="rounded-lg border border-line bg-surface p-1.5 text-muted hover:text-ink"
+                aria-label={`Edit ${item.name}`}
+                className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg border border-line bg-surface text-muted hover:text-ink"
               >
                 <Pencil size={14} />
               </button>

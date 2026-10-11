@@ -59,6 +59,14 @@ describe("stock editor navigation", () => {
     expect(scroll).toHaveBeenCalledTimes(2);
   });
 
+  it("names each row's edit button after its item", () => {
+    const base = useStore.getState().shopItems[0];
+    useStore.setState({ shopItems: [base, { ...base, id: "bat", slug: "frame-bat", name: "Bat Familiar" }] });
+    render(<ShopManager />);
+    fireEvent.click(screen.getByRole("button", { name: "Edit Bat Familiar" }));
+    expect(screen.getByText("Editing “Bat Familiar”")).toBeTruthy();
+  });
+
   it("also reveals new-item forms after closing an editor", () => {
     render(<ShopManager />);
     fireEvent.click(screen.getByTitle("Edit"));
