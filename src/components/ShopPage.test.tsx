@@ -131,6 +131,21 @@ describe("ShopPage storefront", () => {
     expect(screen.getByText(/^Arrives /)).toBeTruthy();
     expect(screen.queryByText("Secret Frame")).toBeNull();
   });
+  it("drops the sale-window label once the item is owned, e.g. an earned event reward", () => {
+    act(() =>
+      useStore.setState({
+        shopItems: [
+          item({ id: "earned", name: "Earned Stall", availableFrom: TOMORROW }),
+          item({ id: "seasonal", name: "Seasonal Frame", availableUntil: TOMORROW }),
+        ],
+        shopOwnedIds: ["earned", "seasonal"],
+      }),
+    );
+    render(<ShopPage />);
+    expect(screen.getByText("Earned Stall")).toBeTruthy();
+    expect(screen.queryByText(/^Arrives /)).toBeNull();
+    expect(screen.queryByText(/^On the shelf until /)).toBeNull();
+  });
 
   it("marks premium items with a Signature chip; standard items get none", () => {
     act(() =>

@@ -180,7 +180,9 @@ function ShopItemCard({ item, badgeById }: { item: ShopItem; badgeById: Map<stri
   const now = Date.now();
   // Browse-only while the economy is off (the server refuses buys too).
   const available = economyEnabled && isAvailableNow(item, now);
-  const windowLabel = availabilityLabel(item, now);
+  // The sale window only matters to someone who could still buy it — an owner
+  // (bought or earned, e.g. a seasonal visit reward) never sees "Arrives …".
+  const windowLabel = owned ? null : availabilityLabel(item, now);
   const affordable = coins >= item.price;
 
   const tierChip = SHOP_TIER_META[item.tier].chipClassName;
