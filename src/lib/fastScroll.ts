@@ -1,11 +1,9 @@
-// Fast-scroll rail logic for long mobile boards (issue d2444c65): everything
-// the rail needs to map a finger position on its track to a card in the
-// board's ordered list, and to caption the jump overlay. The rail renders in
-// one of two modes keyed off the active sort — an A–Z letter index under the
-// alphabetical sort, or a draggable scrubber (with a metric caption: "Jul
-// 2026", "~50h", "120 coins") under every other sort. Pure and React-free so
-// the mapping is unit-testable; the component (components/FastScrollRail.tsx)
-// only handles pointer events and rendering.
+// Fast-scroll thumb logic for long mobile boards (issues d2444c65, 3e5eee26):
+// everything the thumb needs to decide when to appear, map a finger position to
+// a card in the board's ordered list, and caption the bubble beside it with the
+// active sort's value ("H", "Jul 2026", "~50h", "120 coins"). Pure and
+// React-free so the mapping is unit-testable; the component
+// (components/FastScrollRail.tsx) only handles pointer events and rendering.
 
 import type { Game } from "../types";
 import type { StackedBoardCard } from "./gameStacks";
@@ -13,14 +11,6 @@ import { sortMetric, type EconomyViewContext, type SortKey } from "./bazaarView"
 import { DEFAULT_ECONOMY, type EconomyConfig } from "./economy";
 import { formatPlaytime } from "./playtime";
 import { cardTitle } from "./boardOrder";
-
-/** Which face the rail wears: a letter index for the A–Z sort, a scrubber
- *  handle for every metric sort. */
-export type RailMode = "alpha" | "scrub";
-
-export function railMode(sort: SortKey): RailMode {
-  return sort === "alpha" ? "alpha" : "scrub";
-}
 
 /** The displayed title of ANY board card, including the stacking view's
  *  synthetic cards (a deck reads as its first instance's title). */
@@ -58,29 +48,6 @@ export function letterOf(title: string): string {
   return ch >= "A" && ch <= "Z" ? ch : "#";
 }
 
-/** One tappable rung of the A–Z index: a letter and the first card index that
- *  starts with it. */
-export interface LetterEntry {
-  letter: string;
-  index: number;
-}
-
-/** The rail's letter rungs, derived from the cards' actual order (only letters
- *  that exist on the board appear, and in board order — so the index always
- *  agrees with the list, whatever the locale collation did). */
-export function letterEntries(cards: StackedBoardCard[]): LetterEntry[] {
-  const out: LetterEntry[] = [];
-  const seen = new Set<string>();
-  cards.forEach((card, index) => {
-    const letter = letterOf(stackedCardTitle(card));
-    if (!seen.has(letter)) {
-      seen.add(letter);
-      out.push({ letter, index });
-    }
-  });
-  return out;
-}
-
 /** Where a pointer sits on the track, as 0..1 of its height. Degenerate
  *  geometry or a coordinate-less event (jsdom) pins to the top rather than
  *  going NaN. */
@@ -89,13 +56,39 @@ export function trackFraction(clientY: number, rect: { top: number; height: numb
   return Math.min(1, Math.max(0, (clientY - rect.top) / rect.height));
 }
 
-/** The letter rung under a track fraction. The rungs render evenly spaced
- *  (flex-1 each), so an even split of the fraction lands on the letter under
- *  the finger. */
-export function entryForFraction(entries: LetterEntry[], fraction: number): LetterEntry | null {
-  if (entries.length === 0) return null;
-  const i = Math.min(entries.length - 1, Math.max(0, Math.floor(fraction * entries.length)));
-  return entries[i];
+/** Where the thumb's centre sits along its travel, as 0..1: the thumb can't
+ *  leave the track, so its centre only travels the track height minus its own. */
+export function thumbFraction(
+  clientY: number,
+  rect: { top: number; height: number },
+  thumbPx: number,
+): number {
+  return trackFraction(clientY - thumbPx / 2, { top: rect.top, height: rect.height - thumbPx });
+}
+
+/** A run of page scrolling with no pause longer than SCROLL_GAP_MS. */
+export interface ScrollRun {
+  lastY: number;
+  lastT: number;
+  /** Distance scrolled so far in this run, in px (either direction). */
+  travelled: number;
+}
+
+/** A pause this long ends the run — the next scroll starts counting afresh. */
+export const SCROLL_GAP_MS = 800;
+/** Screens of continuous scrolling before the thumb offers itself. */
+export const REVEAL_SCREENS = 2;
+
+/** Fold one scroll event into the current run (or start a new one). */
+export function trackScroll(run: ScrollRun | null, y: number, t: number): ScrollRun {
+  if (!run || t - run.lastT > SCROLL_GAP_MS) return { lastY: y, lastT: t, travelled: 0 };
+  return { lastY: y, lastT: t, travelled: run.travelled + Math.abs(y - run.lastY) };
+}
+
+/** Is this run someone hunting through a long list (worth a fast-scroll thumb),
+ *  rather than an ordinary flick? */
+export function isHuntingScroll(run: ScrollRun, viewportPx: number): boolean {
+  return viewportPx > 0 && run.travelled >= REVEAL_SCREENS * viewportPx;
 }
 
 /** The card index a scrubber fraction maps to: 0 at the top of the track, the
@@ -105,8 +98,8 @@ export function indexForFraction(fraction: number, total: number): number {
   return Math.min(total - 1, Math.max(0, Math.round(fraction * (total - 1))));
 }
 
-/** The big center-overlay caption while scrubbing: the card's value under the
- *  active sort, formatted for humans — the letter on A–Z, "Jul 2026" on the
+/** The bubble caption while scrubbing: the card's value under the active sort,
+ *  formatted for humans — the letter on A–Z, "Jul 2026" on the
  *  date sorts, "~50h" on playtime, "120 coins" on the coin-value sorts. Uses
  *  the same best-member rule boardOrder placed the card by, so the caption is
  *  the value that actually positioned it. */

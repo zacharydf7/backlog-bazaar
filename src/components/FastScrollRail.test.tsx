@@ -32,11 +32,11 @@ function board(n: number): StackedBoardCard[] {
   }));
 }
 
-/** jsdom rects are all zeros — give the rail track a real geometry so pointer
- *  fractions mean something. */
-function stubTrackRect(el: HTMLElement) {
-  el.getBoundingClientRect = () =>
-    ({ top: 0, left: 0, bottom: 400, right: 28, width: 28, height: 400, x: 0, y: 0 }) as DOMRect;
+/** jsdom rects are all zeros — give the track a real geometry: 456px tall, so
+ *  the 56px thumb's centre travels 400px (y = 28 … 428). */
+function stubTrackRect() {
+  screen.getByTestId("rail-track").getBoundingClientRect = () =>
+    ({ top: 0, left: 0, bottom: 456, right: 44, width: 44, height: 456, x: 0, y: 0 }) as DOMRect;
 }
 
 // jsdom has no PointerEvent, and fireEvent.pointerDown's fallback drops the
@@ -47,7 +47,22 @@ function pointer(el: Element, type: "pointerdown" | "pointermove" | "pointerup",
   fireEvent(el, new MouseEvent(type, { bubbles: true, clientY }));
 }
 
+/** Scroll the window to `y` (jsdom's scrollY is a plain value we can redefine). */
+function scrollTo(y: number) {
+  Object.defineProperty(window, "scrollY", { value: y, configurable: true, writable: true });
+  fireEvent.scroll(window);
+}
+
+/** A sustained scroll — well past the two-screen reveal threshold. */
+function huntScroll() {
+  const vh = window.innerHeight;
+  for (let i = 1; i <= 6; i++) scrollTo(i * vh * 0.5);
+}
+
+const thumb = () => screen.getByTestId("rail-thumb");
+
 beforeEach(() => {
+  scrollTo(0);
   act(() =>
     useStore.setState({
       economy: { price: DEFAULT_PRICE_FORMULA, bounty: DEFAULT_BOUNTY_FORMULA },
@@ -65,69 +80,67 @@ describe("FastScrollRail", () => {
     expect(container.firstChild).toBeNull();
   });
 
-  it("shows the letter index under the A–Z sort and jumps to a letter's first card", () => {
+  it("never takes taps on the track — only the thumb is touchable, and only once shown", () => {
+    render(<FastScrollRail cards={board(200)} sort="alpha" onJump={() => {}} />);
+    expect(screen.getByTestId("rail-track").className).toContain("pointer-events-none");
+    expect(thumb().className).toContain("pointer-events-none"); // hidden at rest
+    huntScroll();
+    expect(thumb().className).toContain("pointer-events-auto");
+  });
+
+  it("stays hidden through an ordinary flick and appears on a sustained scroll", () => {
+    render(<FastScrollRail cards={board(200)} sort="alpha" onJump={() => {}} />);
+    scrollTo(300);
+    scrollTo(700);
+    expect(thumb().className).toContain("opacity-0");
+    huntScroll();
+    expect(thumb().className).toContain("opacity-100");
+  });
+
+  it("grabbing the thumb names the position without jumping; dragging scrubs to a card", () => {
     const cards = board(260);
     const onJump = vi.fn();
     render(<FastScrollRail cards={cards} sort="alpha" onJump={onJump} />);
-    const rail = screen.getByLabelText("Letter index");
-    // Every board letter is a rung.
-    expect(rail.textContent).toContain("A");
-    expect(rail.textContent).toContain("Z");
+    huntScroll();
+    stubTrackRect();
 
-    stubTrackRect(rail);
-    // Half-way down the 26-rung track ≈ the 14th letter ("N").
-    pointer(rail, "pointerdown", 200);
+    pointer(thumb(), "pointerdown", 28);
+    expect(onJump).not.toHaveBeenCalled();
+    expect(screen.getByText(/^[A-Z]$/)).toBeTruthy(); // the bubble
+
+    pointer(thumb(), "pointermove", 228); // centre of the travel
     expect(onJump).toHaveBeenCalledTimes(1);
     const target = cards[onJump.mock.calls[0][0] as number];
     expect(target.kind === "game" && target.game.title.startsWith("N")).toBe(true);
-    // The center overlay anchors the position with the active letter.
-    expect(screen.getAllByText("N").length).toBeGreaterThan(1);
-  });
+    expect(screen.getByText("N")).toBeTruthy();
 
-  it("dragging across letters jumps once per new letter, and release drops the overlay", () => {
-    const cards = board(260);
-    const onJump = vi.fn();
-    render(<FastScrollRail cards={cards} sort="alpha" onJump={onJump} />);
-    const rail = screen.getByLabelText("Letter index");
-    stubTrackRect(rail);
-
-    pointer(rail, "pointerdown", 0);
-    pointer(rail, "pointermove", 4); // still "A" — no re-jump
+    pointer(thumb(), "pointermove", 229); // same card — no re-jump
     expect(onJump).toHaveBeenCalledTimes(1);
-    pointer(rail, "pointermove", 399); // bottom — "Z"
-    expect(onJump).toHaveBeenCalledTimes(2);
 
-    pointer(rail, "pointerup");
-    // Overlay letters are gone (the rail's own rungs remain).
-    expect(document.querySelectorAll(".fixed.inset-0").length).toBe(0);
+    pointer(thumb(), "pointerup");
+    expect(screen.queryByText("N")).toBeNull(); // bubble gone on release
   });
 
-  it("shows a scrubber handle (no letters) under a metric sort and maps the drag to an index", () => {
+  it("captions the active sort's value under a metric sort", () => {
     const cards = board(200);
     const onJump = vi.fn();
     render(<FastScrollRail cards={cards} sort="playtime-asc" onJump={onJump} />);
-    const rail = screen.getByLabelText("Fast scroll");
-    expect(screen.getByTestId("rail-handle")).toBeTruthy();
-
-    stubTrackRect(rail);
-    pointer(rail, "pointerdown", 200); // middle of the track
-    expect(onJump).toHaveBeenCalledWith(100); // round(0.5 × 199)
-    // The overlay captions the landing card's metric — hours for this sort.
+    huntScroll();
+    stubTrackRect();
+    pointer(thumb(), "pointerdown", 228);
+    pointer(thumb(), "pointermove", 428); // bottom of the travel
+    expect(onJump).toHaveBeenCalledWith(199);
     expect(screen.getByText(/^~\d+h/)).toBeTruthy();
   });
 
-  it("fades in on page scroll and back out after two idle seconds", () => {
+  it("fades back out after a moment of stillness", () => {
     vi.useFakeTimers();
     try {
       render(<FastScrollRail cards={board(200)} sort="alpha" onJump={() => {}} />);
-      const rail = screen.getByLabelText("Letter index");
-      expect(rail.className).toContain("opacity-0"); // at rest: hidden
-
-      fireEvent.scroll(window);
-      expect(rail.className).toContain("opacity-100");
-
-      act(() => vi.advanceTimersByTime(2100));
-      expect(rail.className).toContain("opacity-0");
+      huntScroll();
+      expect(thumb().className).toContain("opacity-100");
+      act(() => vi.advanceTimersByTime(1600));
+      expect(thumb().className).toContain("opacity-0");
     } finally {
       vi.useRealTimers();
     }

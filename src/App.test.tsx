@@ -365,9 +365,9 @@ describe("App", () => {
     expect(screen.queryByText("Filler 057")).not.toBeNull(); // newest → a page-1 card too
   });
 
-  it("a fast-scroll rail jump reveals cards beyond the first page (d2444c65)", async () => {
+  it("a fast-scroll jump reveals cards beyond the first page (d2444c65, 3e5eee26)", async () => {
     // 100 titles spread A…Z under the A–Z sort: page 1 ends well before "Z",
-    // so a rail jump to the bottom must first force-reveal the deep cards.
+    // so a fast-scroll jump to the bottom must first force-reveal the deep cards.
     localStorage.setItem("bb:board-sort", "alpha");
     try {
       const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
@@ -383,16 +383,18 @@ describe("App", () => {
       act(() => useStore.setState({ viewing: null, games: many }));
 
       expect(await screen.findByText("A Game 000")).toBeTruthy();
-      expect(screen.queryByText("Z Game 097")).toBeNull(); // beyond page 1
+      expect(screen.queryByText("Z Game 099")).toBeNull(); // beyond page 1
 
-      const rail = screen.getByLabelText("Letter index");
-      rail.getBoundingClientRect = () =>
-        ({ top: 0, left: 0, bottom: 400, right: 28, width: 28, height: 400, x: 0, y: 0 }) as DOMRect;
+      // 456px track = 400px of travel for the 56px thumb's centre (y 28 … 428).
+      screen.getByTestId("rail-track").getBoundingClientRect = () =>
+        ({ top: 0, left: 0, bottom: 456, right: 44, width: 44, height: 456, x: 0, y: 0 }) as DOMRect;
       // jsdom has no PointerEvent — a MouseEvent of the right name reaches
-      // React's onPointerDown with clientY intact. Bottom of the track = "Z",
-      // whose first card (097) sits far past the 48-card first page.
-      fireEvent(rail, new MouseEvent("pointerdown", { bubbles: true, clientY: 399 }));
-      expect(await screen.findByText("Z Game 097")).toBeTruthy();
+      // React's pointer handlers with clientY intact. Dragging the thumb to the
+      // bottom lands on the last card, far past the 48-card first page.
+      const thumb = screen.getByTestId("rail-thumb");
+      fireEvent(thumb, new MouseEvent("pointerdown", { bubbles: true, clientY: 28 }));
+      fireEvent(thumb, new MouseEvent("pointermove", { bubbles: true, clientY: 428 }));
+      expect(await screen.findByText("Z Game 099")).toBeTruthy();
     } finally {
       localStorage.removeItem("bb:board-sort");
     }

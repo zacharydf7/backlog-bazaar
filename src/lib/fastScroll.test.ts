@@ -2,13 +2,14 @@ import { describe, it, expect } from "vitest";
 import type { Game } from "../types";
 import type { StackedBoardCard } from "./gameStacks";
 import {
-  railMode,
   stackedCardTitle,
   cardGames,
   letterOf,
-  letterEntries,
   trackFraction,
-  entryForFraction,
+  thumbFraction,
+  trackScroll,
+  isHuntingScroll,
+  SCROLL_GAP_MS,
   indexForFraction,
   scrubLabel,
 } from "./fastScroll";
@@ -29,15 +30,6 @@ function game(over: Partial<Game> = {}): Game {
 const gameCard = (over: Partial<Game> = {}): StackedBoardCard => ({
   kind: "game",
   game: game(over),
-});
-
-describe("railMode", () => {
-  it("is the letter index only for the A–Z sort", () => {
-    expect(railMode("alpha")).toBe("alpha");
-    expect(railMode("added-desc")).toBe("scrub");
-    expect(railMode("cost-asc")).toBe("scrub");
-    expect(railMode("playtime-asc")).toBe("scrub");
-  });
 });
 
 describe("stackedCardTitle / cardGames", () => {
@@ -70,31 +62,6 @@ describe("letterOf", () => {
   });
 });
 
-describe("letterEntries", () => {
-  it("keeps the first index per letter, in board order", () => {
-    const cards = [
-      gameCard({ title: "Axiom Verge" }),
-      gameCard({ title: "Astro Bot" }),
-      gameCard({ title: "Bastion" }),
-      gameCard({ title: "Celeste" }),
-      gameCard({ title: "Chrono Trigger" }),
-    ];
-    expect(letterEntries(cards)).toEqual([
-      { letter: "A", index: 0 },
-      { letter: "B", index: 2 },
-      { letter: "C", index: 3 },
-    ]);
-  });
-
-  it("buckets leading digits under #", () => {
-    const cards = [gameCard({ title: "1942" }), gameCard({ title: "Ape Out" })];
-    expect(letterEntries(cards)).toEqual([
-      { letter: "#", index: 0 },
-      { letter: "A", index: 1 },
-    ]);
-  });
-});
-
 describe("trackFraction", () => {
   it("maps a pointer inside the track to 0..1 and clamps outside it", () => {
     const rect = { top: 100, height: 200 };
@@ -110,22 +77,45 @@ describe("trackFraction", () => {
   });
 });
 
-describe("entryForFraction", () => {
-  const entries = [
-    { letter: "A", index: 0 },
-    { letter: "B", index: 4 },
-    { letter: "C", index: 9 },
-  ];
+describe("thumbFraction", () => {
+  it("maps the finger to the thumb centre's travel, inset by half the thumb at each end", () => {
+    const rect = { top: 0, height: 456 }; // 400px of travel for a 56px thumb
+    expect(thumbFraction(28, rect, 56)).toBe(0);
+    expect(thumbFraction(228, rect, 56)).toBe(0.5);
+    expect(thumbFraction(428, rect, 56)).toBe(1);
+    expect(thumbFraction(0, rect, 56)).toBe(0);
+  });
+});
 
-  it("splits the track evenly across the rungs", () => {
-    expect(entryForFraction(entries, 0)?.letter).toBe("A");
-    expect(entryForFraction(entries, 0.34)?.letter).toBe("B");
-    expect(entryForFraction(entries, 0.99)?.letter).toBe("C");
-    expect(entryForFraction(entries, 1)?.letter).toBe("C"); // bottom edge stays in range
+describe("trackScroll / isHuntingScroll", () => {
+  const vh = 800;
+
+  it("ignores an ordinary flick but reveals after two screens of continuous scrolling", () => {
+    let run = trackScroll(null, 0, 0);
+    run = trackScroll(run, 600, 200);
+    expect(isHuntingScroll(run, vh)).toBe(false);
+    run = trackScroll(run, 1700, 500);
+    expect(run.travelled).toBe(1700);
+    expect(isHuntingScroll(run, vh)).toBe(true);
   });
 
-  it("is null with no rungs", () => {
-    expect(entryForFraction([], 0.5)).toBeNull();
+  it("counts scrolling in either direction", () => {
+    let run = trackScroll(null, 2000, 0);
+    run = trackScroll(run, 1000, 100);
+    run = trackScroll(run, 1500, 200);
+    expect(run.travelled).toBe(1500);
+  });
+
+  it("starts a fresh run after a pause", () => {
+    let run = trackScroll(null, 0, 0);
+    run = trackScroll(run, 1500, 300);
+    run = trackScroll(run, 1600, 300 + SCROLL_GAP_MS + 1);
+    expect(run.travelled).toBe(0);
+    expect(isHuntingScroll(run, vh)).toBe(false);
+  });
+
+  it("never reveals without a viewport height", () => {
+    expect(isHuntingScroll({ lastY: 0, lastT: 0, travelled: 99999 }, 0)).toBe(false);
   });
 });
 

@@ -81,6 +81,10 @@ export const RELEASES: Release[] = [
         tag: "improvement",
       },
       {
+        text: "The fast-scroll control on phones is now a single handle you drag, with a bubble beside your finger showing where you are. It only appears when you're scrolling through a long list, and taps near the edge of the screen now reach your game cards instead of jumping the list.",
+        tag: "improvement",
+      },
+      {
         text: "Hot This Week no longer counts a game as finished when someone retires it, cancels a replay, or gives up a 100% run. Only real clears, the ones that show up in Fresh Clears, count as finishes.",
         tag: "fix",
       },

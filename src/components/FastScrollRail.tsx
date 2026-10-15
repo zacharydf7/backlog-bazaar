@@ -1,32 +1,36 @@
 import { useEffect, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
+import { ChevronsUpDown } from "lucide-react";
 import type { StackedBoardCard } from "../lib/gameStacks";
 import type { SortKey } from "../lib/bazaarView";
 import { useStore } from "../store";
 import {
-  railMode,
-  letterEntries,
-  entryForFraction,
   indexForFraction,
-  trackFraction,
+  isHuntingScroll,
   scrubLabel,
+  thumbFraction,
+  trackScroll,
+  type ScrollRun,
 } from "../lib/fastScroll";
 
-/** Boards shorter than this don't get a rail — a couple of flicks already
+/** Boards shorter than this don't get a thumb — a couple of flicks already
  *  covers them (and the first reveal page is 48 cards). */
 export const RAIL_MIN_CARDS = 60;
 
-/** How long after the page stops scrolling the rail fades back out. */
-const HIDE_DELAY_MS = 2000;
+/** How long after the page stops scrolling the thumb fades back out. */
+const HIDE_DELAY_MS = 1500;
 
-/** The mobile fast-scroll rail (issue d2444c65): a touch track pinned to the
- *  right edge of a long board. Under the A–Z sort it's a letter index — tap or
- *  drag to the first title with that letter; under every other sort it's a
- *  scrubber handle that drags through the whole list, captioning the position
- *  with the active sort's value ("Jul 2026", "~50h", "120 coins") in a big
- *  center overlay. It fades in while the page scrolls and back out after two
- *  seconds of stillness, so it costs no screen space at rest. Desktop (md+)
- *  keeps its scrollbar instead. */
+/** The thumb's height in px (h-14) — its centre travels the track minus this. */
+const THUMB_PX = 56;
+
+/** The mobile fast-scroll thumb (issues d2444c65, 3e5eee26): a grab pill on the
+ *  right edge of a long board. It offers itself only once you've scrolled a
+ *  couple of screens without pausing — an ordinary flick never summons it — and
+ *  fades out after a moment of stillness. Only the pill itself is touchable:
+ *  the rest of the edge passes taps straight through to the cards, and a tap on
+ *  the pill never jumps. Drag it to scrub the whole list; a bubble beside your
+ *  finger names where you are under the active sort ("H", "Jul 2026", "~50h",
+ *  "120 coins"). Desktop (md+) keeps its scrollbar instead. */
 export function FastScrollRail({
   cards,
   sort,
@@ -43,31 +47,38 @@ export function FastScrollRail({
   const games = useStore((s) => s.games);
 
   const [visible, setVisible] = useState(false);
-  const [label, setLabel] = useState<string | null>(null); // non-null while a finger is on the rail
-  // Scrubber progress 0..1 — follows the page scroll at rest, the finger while
-  // dragging.
+  const [label, setLabel] = useState<string | null>(null); // non-null while dragging
+  // Thumb position 0..1 — follows the page scroll at rest, the finger while dragging.
   const [progress, setProgress] = useState(0);
   const trackRef = useRef<HTMLDivElement>(null);
   const hideTimer = useRef<number | null>(null);
   const dragging = useRef(false);
   const lastJump = useRef<number | null>(null);
+  const run = useRef<ScrollRun | null>(null);
+  const shownRef = useRef(false); // mirrors `visible` for the scroll listener
 
-  // Fade in on any page scroll; fade back out after the idle delay (never
-  // mid-touch). The scrubber handle also tracks the scroll position here.
+  const armHide = () => {
+    if (hideTimer.current != null) window.clearTimeout(hideTimer.current);
+    hideTimer.current = window.setTimeout(() => {
+      if (dragging.current) return;
+      shownRef.current = false;
+      setVisible(false);
+    }, HIDE_DELAY_MS);
+  };
+
+  // Reveal on a sustained scroll; while shown, keep it alive and in step with
+  // the page. A jump made by dragging scrolls the page too — that just keeps it up.
   useEffect(() => {
-    const armHide = () => {
-      if (hideTimer.current != null) window.clearTimeout(hideTimer.current);
-      hideTimer.current = window.setTimeout(() => {
-        if (!dragging.current) setVisible(false);
-      }, HIDE_DELAY_MS);
-    };
     const onScroll = () => {
-      setVisible(true);
-      armHide();
-      if (!dragging.current) {
-        const doc = document.documentElement;
-        const range = doc.scrollHeight - window.innerHeight;
-        setProgress(range > 0 ? Math.min(1, Math.max(0, window.scrollY / range)) : 0);
+      run.current = trackScroll(run.current, window.scrollY, Date.now());
+      if (dragging.current) return;
+      const doc = document.documentElement;
+      const range = doc.scrollHeight - window.innerHeight;
+      setProgress(range > 0 ? Math.min(1, Math.max(0, window.scrollY / range)) : 0);
+      if (shownRef.current || isHuntingScroll(run.current, window.innerHeight)) {
+        shownRef.current = true;
+        setVisible(true);
+        armHide();
       }
     };
     window.addEventListener("scroll", onScroll, { passive: true });
@@ -79,26 +90,16 @@ export function FastScrollRail({
 
   if (cards.length < RAIL_MIN_CARDS) return null;
 
-  const mode = railMode(sort);
-  const entries = mode === "alpha" ? letterEntries(cards) : [];
+  const labelAt = (index: number) =>
+    scrubLabel(cards[index], sort, economy, { allGames: games, replayBonusPct });
 
-  function jumpAt(clientY: number) {
+  function scrubTo(clientY: number) {
     const rect = trackRef.current?.getBoundingClientRect();
     if (!rect) return;
-    const fraction = trackFraction(clientY, rect);
-    let index: number;
-    let caption: string;
-    if (mode === "alpha") {
-      const entry = entryForFraction(entries, fraction);
-      if (!entry) return;
-      index = entry.index;
-      caption = entry.letter;
-    } else {
-      index = indexForFraction(fraction, cards.length);
-      caption = scrubLabel(cards[index], sort, economy, { allGames: games, replayBonusPct });
-      setProgress(fraction);
-    }
-    setLabel(caption);
+    const fraction = thumbFraction(clientY, rect, THUMB_PX);
+    const index = indexForFraction(fraction, cards.length);
+    setProgress(fraction);
+    setLabel(labelAt(index));
     if (lastJump.current !== index) {
       lastJump.current = index;
       onJump(index);
@@ -107,75 +108,75 @@ export function FastScrollRail({
 
   function onPointerDown(e: ReactPointerEvent<HTMLDivElement>) {
     dragging.current = true;
-    setVisible(true);
+    if (hideTimer.current != null) window.clearTimeout(hideTimer.current);
     try {
       e.currentTarget.setPointerCapture?.(e.pointerId);
     } catch {
       /* pointer capture unavailable (jsdom / odd browsers) — moves still track */
     }
-    jumpAt(e.clientY);
+    // Grabbing the thumb only names where you are; nothing moves until you drag.
+    setLabel(labelAt(indexForFraction(progress, cards.length)));
   }
 
   function onPointerMove(e: ReactPointerEvent<HTMLDivElement>) {
-    if (dragging.current) jumpAt(e.clientY);
+    if (dragging.current) scrubTo(e.clientY);
   }
 
   function endDrag() {
     dragging.current = false;
     lastJump.current = null;
     setLabel(null);
-    if (hideTimer.current != null) window.clearTimeout(hideTimer.current);
-    hideTimer.current = window.setTimeout(() => setVisible(false), HIDE_DELAY_MS);
+    armHide();
   }
 
-  const shown = visible || label != null;
+  const grabbed = label != null;
+  const shown = visible || grabbed;
 
   return (
-    <>
+    // The track is layout only — it never takes a tap, so cards under the
+    // right edge stay fully clickable. Spans from just under the app chrome to
+    // just above the Jump-to-top button (bottom-36 + its 44px).
+    <div
+      ref={trackRef}
+      data-testid="rail-track"
+      className="pointer-events-none fixed right-0 z-40 w-11 md:hidden"
+      style={{ top: "calc(var(--chrome-h) + 16px)", bottom: "12.5rem" }}
+    >
       <div
-        ref={trackRef}
-        aria-label={mode === "alpha" ? "Letter index" : "Fast scroll"}
+        role="slider"
+        data-testid="rail-thumb"
+        aria-label="Fast scroll"
+        aria-orientation="vertical"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={Math.round(progress * 100)}
+        aria-hidden={!shown}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={endDrag}
         onPointerCancel={endDrag}
         className={
-          "fixed right-0 z-40 flex w-7 flex-col rounded-l-xl border border-r-0 border-line bg-panel/90 py-2 backdrop-blur transition-opacity duration-300 md:hidden " +
-          (shown ? "opacity-100" : "pointer-events-none opacity-0")
+          "absolute right-0 flex h-14 w-11 items-center justify-end transition-opacity duration-300 " +
+          (shown ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0")
         }
-        // Spans from just under the app chrome to just above the bottom tab bar
-        // + FAB. touch-action: none keeps a drag on the rail from also
-        // scrolling the page natively.
-        style={{ top: "calc(var(--chrome-h) + 16px)", bottom: "9rem", touchAction: "none" }}
+        // touch-action: none keeps a drag on the thumb from also scrolling the
+        // page natively.
+        style={{ top: `calc(${progress} * (100% - ${THUMB_PX}px))`, touchAction: "none" }}
       >
-        {mode === "alpha" ? (
-          entries.map((e) => (
-            <span
-              key={e.letter}
-              className="flex min-h-0 flex-1 select-none items-center justify-center text-[10px] font-semibold leading-none text-muted"
-            >
-              {e.letter}
-            </span>
-          ))
-        ) : (
-          <div className="relative mx-auto h-full w-full">
-            <div className="absolute inset-y-0 left-1/2 w-0.5 -translate-x-1/2 rounded bg-line" />
-            <div
-              data-testid="rail-handle"
-              className="absolute left-1/2 h-10 w-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-accent"
-              style={{ top: `${progress * 100}%` }}
-            />
-          </div>
-        )}
-      </div>
-      {/* The anchor overlay: where the finger currently is, writ large. */}
-      {label != null && (
-        <div className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center md:hidden">
-          <div className="rounded-2xl border border-line bg-surface/95 px-6 py-4 text-center font-display text-3xl text-ink shadow-2xl backdrop-blur">
+        {grabbed && (
+          <div className="pointer-events-none absolute right-full top-1/2 mr-2 -translate-y-1/2 whitespace-nowrap rounded-2xl border border-line bg-surface/95 px-4 py-2 font-display text-2xl text-ink shadow-2xl backdrop-blur">
             {label}
           </div>
-        </div>
-      )}
-    </>
+        )}
+        <span
+          className={
+            "flex h-12 w-7 items-center justify-center rounded-l-full border border-r-0 shadow-lg backdrop-blur transition-colors " +
+            (grabbed ? "border-brand bg-brand text-brand-fg" : "border-line bg-panel/95 text-accent")
+          }
+        >
+          <ChevronsUpDown size={16} />
+        </span>
+      </div>
+    </div>
   );
 }
