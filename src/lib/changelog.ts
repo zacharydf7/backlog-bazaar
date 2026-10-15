@@ -85,6 +85,10 @@ export const RELEASES: Release[] = [
         tag: "improvement",
       },
       {
+        text: "A linked game family's Journey tab now shows one edition at a time, starting with the primary. Pick any other edition from the dropdown, and its hours and milestones are no longer mixed together.",
+        tag: "improvement",
+      },
+      {
         text: "A full Focus lane no longer blocks Buy & Start. You can still start a game straight into your Completionist lane, and a game you're playing in a Co-op Pact always goes to your Co-op lane.",
         tag: "fix",
       },

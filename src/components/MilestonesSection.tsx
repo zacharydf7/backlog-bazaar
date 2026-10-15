@@ -17,20 +17,8 @@ import {
  *  freely-editable, backdatable date. Auto-captured rows appear here too and
  *  are just as editable — retroactive corrections are the whole point. Acts
  *  immediately against the store (no Save step), keeps its list component-
- *  local, and only renders on the cloud (the table is the source of truth).
- *
- *  With `familyMembers` (a linked Game Family, `game` being the page's own
- *  edition), the timeline INTERLEAVES every member's milestones into one
- *  chronological list — rows from other editions carry a small edition chip.
- *  Zero migration: each row stays on the record that earned it (edits and
- *  removals target that record), and NEW milestones are added to `game`. */
-export function MilestonesSection({
-  game,
-  familyMembers,
-}: {
-  game: Game;
-  familyMembers?: Game[];
-}) {
+ *  local, and only renders on the cloud (the table is the source of truth). */
+export function MilestonesSection({ game }: { game: Game }) {
   const { fetchGameMilestones, addGameMilestone, updateGameMilestone, removeGameMilestone } =
     useStore();
   const [milestones, setMilestones] = useState<GameMilestone[] | null>(null);
@@ -38,29 +26,15 @@ export function MilestonesSection({
   const [draftKind, setDraftKind] = useState<MilestoneKind>("added");
   const [draftDate, setDraftDate] = useState(todayISO());
 
-  // The records whose timelines merge here: the whole family, or just this game.
-  const members =
-    familyMembers && familyMembers.length > 1
-      ? familyMembers
-      : [game];
-  const memberIds = members.map((m) => m.id).join("|");
-  const titleOf = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const m of members) map.set(m.id, m.title);
-    return map;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [memberIds]);
-
   useEffect(() => {
     let active = true;
-    void Promise.all(members.map((m) => fetchGameMilestones(m.id))).then((lists) => {
-      if (active) setMilestones(sortMilestones(lists.flat()));
+    void fetchGameMilestones(game.id).then((list) => {
+      if (active) setMilestones(sortMilestones(list));
     });
     return () => {
       active = false;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [memberIds, fetchGameMilestones]);
+  }, [game.id, fetchGameMilestones]);
 
   const today = todayISO();
   const draftValid = isValidMilestoneDate(draftDate, today);
@@ -139,16 +113,6 @@ export function MilestonesSection({
                   >
                     <span className={"h-2 w-2 shrink-0 rounded-full " + (meta?.dotClass ?? "bg-subtle")} />
                     <span className="min-w-[5.5rem] text-sm text-ink">{milestoneLabel(m.kind)}</span>
-                    {/* Interleaved family timeline: a row earned by another
-                        edition wears its chip — the record it stays locked to. */}
-                    {m.gameId !== game.id && titleOf.has(m.gameId) && (
-                      <span
-                        title={`Recorded on ${titleOf.get(m.gameId)} — it stays on that edition's record`}
-                        className="max-w-[10rem] truncate rounded-full border border-accent/30 bg-accent/5 px-1.5 py-0.5 text-[10px] font-medium text-accent"
-                      >
-                        {titleOf.get(m.gameId)}
-                      </span>
-                    )}
                     <input
                       type="date"
                       value={m.occurredOn}

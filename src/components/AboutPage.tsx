@@ -462,8 +462,10 @@ export function AboutPage() {
             board, box art and buttons, with a small badge on the cover and every linked
             platform&apos;s tag side by side (the primary&apos;s first). The other editions wait
             hidden — off your boards and Master Ledger — while the card shows the{" "}
-            <strong className="text-ink">combined playtime</strong> of the whole family and its
-            Journey merges every edition&apos;s milestones into one timeline. New hours, notes and
+            <strong className="text-ink">combined playtime</strong> of the whole family. On the
+            game page, Journey shows one edition at a time — the primary by default, with a
+            picker to switch to any other — so each edition&apos;s hours and milestones read as
+            its own. New hours, notes and
             milestones you log on the card save to the primary; everything each edition earned
             before stays <strong className="text-ink">permanently on its own record</strong> —
             nothing ever migrates. Tap the cover badge, &ldquo;View linked editions&rdquo; in

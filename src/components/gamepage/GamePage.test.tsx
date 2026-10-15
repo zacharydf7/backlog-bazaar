@@ -528,19 +528,16 @@ describe("Family member break-out on Journey/Review (9f420872)", () => {
     expect(screen.queryByDisplayValue("Primary take.")).toBeNull();
   });
 
-  it("Journey offers the whole-family view by default plus per-member scoping", () => {
+  it("Journey defaults to the primary member, with no combined family view (eb767d6f)", () => {
     act(() => useStore.setState({ games: family() }));
     render(<GamePage gameId="a" onBack={vi.fn()} />);
 
     fireEvent.click(screen.getByRole("tab", { name: /Journey/ }));
     const picker = screen.getByLabelText("Select family member") as HTMLSelectElement;
-    // Defaults to the interleaved whole-family story…
-    expect(picker.value).toBe("");
+    expect(picker.value).toBe("a");
+    // Only the members — the primary listed (crowned) first, then the siblings.
     const options = within(picker).getAllByRole("option").map((o) => o.textContent ?? "");
-    expect(options[0]).toMatch(/Whole family/);
-    // …with the primary listed (crowned) first, then the siblings.
-    expect(options[1]).toBe("Nocturne — primary");
-    expect(options[2]).toBe("Nocturne HD Remaster");
+    expect(options).toEqual(["Nocturne — primary", "Nocturne HD Remaster"]);
     // Scoping to a member re-targets the tab without a crash.
     fireEvent.change(picker, { target: { value: "b" } });
     expect(picker.value).toBe("b");
