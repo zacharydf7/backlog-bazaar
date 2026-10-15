@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { createPortal } from "react-dom";
-import { X, Gamepad2, Ticket, Lock, ArrowRight, Target, type LucideIcon } from "lucide-react";
+import { X, Gamepad2, Ticket, Lock, ArrowRight, Target, Handshake, type LucideIcon } from "lucide-react";
 import type { Game } from "../types";
 import { useStore } from "../store";
 import { computeFormula } from "../lib/economy";
@@ -9,6 +9,7 @@ import { recDiscountedPrice, recommendationForGame } from "../lib/recommendation
 import { isReplayFinish, isFamilyDiscounted } from "../lib/families";
 import { canStartGame, canEnterLane, type SlotChoice } from "../lib/slots";
 import { canRedeemVoucher } from "../lib/vouchers";
+import { activePactForCard } from "../lib/coopPacts";
 import { useScrollLock } from "../lib/useScrollLock";
 import { useHistoryDismiss } from "../lib/useHistoryDismiss";
 import { CoinIcon } from "./CoinIcon";
@@ -35,7 +36,7 @@ function choiceKey(c: SlotChoice): string {
  * preselected). Strictly Bazaar → Now Playing — never reachable from the Wishlist.
  */
 export function ActivationModal({ game, onClose }: { game: Game; onClose: () => void }) {
-  const { coins, vouchers, economy, games, compilations, generalSlots, completionistSlots, replayBonusPct, buyGame, redeemVoucher, economyEnabled, recommendations, recDiscountPct, userId } =
+  const { coins, vouchers, economy, games, compilations, generalSlots, completionistSlots, replayBonusPct, buyGame, redeemVoucher, economyEnabled, recommendations, recDiscountPct, userId, coOpPacts } =
     useStore();
   const [working, setWorking] = useState<"coins" | "voucher" | null>(null);
 
@@ -63,21 +64,28 @@ export function ActivationModal({ game, onClose }: { game: Game; onClose: () => 
   const hasVoucher = economyEnabled && canRedeemVoucher(vouchers, game.status);
 
   // The destinations this game can land in: the Focus lane (the default — finish it),
-  // and the Completionist lane (commit to a 100% run) when it has room.
+  // and the Completionist lane (commit to a 100% run) when it has room. A card bound
+  // to a live Co-op Pact lands in the uncapped Co-op lane instead of Focus, so a full
+  // Focus lane never blocks it (store.buyGame + apply_purchase route it there).
   const hasOpenFocus = canStartGame(game, games, generalSlots);
+  const pactBound = activePactForCard(coOpPacts, game.id) != null;
   const completionistHasRoom =
     !game.ongoing && canEnterLane(game, games, "completionist", completionistSlots);
   const options: DestOption[] = [];
-  if (hasOpenFocus)
+  if (pactBound)
+    options.push({ choice: { kind: "general" }, icon: Handshake, label: "Co-op", sub: "play together" });
+  else if (hasOpenFocus)
     options.push({ choice: { kind: "general" }, icon: Gamepad2, label: "Focus", sub: "finish it" });
   if (completionistHasRoom)
     options.push({ choice: { kind: "completionist" }, icon: Target, label: "Completionist", sub: "go for 100%" });
 
   const [choice, setChoice] = useState<SlotChoice>(() =>
-    hasOpenFocus ? { kind: "general" } : { kind: "completionist" },
+    pactBound || hasOpenFocus ? { kind: "general" } : { kind: "completionist" },
   );
   const hasOpenSlot = options.length > 0;
-  const showPicker = options.length > 1;
+  // Show the picker whenever there's a choice — or when the only destination
+  // isn't plain Focus, so a game never lands somewhere unexpected unannounced.
+  const showPicker = options.length > 1 || (options.length === 1 && (pactBound || !hasOpenFocus));
   // Vouchers activate into Focus only — disable when the Completionist run is chosen.
   const voucherUsable = hasVoucher && choice.kind !== "completionist" && hasOpenFocus;
 
@@ -137,12 +145,12 @@ export function ActivationModal({ game, onClose }: { game: Game; onClose: () => 
             </p>
           )}
 
-          {/* Destination picker: when more than one lane has room, let the player
-              choose where it lands (Focus to finish, or Completionist for a 100% run). */}
+          {/* Destination picker: where it lands (Focus to finish, Completionist for a
+              100% run, or Co-op for a pact card) — see showPicker. */}
           {showPicker && (
             <div className="rounded-xl border border-line p-2">
               <div className="mb-1.5 px-1 text-[10px] uppercase tracking-wide text-subtle">
-                Start in
+                {!hasOpenFocus && !pactBound ? "Focus is full — start in" : "Start in"}
               </div>
               <div className="flex flex-col gap-1">
                 {options.map((o) => {

@@ -6662,7 +6662,10 @@ drop function if exists public.apply_purchase(uuid, integer, uuid, boolean, bool
 -- 'purchase'. Price stays client-computed, like every activation.
 -- p_coop: activate straight into the Co-op Pacts lane (uncapped, no Focus slot
 -- consumed — like Rotation). Only respond_co_op_pact passes it; a pact accept
--- must never be blocked by a full Focus lane.
+-- must never be blocked by a full Focus lane. A plain buy of a card already
+-- bound to a live pact (the inviter's own copy) is routed there too — derived
+-- here from co_op_pacts, never trusted from the client (issue d06bb5fd: a full
+-- Focus lane used to refuse it before games_sync_co_op could move it over).
 -- Dropped first: p_coop was added (a defaulted extra arg would otherwise
 -- leave an ambiguous overload). Old deployed clients calling with six args
 -- still resolve against the new signature.
@@ -6685,6 +6688,7 @@ declare
   v_unit      uuid;
   v_cap       integer;
   v_used      integer;
+  v_coop      boolean;
   v_econ      boolean := public.economy_enabled(auth.uid());
   -- Tastemaker settlement (issue c48e8f6d): the activated game's identity, the
   -- matched recommendation, and the sender's bounty. Scalar variables (not a
@@ -6720,7 +6724,16 @@ begin
   -- Story locking: a game with an unfinished prerequisite can't be started.
   perform public.assert_prerequisite_cleared(p_game);
 
-  if coalesce(p_coop, false) then
+  -- A deliberate Completionist buy still wins over a pact (games_sync_co_op
+  -- respects it the same way).
+  v_coop := coalesce(p_coop, false)
+    or (not coalesce(p_completionist, false) and exists (
+      select 1 from public.co_op_pacts cp
+       where cp.status in ('pending', 'active')
+         and p_game in (cp.inviter_game, cp.invitee_game)
+    ));
+
+  if v_coop then
     -- The Co-op Pacts lane: uncapped, no slot to pick or check.
     v_slot := null;
   elsif coalesce(p_completionist, false) then
@@ -6759,8 +6772,8 @@ begin
          -- price already reflects the current (possibly personal) length, so any
          -- debt from a prior playthrough must not carry over.
          length_premium_owed = 0,
-         completionist = coalesce(p_completionist, false) and not coalesce(p_coop, false),
-         co_op = coalesce(p_coop, false)
+         completionist = coalesce(p_completionist, false) and not v_coop,
+         co_op = v_coop
    where id = p_game and user_id = auth.uid() and status = 'backlog';
 
   if v_econ then

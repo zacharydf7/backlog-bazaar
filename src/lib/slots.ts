@@ -419,6 +419,24 @@ export function canStartGame(
   return planSlotForGame(game, playing, generalSlots, grants).ok;
 }
 
+/** Is there anywhere this Bazaar game can start right now (issue d06bb5fd)? A
+ *  full Focus lane isn't the end of the line: a regular game can be bought
+ *  straight into the Completionist lane, and a card bound to a live Co-op Pact
+ *  lands in the uncapped Co-op lane. Mirrors the destinations ActivationModal
+ *  offers and apply_purchase accepts. */
+export function canStartSomewhere(
+  game: Game,
+  games: Game[],
+  caps: { generalSlots: number; completionistSlots: number },
+  pactBound: boolean,
+): boolean {
+  return (
+    pactBound ||
+    canStartGame(game, games, caps.generalSlots) ||
+    (!game.ongoing && canEnterLane(game, games, "completionist", caps.completionistSlots))
+  );
+}
+
 /** How many slots are free right now, across general + targeted (never
  *  negative, even if an admin lowered capacity below the current load). A family
  *  counts as a single occupant however many of its editions are playing. */

@@ -373,3 +373,57 @@ describe("GameActions feature-bonus preview", () => {
     expect(screen.queryByText(/Bonus on finish/)).toBeNull();
   });
 });
+
+describe("GameActions Buy & Start with a full Focus lane (issue d06bb5fd)", () => {
+  const focusFull = () => [
+    game({ id: "b", hours: 10 }),
+    game({ id: "f", status: "playing" }),
+  ];
+
+  beforeEach(() => {
+    act(() =>
+      useStore.setState({
+        viewing: null,
+        economyEnabled: true,
+        coins: 1000,
+        vouchers: 0,
+        generalSlots: 1,
+        completionistSlots: 2,
+        coOpPacts: [],
+        games: focusFull(),
+      }),
+    );
+  });
+
+  it("stays available when the Completionist lane has room", () => {
+    render(<GameActions game={focusFull()[0]} />);
+    const buy = screen.getByRole("button", { name: /Buy & Start/i }) as HTMLButtonElement;
+    expect(buy.disabled).toBe(false);
+    expect(screen.queryByText(/No open slot/i)).toBeNull();
+  });
+
+  it("reads No open slot only when Completionist is full too", () => {
+    act(() => useStore.setState({ completionistSlots: 0 }));
+    render(<GameActions game={focusFull()[0]} />);
+    expect(screen.getByText(/No open slot/i)).toBeTruthy();
+  });
+
+  it("lets a pact-bound card start into the uncapped Co-op lane", () => {
+    act(() =>
+      useStore.setState({
+        completionistSlots: 0,
+        coOpPacts: [{ id: "pact", status: "active", myGameId: "b" } as never],
+      }),
+    );
+    render(<GameActions game={focusFull()[0]} />);
+    const buy = screen.getByRole("button", { name: /Buy & Start/i }) as HTMLButtonElement;
+    expect(buy.disabled).toBe(false);
+  });
+
+  it("doesn't offer a voucher start when only Focus would take it", () => {
+    act(() => useStore.setState({ coins: 0, vouchers: 2 }));
+    render(<GameActions game={focusFull()[0]} />);
+    expect(screen.queryByText(/Use voucher to start/i)).toBeNull();
+    expect(screen.getByText(/Need/)).toBeTruthy();
+  });
+});

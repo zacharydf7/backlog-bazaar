@@ -36,6 +36,7 @@ import { FINISH_TAGS, finishHint, finishTagLabel, type FinishTag } from "../lib/
 import { canRedeemVoucher } from "../lib/vouchers";
 import {
   canStartGame,
+  canStartSomewhere,
   canEnterLane,
   laneOf,
   playingGames,
@@ -445,15 +446,26 @@ export function GameActions({
   const shelveRefund = showEconomy ? computeShelveRefund(game.pricePaid ?? price) : 0;
   const canAfford = !economyEnabled || coins >= price;
   const hasVoucher = economyEnabled && canRedeemVoucher(vouchers, game.status);
-  const hasOpenSlot = canStartGame(game, games, generalSlots);
+  // Where a Bazaar game can land: Focus, or — with Focus full — straight into
+  // the Completionist lane, or the uncapped Co-op lane for a pact-bound card
+  // (issue d06bb5fd). The activation chooser offers whichever have room.
+  const hasOpenFocus = canStartGame(game, games, generalSlots);
+  const hasOpenSlot = canStartSomewhere(
+    game,
+    games,
+    { generalSlots, completionistSlots },
+    activePactForCard(coOpPacts, game.id) != null,
+  );
+  // Vouchers activate into Focus only.
+  const canUseVoucher = hasVoucher && hasOpenFocus;
   // Story lock: an unfinished prerequisite blocks the cold start (Bazaar →
   // Now Playing). Derived live — finishing the prerequisite unlocks instantly.
   // The server re-checks in every cold-start RPC, so this is UX, not security.
   const storyLockPre = game.status === "backlog" ? prerequisiteOf(games, game) : null;
   const storyLocked = storyLockPre != null && storyLockPre.status !== "finished";
   // You can open the activation chooser if there's a slot AND a way to pay —
-  // coins or a voucher.
-  const canActivate = hasOpenSlot && (canAfford || hasVoucher);
+  // coins, or a voucher when Focus has room.
+  const canActivate = hasOpenSlot && (canAfford || canUseVoucher);
   // A live-service / ongoing game is exempt from the buy/finish economy — it has
   // its own action set (the Rotation lane), rendered as a dedicated branch below.
   const isOngoing = game.ongoing === true;
@@ -952,11 +964,11 @@ export function GameActions({
               <>
                 <Lock size={14} /> No open slot
               </>
-            ) : !canAfford && !hasVoucher ? (
+            ) : !canAfford && !canUseVoucher ? (
               <>
                 Need <CoinIcon size={14} /> {price - coins} more
               </>
-            ) : hasVoucher && !canAfford ? (
+            ) : canUseVoucher && !canAfford ? (
               <>
                 <Ticket size={14} /> Use voucher to start
               </>
@@ -972,7 +984,7 @@ export function GameActions({
           </button>
           {/* Short on coins with no voucher? A friend can front the difference
               (Friend Loans, issue 7973d721) — repaid from the bounty. */}
-          {game.status === "backlog" && !storyLocked && showEconomy && !canAfford && !hasVoucher && (
+          {game.status === "backlog" && !storyLocked && showEconomy && !canAfford && !canUseVoucher && (
             <AskLoanButton game={game} need={price - coins} />
           )}
           {(storyLocked || !hasOpenSlot || economyEnabled) && (

@@ -36,6 +36,7 @@ beforeEach(() => {
       replaySlots: 2,
       completionistSlots: 0,
       myTargetedSlots: [],
+      coOpPacts: [],
       economy: { price: DEFAULT_PRICE_FORMULA, bounty: DEFAULT_BOUNTY_FORMULA },
       buyGame,
       redeemVoucher,
@@ -93,6 +94,37 @@ describe("ActivationModal", () => {
     fireEvent.click(screen.getByRole("button", { name: /Completionist/i }));
     fireEvent.click(screen.getByRole("button", { name: /Pay with coins/i }));
     expect(buyGame).toHaveBeenCalledWith("g1", { kind: "completionist" });
+  });
+
+  it("with Focus full, offers the Completionist lane and says why (issue d06bb5fd)", () => {
+    act(() =>
+      useStore.setState({
+        generalSlots: 1,
+        completionistSlots: 2,
+        games: [game(), game({ id: "p1", status: "playing", slotId: null })],
+      }),
+    );
+    render(<ActivationModal game={game()} onClose={() => {}} />);
+    expect(screen.getByText(/Focus is full — start in/i)).toBeTruthy();
+    expect(screen.queryByText(/No open Now Playing slot/i)).toBeNull();
+    // Vouchers start into Focus only, so that path stays off.
+    expect((screen.getByRole("button", { name: /Use a voucher/i }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: /Pay with coins/i }));
+    expect(buyGame).toHaveBeenCalledWith("g1", { kind: "completionist" });
+  });
+
+  it("offers the Co-op lane for a pact-bound card, even with Focus full", () => {
+    act(() =>
+      useStore.setState({
+        generalSlots: 1,
+        games: [game(), game({ id: "p1", status: "playing", slotId: null })],
+        coOpPacts: [{ id: "pact", status: "active", myGameId: "g1" } as never],
+      }),
+    );
+    render(<ActivationModal game={game()} onClose={() => {}} />);
+    expect(screen.getByRole("button", { name: /Co-op/i })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /Pay with coins/i }));
+    expect(buyGame).toHaveBeenCalledWith("g1", { kind: "general" });
   });
 
   it("disables both paths and warns when there's no open slot", () => {

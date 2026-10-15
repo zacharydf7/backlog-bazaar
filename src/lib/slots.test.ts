@@ -9,6 +9,7 @@ import {
   totalCapacity,
   openSlots,
   canStartGame,
+  canStartSomewhere,
   gameMatchesDefinition,
   planSlotForGame,
   movableTargetedSlots,
@@ -502,5 +503,35 @@ describe("clampLaneCap — self-service lane sizes (d7445b38)", () => {
     expect(clampLaneCap(500)).toBe(99);
     expect(clampLaneCap(Number.NaN)).toBe(1);
     expect(clampLaneCap(Number.POSITIVE_INFINITY)).toBe(1);
+  });
+});
+
+describe("canStartSomewhere (issue d06bb5fd)", () => {
+  const caps = { generalSlots: 1, completionistSlots: 1 };
+  const bazaar = game("backlog", { id: "b" });
+  const focusGame = game("playing", { id: "f" });
+  const completing = game("playing", { id: "c", completionist: true });
+
+  it("is true while Focus has room", () => {
+    expect(canStartSomewhere(bazaar, [bazaar], caps, false)).toBe(true);
+  });
+
+  it("stays true with Focus full when the Completionist lane has room", () => {
+    const games = [bazaar, focusGame];
+    expect(canStartGame(bazaar, games, caps.generalSlots)).toBe(false);
+    expect(canStartSomewhere(bazaar, games, caps, false)).toBe(true);
+  });
+
+  it("is false only when Focus and Completionist are both full", () => {
+    expect(canStartSomewhere(bazaar, [bazaar, focusGame, completing], caps, false)).toBe(false);
+  });
+
+  it("never offers Completionist to a live-service game", () => {
+    const ongoing = game("backlog", { id: "o", ongoing: true });
+    expect(canStartSomewhere(ongoing, [ongoing, focusGame], caps, false)).toBe(false);
+  });
+
+  it("always lets a pact-bound card start (the Co-op lane is uncapped)", () => {
+    expect(canStartSomewhere(bazaar, [bazaar, focusGame, completing], caps, true)).toBe(true);
   });
 });
