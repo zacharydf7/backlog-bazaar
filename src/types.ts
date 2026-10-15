@@ -117,6 +117,7 @@ export interface Game extends GameMeta {
   preorderedAt?: number | null; // wishlist-only: when the pre-order was placed (null/undefined = not pre-ordered); cleared server-side on any move off the wishlist
   preorderExpectedOn?: string | null; // expected release date, local "YYYY-MM-DD" (null = pre-ordered with no date yet); see src/lib/preorders.ts
   startedEconomyOff?: boolean; // this run was activated for free while the economy was off — it never pays a bounty, even after toggling back on. Server-derived (games_stamp_econ_start); client writes are shed
+  startedStoryLocked?: boolean; // this run was started story-locked behind a finished prerequisite — its first clear pays the Story Order bonus. Server-derived at the cold start (games_stamp_story_start); client writes are shed
 }
 
 /** A short-lived "Undo" descriptor for a concluding board action (Finish/Complete,

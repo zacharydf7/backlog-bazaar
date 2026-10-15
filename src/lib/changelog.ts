@@ -58,8 +58,28 @@ export const RELEASES: Release[] = [
   {
     id: "2026-10-15-hot-this-week-real-clears",
     date: "2026-10-15",
-    title: "Hot This Week counts real finishes",
+    title: "Bonus coins for going the extra mile",
     items: [
+      {
+        text: "Story-lock a sequel behind its prequel and play them in order: each game you finish that way earns a Story Order bonus.",
+        tag: "feature",
+      },
+      {
+        text: "Record what you paid for a game, or the subscription or friend you play it through, and its first finish adds a Collector's Record bonus.",
+        tag: "feature",
+      },
+      {
+        text: "Write a real review (100+ characters) of a game you cleared and earn a one-time Reviewer bonus for it.",
+        tag: "feature",
+      },
+      {
+        text: "Your first play session of the day, 20 minutes or more, earns a small Daily Session bonus, whether you use the stopwatch or type the time in.",
+        tag: "feature",
+      },
+      {
+        text: "Cards show which bonuses a game is lined up for before you finish it.",
+        tag: "improvement",
+      },
       {
         text: "Hot This Week no longer counts a game as finished when someone retires it, cancels a replay, or gives up a 100% run. Only real clears, the ones that show up in Fresh Clears, count as finishes.",
         tag: "fix",

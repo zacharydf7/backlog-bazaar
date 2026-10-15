@@ -118,6 +118,7 @@ export interface GameRow {
   preordered_at: string | null;
   preorder_expected_on: string | null;
   started_economy_off?: boolean | null;
+  started_story_locked?: boolean | null;
   added_at: string;
   started_at: string | null;
   finished_at: string | null;
@@ -204,6 +205,7 @@ export function rowToGame(r: GameRow): Game {
     preorderedAt: r.preordered_at ? Date.parse(r.preordered_at) : null,
     preorderExpectedOn: r.preorder_expected_on ?? null,
     startedEconomyOff: r.started_economy_off ?? false,
+    startedStoryLocked: r.started_story_locked ?? false,
   };
 }
 

@@ -120,6 +120,16 @@ import { autoFinishTag, type FinishTag } from "./lib/finishTags";
 import type { GamePriority } from "./lib/gamePriority";
 import { applyLink, applyUnlink, applySetPrimary, applySetFamilyCover, applySever, primaryChangeBlocker, isReplayFinish, isFamilyDiscounted, occupantKey } from "./lib/families";
 import { isPrerequisiteLocked, wouldCreateCycle } from "./lib/prerequisites";
+import {
+  FEATURE_BONUS_DEFAULTS,
+  finishBonuses,
+  finishBonusSummary,
+  finishBonusTotal,
+  loggedToastText,
+  reviewQualifies,
+  startsStoryLocked,
+  type FeatureBonusConfig,
+} from "./lib/featureBonuses";
 import { isLivePact, pactJoinDraft } from "./lib/coopPacts";
 import { coerceMilestoneRow, sortMilestones, type GameMilestone, type MilestoneKind } from "./lib/milestones";
 import {
@@ -851,6 +861,7 @@ interface BazaarState {
   completionBonusPct: number; // Completion Bonus % (Completionist-lane completions), admin-configurable
   coOpBonusPct: number; // Co-op Pact bonus % (both-finished payout), admin-configurable
   clearStreak_cfg: ClearStreakConfig; // Clear Streak tuning knobs, admin-configurable
+  featureBonuses: FeatureBonusConfig; // Story Order / Collector's Record / Reviewer / Daily Session amounts, admin-configurable
   submissionReward: number; // coins paid when a catalog contribution is approved
   defaultCoin: CoinVariant; // app-wide coin skin, admin-configurable
   economy: EconomyConfig; // buy-price + finish-bounty formulas, admin-configurable
@@ -1111,6 +1122,7 @@ interface BazaarState {
   setCompletionBonusPct: (pct: number) => Promise<void>;
   setCoOpBonusPct: (pct: number) => Promise<void>;
   setClearStreakConfig: (cfg: ClearStreakConfig) => Promise<void>;
+  setFeatureBonuses: (cfg: FeatureBonusConfig) => Promise<void>;
   setDefaultCoin: (variant: CoinVariant) => Promise<void>;
   setEconomyFormulas: (price: FormulaConfig, bounty: FormulaConfig) => Promise<void>;
   setSubmissionReward: (coins: number) => Promise<void>;
@@ -1823,6 +1835,7 @@ export const useStore = create<BazaarState>((set, get) => ({
   completionBonusPct: COMPLETION.defaultPct,
   coOpBonusPct: 25,
   clearStreak_cfg: { ...CLEAR_STREAK },
+  featureBonuses: { ...FEATURE_BONUS_DEFAULTS },
   submissionReward: 15,
   defaultCoin: DEFAULT_COIN,
   economy: DEFAULT_ECONOMY,
@@ -1971,7 +1984,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     const { data: cfg } = await supabase
       .from("app_config")
       .select(
-        "maintenance, message, replay_bonus_pct, completion_bonus_pct, co_op_bonus_pct, clear_streak_threshold, clear_streak_bonus_base, clear_streak_bonus_step, clear_streak_bonus_cap, submission_reward, onboarding_vouchers, default_general_slots, default_rotation_slots, default_replay_slots, default_completionist_slots, rotation_checkin_reward, rotation_reset_dow, rotation_reset_hour, rotation_reset_tz, default_coin, price_formula, bounty_formula, sponsor_max_stake, sponsor_monthly_pair_cap, sponsor_expiry_days, preorder_strip_days, shop_open, loan_interest_pct, rec_discount_pct, rec_bounty_pct, rec_bounty_cap",
+        "maintenance, message, replay_bonus_pct, completion_bonus_pct, co_op_bonus_pct, clear_streak_threshold, clear_streak_bonus_base, clear_streak_bonus_step, clear_streak_bonus_cap, submission_reward, onboarding_vouchers, default_general_slots, default_rotation_slots, default_replay_slots, default_completionist_slots, rotation_checkin_reward, rotation_reset_dow, rotation_reset_hour, rotation_reset_tz, default_coin, price_formula, bounty_formula, sponsor_max_stake, sponsor_monthly_pair_cap, sponsor_expiry_days, preorder_strip_days, shop_open, loan_interest_pct, rec_discount_pct, rec_bounty_pct, rec_bounty_cap, story_order_bonus, collectors_record_bonus, review_bonus, review_bonus_min_chars, session_bonus, session_bonus_min_minutes",
       )
       .eq("id", 1)
       .single();
@@ -1995,6 +2008,25 @@ export const useStore = create<BazaarState>((set, get) => ({
           typeof cfg?.clear_streak_bonus_step === "number" ? cfg.clear_streak_bonus_step : CLEAR_STREAK.step,
         cap:
           typeof cfg?.clear_streak_bonus_cap === "number" ? cfg.clear_streak_bonus_cap : CLEAR_STREAK.cap,
+      },
+      featureBonuses: {
+        storyOrder:
+          typeof cfg?.story_order_bonus === "number" ? cfg.story_order_bonus : FEATURE_BONUS_DEFAULTS.storyOrder,
+        collectorsRecord:
+          typeof cfg?.collectors_record_bonus === "number"
+            ? cfg.collectors_record_bonus
+            : FEATURE_BONUS_DEFAULTS.collectorsRecord,
+        reviewer: typeof cfg?.review_bonus === "number" ? cfg.review_bonus : FEATURE_BONUS_DEFAULTS.reviewer,
+        reviewMinChars:
+          typeof cfg?.review_bonus_min_chars === "number"
+            ? cfg.review_bonus_min_chars
+            : FEATURE_BONUS_DEFAULTS.reviewMinChars,
+        dailySession:
+          typeof cfg?.session_bonus === "number" ? cfg.session_bonus : FEATURE_BONUS_DEFAULTS.dailySession,
+        dailySessionMinMinutes:
+          typeof cfg?.session_bonus_min_minutes === "number"
+            ? cfg.session_bonus_min_minutes
+            : FEATURE_BONUS_DEFAULTS.dailySessionMinMinutes,
       },
       sponsorMaxStake:
         typeof cfg?.sponsor_max_stake === "number"
@@ -3639,6 +3671,43 @@ export const useStore = create<BazaarState>((set, get) => ({
     }
     set({ clearStreak_cfg: next });
     toast("Clear Streak settings saved", Flame);
+  },
+
+  setFeatureBonuses: async (cfg) => {
+    // Clamp to the same bounds the DB check enforces (amounts ≥ 0; minimums ≥ 1).
+    const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, Math.round(v)));
+    const next: FeatureBonusConfig = {
+      storyOrder: clamp(cfg.storyOrder, 0, 100000),
+      collectorsRecord: clamp(cfg.collectorsRecord, 0, 100000),
+      reviewer: clamp(cfg.reviewer, 0, 100000),
+      reviewMinChars: clamp(cfg.reviewMinChars, 1, REVIEW_MAX),
+      dailySession: clamp(cfg.dailySession, 0, 100000),
+      dailySessionMinMinutes: clamp(cfg.dailySessionMinMinutes, 1, 1440),
+    };
+    const { cloud, can } = get();
+    if (!cloud) {
+      set({ featureBonuses: next });
+      toast("Feature bonuses saved", Sparkles);
+      return;
+    }
+    if (!supabase || !can("economy.edit")) return;
+    const { error } = await supabase
+      .from("app_config")
+      .update({
+        story_order_bonus: next.storyOrder,
+        collectors_record_bonus: next.collectorsRecord,
+        review_bonus: next.reviewer,
+        review_bonus_min_chars: next.reviewMinChars,
+        session_bonus: next.dailySession,
+        session_bonus_min_minutes: next.dailySessionMinMinutes,
+      })
+      .eq("id", 1);
+    if (error) {
+      set({ error: error.message });
+      return;
+    }
+    set({ featureBonuses: next });
+    toast("Feature bonuses saved", Sparkles);
   },
 
   setSponsorMaxStake: async (coins) => {
@@ -5384,6 +5453,7 @@ export const useStore = create<BazaarState>((set, get) => ({
               slotId: slot.offlineSlot,
               completionist: toCompletionist,
               startedEconomyOff: !economyOn,
+              startedStoryLocked: startsStoryLocked(games, game),
             }
           : g,
       );
@@ -5434,6 +5504,7 @@ export const useStore = create<BazaarState>((set, get) => ({
               completionist: toCompletionist,
               coOp: toCoOp,
               startedEconomyOff: !economyOn,
+              startedStoryLocked: startsStoryLocked(games, game),
             }
           : g,
       ),
@@ -5476,7 +5547,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     if (!cloud) {
       const next = games.map((g) =>
         g.id === id
-          ? { ...g, status: "playing" as const, startedAt: Date.now(), pricePaid: 0, lengthPremiumOwed: 0, slotId: slot.offlineSlot }
+          ? { ...g, status: "playing" as const, startedAt: Date.now(), pricePaid: 0, lengthPremiumOwed: 0, slotId: slot.offlineSlot, startedStoryLocked: startsStoryLocked(games, game) }
           : g,
       );
       const nv = vouchers - 1;
@@ -5504,7 +5575,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       vouchers: newVouchers,
       games: games.map((g) =>
         g.id === id
-          ? { ...g, status: "playing", startedAt: Date.now(), pricePaid: 0, lengthPremiumOwed: 0, slotId: slot_id }
+          ? { ...g, status: "playing", startedAt: Date.now(), pricePaid: 0, lengthPremiumOwed: 0, slotId: slot_id, startedStoryLocked: startsStoryLocked(games, game) }
           : g,
       ),
     });
@@ -6467,7 +6538,9 @@ export const useStore = create<BazaarState>((set, get) => ({
     const game = games.find((g) => g.id === id);
     if (!game || game.status !== "playing" || !(hours > 0)) return;
     // Logging time tracks your hours for stats; coins are paid as a flat bounty
-    // when you finish, not per hour (see finishGame).
+    // when you finish, not per hour (see finishGame). The only coins a log can
+    // earn are the once-a-day Daily Session bonus, decided server-side
+    // (log_playtime) — so offline logging pays none.
 
     if (!cloud) {
       const played = (game.playedHours ?? 0) + hours;
@@ -6491,12 +6564,16 @@ export const useStore = create<BazaarState>((set, get) => ({
       set({ error: error.message });
       return;
     }
-    const { coins: newCoins, played_hours } = data as { coins: number; played_hours: number };
+    const { coins: newCoins, played_hours, bonus } = data as {
+      coins: number;
+      played_hours: number;
+      bonus: number | null;
+    };
     set({
       coins: newCoins,
       games: get().games.map((g) => (g.id === id ? { ...g, playedHours: played_hours } : g)),
     });
-    toast(`${formatPlaytime(hours)} logged`, Gamepad2);
+    toast(loggedToastText(hours, bonus ?? 0), (bonus ?? 0) > 0 ? Coins : Gamepad2);
     void get().evaluateAchievements();
   },
 
@@ -6624,7 +6701,12 @@ export const useStore = create<BazaarState>((set, get) => ({
       set({ error: error.message });
       return;
     }
-    const row = data as { logged: number; coins: number | null; played_hours: number | null };
+    const row = data as {
+      logged: number;
+      coins: number | null;
+      played_hours: number | null;
+      bonus: number | null;
+    };
     const andThen = get().sessionStopThen;
     set({
       activeSession: null,
@@ -6639,7 +6721,7 @@ export const useStore = create<BazaarState>((set, get) => ({
           : get().games,
     });
     if (row.logged > 0) {
-      toast(`${formatPlaytime(row.logged)} logged`, Gamepad2);
+      toast(loggedToastText(row.logged, row.bonus ?? 0), (row.bonus ?? 0) > 0 ? Coins : Gamepad2);
       void get().evaluateAchievements();
     } else {
       // Sub-minute stop, or the game left the Playing lane mid-session.
@@ -7155,7 +7237,26 @@ export const useStore = create<BazaarState>((set, get) => ({
       set({ error: error.message });
       return;
     }
-    toast("Review saved", Star);
+    // Reviewer bonus: the server re-checks everything (finished through the loop,
+    // length, once per game), so only ask when this save could plausibly qualify.
+    let awarded = 0;
+    if (
+      game.status === "finished" &&
+      get().economyEnabled &&
+      reviewQualifies(nextText, get().featureBonuses.reviewMinChars)
+    ) {
+      const { data: claim, error: claimError } = await supabase
+        .rpc("claim_review_bonus", { p_game: id })
+        .single();
+      if (claimError) {
+        set({ error: claimError.message });
+      } else {
+        const row = claim as { coins: number; awarded: number };
+        awarded = row.awarded ?? 0;
+        if (awarded > 0) set({ coins: row.coins });
+      }
+    }
+    toast(awarded > 0 ? `Review saved · Reviewer +${awarded}` : "Review saved", awarded > 0 ? Coins : Star);
     void get().evaluateAchievements();
   },
 
@@ -8647,6 +8748,14 @@ export const useStore = create<BazaarState>((set, get) => ({
     // net never goes below 0. The server does the same in apply_finish.
     const bountyOffset = economyOn && !freeStart ? finishBountyOffset(game.lengthPremiumOwed, reward) : 0;
     const netReward = reward - bountyOffset;
+    // Feature bonuses (Story Order / Collector's Record) on a paying first clear —
+    // the offline mirror of apply_finish; the cloud path reads the server's amounts.
+    const localBonuses = finishBonuses(
+      games,
+      game,
+      { firstClear: !replay, paying: economyOn && !freeStart },
+      get().featureBonuses,
+    );
 
     // Fire the finish confirmation as an Undo toast: clicking it reverts the finish
     // (restoring the prior lane/flags and rolling back the coins). `prevGame` is the
@@ -8686,6 +8795,11 @@ export const useStore = create<BazaarState>((set, get) => ({
           : `Clear Streak ×${info.streak}${suffix}`,
         Flame,
       );
+    };
+
+    const bonusToast = (b: { storyOrder: number; collectorsRecord: number }) => {
+      const summary = finishBonusSummary(b);
+      if (summary) toast(`Bonus coins · ${summary}`, Sparkles);
     };
 
     if (!cloud) {
@@ -8733,6 +8847,14 @@ export const useStore = create<BazaarState>((set, get) => ({
         coinsFinal = nc + streakBonus;
         led = [localEvent("clear_streak_bonus", streakBonus, coinsFinal, game.title), ...led];
       }
+      if (localBonuses.storyOrder > 0) {
+        coinsFinal += localBonuses.storyOrder;
+        led = [localEvent("story_order_bonus", localBonuses.storyOrder, coinsFinal, game.title), ...led];
+      }
+      if (localBonuses.collectorsRecord > 0) {
+        coinsFinal += localBonuses.collectorsRecord;
+        led = [localEvent("collectors_record_bonus", localBonuses.collectorsRecord, coinsFinal, game.title), ...led];
+      }
       set({
         games: next,
         coins: coinsFinal,
@@ -8744,8 +8866,9 @@ export const useStore = create<BazaarState>((set, get) => ({
       });
       saveLocal(coinsFinal, next, led);
       saveLocalStreak(nextStreak, nextBest);
-      finishToast(netReward, netReward + streakBonus, null);
+      finishToast(netReward, netReward + streakBonus + finishBonusTotal(localBonuses), null);
       if (!inertFinish) streakToast({ streak: nextStreak, bonus: streakBonus, newRecord });
+      bonusToast(localBonuses);
       return;
     }
     if (!supabase) return;
@@ -8771,6 +8894,8 @@ export const useStore = create<BazaarState>((set, get) => ({
       streak,
       streak_bonus: streakBonus,
       new_record: newRecord,
+      story_bonus: storyBonus,
+      collector_bonus: collectorBonus,
     } = data as {
       coins: number;
       reward: number;
@@ -8779,7 +8904,10 @@ export const useStore = create<BazaarState>((set, get) => ({
       streak: number;
       streak_bonus: number;
       new_record: boolean;
+      story_bonus: number | null;
+      collector_bonus: number | null;
     };
+    const paidBonuses = { storyOrder: storyBonus ?? 0, collectorsRecord: collectorBonus ?? 0 };
     // The server is authoritative for the Clear Streak: it decides whether this
     // finish extended it (a resumed re-finish doesn't, nor does a stealth game —
     // streak-inert, issue 4604769c), pays the escalating bonus, and reports the
@@ -8798,8 +8926,9 @@ export const useStore = create<BazaarState>((set, get) => ({
           : g,
       ),
     });
-    finishToast(awarded, awarded + (streakBonus ?? 0), undoId);
+    finishToast(awarded, awarded + (streakBonus ?? 0) + finishBonusTotal(paidBonuses), undoId);
     if (!inertFinish) streakToast(streakInfo);
+    bonusToast(paidBonuses);
     // Finishing moves several metrics at once (clears, completions, coins).
     void get().evaluateAchievements();
   },
@@ -10225,6 +10354,7 @@ export const useStore = create<BazaarState>((set, get) => ({
                 slotId: null,
                 completionist: false,
                 coOp: true,
+                startedStoryLocked: startsStoryLocked(get().games, game),
               }
             : g,
         ),

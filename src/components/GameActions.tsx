@@ -26,6 +26,7 @@ import {
   Timer,
   Infinity as InfinityIcon,
   CloudOff,
+  Sparkles,
 } from "lucide-react";
 import type { Game } from "../types";
 import { useStore, selectCoachTarget } from "../store";
@@ -49,6 +50,7 @@ import {
   playtimeSharedToPartner,
 } from "../lib/coopPacts";
 import { prerequisiteOf } from "../lib/prerequisites";
+import { finishBonuses, finishBonusSummary } from "../lib/featureBonuses";
 import {
   isPreordered,
   isPreorderOut,
@@ -374,6 +376,7 @@ export function GameActions({
     userId,
     regainAccess,
     bazaarToWishlist,
+    featureBonuses,
   } = useStore();
   // Getting Started quests highlight the real control they teach (derived —
   // the ring clears itself the moment the quest's predicate flips).
@@ -434,6 +437,11 @@ export function GameActions({
       ? computeCompletionReward(willReplay, bounty, completionBonusPct)
       : computeFinishReward(willReplay, bounty, replayBonusPct)
     : 0;
+  // Feature bonuses this game is set up to earn on its first clear (Story Order /
+  // Collector's Record) — previewed the moment the setup is in place.
+  const bonusSummary = finishBonusSummary(
+    finishBonuses(games, game, { firstClear: !willReplay, paying: showEconomy }, featureBonuses),
+  );
   const shelveRefund = showEconomy ? computeShelveRefund(game.pricePaid ?? price) : 0;
   const canAfford = !economyEnabled || coins >= price;
   const hasVoucher = economyEnabled && canRedeemVoucher(vouchers, game.status);
@@ -980,10 +988,12 @@ export function GameActions({
                 <span className="inline-flex items-center gap-1">
                   <Ticket size={12} className="text-brand" /> {vouchers} free voucher
                   {vouchers === 1 ? "" : "s"} · finish bounty <CoinIcon size={12} /> {bounty}
+                  {bonusSummary && ` · ${bonusSummary}`}
                 </span>
               ) : (
                 <>
                   Finish bounty <CoinIcon size={12} /> {bounty}
+                  {bonusSummary && ` · ${bonusSummary}`}
                 </>
               )}
             </p>
@@ -1268,6 +1278,11 @@ export function GameActions({
               </>
             )}
           </button>
+          {bonusSummary && (
+            <p className="-mt-1 inline-flex items-center justify-center gap-1 text-center text-[11px] text-subtle">
+              <Sparkles size={12} className="shrink-0 text-accent" /> Bonus on finish: {bonusSummary}
+            </p>
+          )}
           {lane === "replay" ? (
             // Two distinct exits for a replay: "Mark Finished" above is a re-clear that
             // pays the Replay Bonus; this cancels the replay — back to Finished with no

@@ -340,3 +340,36 @@ describe("GameActions — Retire It", () => {
     expect(screen.getByRole("option", { name: "Retired" })).toBeTruthy();
   });
 });
+
+describe("GameActions feature-bonus preview", () => {
+  const prequel = () => game({ id: "p", title: "Part One", status: "finished" });
+
+  it("lists the bonuses a playing run is set up to earn under Mark Finished", () => {
+    const run = game({
+      id: "s",
+      status: "playing",
+      prerequisiteGameId: "p",
+      startedStoryLocked: true,
+      copies: [{ id: "c", platform: "PC", cost: 15 }],
+    });
+    act(() => useStore.setState({ viewing: null, economyEnabled: true, games: [prequel(), run] }));
+    render(<GameActions game={run} />);
+    expect(screen.getByText(/Bonus on finish: Story Order \+20 · Collector's Record \+10/)).toBeTruthy();
+  });
+
+  it("previews Story Order on a story-locked Bazaar game's finish-bounty line", () => {
+    const sequel = game({ id: "s", prerequisiteGameId: "p", released: "2015-01-01", hours: 10 });
+    act(() =>
+      useStore.setState({ viewing: null, economyEnabled: true, coins: 500, games: [prequel(), sequel] }),
+    );
+    render(<GameActions game={sequel} />);
+    expect(screen.getByText(/Finish bounty .* · Story Order \+20/)).toBeTruthy();
+  });
+
+  it("shows no bonus line for a replay run", () => {
+    const run = game({ id: "s", status: "playing", resumed: true, startedStoryLocked: true });
+    act(() => useStore.setState({ viewing: null, economyEnabled: true, games: [prequel(), run] }));
+    render(<GameActions game={run} />);
+    expect(screen.queryByText(/Bonus on finish/)).toBeNull();
+  });
+});

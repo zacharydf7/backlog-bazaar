@@ -790,6 +790,48 @@ create trigger games_stamp_econ_start
   before insert or update of status, started_economy_off on public.games
   for each row execute function public.games_stamp_econ_start();
 
+-- started_story_locked: this run was started while story-locked behind its
+-- (by then Finished) prerequisite, so its first clear pays the Story Order
+-- feature bonus (see apply_finish). Stamped at the cold start instead of read
+-- live at finish, so linking a playing game to any already-finished game right
+-- before finishing it can't mint the bonus. Same provenance pattern as
+-- started_economy_off: derived on backlog → playing (Rotation entry exempt —
+-- ongoing games never finish), carried on every other write, client values shed.
+-- The one exception is the guarded one-off fill for runs started before this
+-- column existed, which sets app.story_stamp_fill transaction-locally.
+alter table public.games add column if not exists started_story_locked boolean not null default false;
+
+create or replace function public.games_stamp_story_start()
+returns trigger
+language plpgsql
+security definer set search_path = public
+as $$
+begin
+  if tg_op = 'INSERT' then
+    new.started_story_locked := false;
+  elsif new.status = 'playing' and old.status = 'backlog' then
+    new.started_story_locked :=
+      not coalesce(new.in_rotation, false)
+      and new.prerequisite_game_id is not null
+      and exists (
+        select 1 from public.games p
+         where p.id = new.prerequisite_game_id
+           and p.user_id = new.user_id
+           and p.status = 'finished'
+      );
+  elsif coalesce(current_setting('app.story_stamp_fill', true), '') <> 'on' then
+    new.started_story_locked := coalesce(old.started_story_locked, false);
+  end if;
+  return new;
+end;
+$$;
+revoke execute on function public.games_stamp_story_start() from public, anon, authenticated;
+
+drop trigger if exists games_stamp_story_start on public.games;
+create trigger games_stamp_story_start
+  before insert or update of status, started_story_locked on public.games
+  for each row execute function public.games_stamp_story_start();
+
 -- personal_hours: the owner's PERSONAL estimate of how long THIS game will take
 -- them, overriding the shared catalog `hours` for the economy (effective length =
 -- personal_hours ?? hours). It never touches the catalog — a moderator's cascade
@@ -5851,6 +5893,32 @@ alter table public.app_config add constraint app_config_clear_streak_range
      and clear_streak_bonus_step between 0 and 100000
      and clear_streak_bonus_cap between 0 and 100000);
 
+-- Feature bonuses, admin-tuned on the Economy page (0 disables each). Small,
+-- repeatable rewards for the optional features that take more setup than just
+-- adding a game; each pays only at a step the economy already trusts:
+--  • story_order_bonus: first clear of a run started story-locked (apply_finish).
+--  • collectors_record_bonus: first clear of a game whose copy records its cost
+--    or the service/lender it's played through (apply_finish).
+--  • review_bonus / review_bonus_min_chars: reviewing a game you finished through
+--    the loop, once per game (claim_review_bonus).
+--  • session_bonus / session_bonus_min_minutes: the first play log of the day of
+--    at least that length, stopwatch or manual (log_playtime).
+-- Mirrored in src/lib/featureBonuses.ts (FEATURE_BONUS_DEFAULTS).
+alter table public.app_config add column if not exists story_order_bonus integer not null default 20;
+alter table public.app_config add column if not exists collectors_record_bonus integer not null default 10;
+alter table public.app_config add column if not exists review_bonus integer not null default 15;
+alter table public.app_config add column if not exists review_bonus_min_chars integer not null default 100;
+alter table public.app_config add column if not exists session_bonus integer not null default 3;
+alter table public.app_config add column if not exists session_bonus_min_minutes integer not null default 20;
+alter table public.app_config drop constraint if exists app_config_feature_bonus_range;
+alter table public.app_config add constraint app_config_feature_bonus_range
+  check (story_order_bonus between 0 and 100000
+     and collectors_record_bonus between 0 and 100000
+     and review_bonus between 0 and 100000
+     and review_bonus_min_chars between 1 and 8000
+     and session_bonus between 0 and 100000
+     and session_bonus_min_minutes between 1 and 1440);
+
 alter table public.app_config enable row level security;
 drop policy if exists "app_config_read" on public.app_config;
 create policy "app_config_read" on public.app_config
@@ -6967,13 +7035,39 @@ drop function if exists public.apply_finish(uuid, integer, integer);
 -- Dropped first because adding the undo_id output changes the RETURNS TABLE shape.
 drop function if exists public.apply_finish(uuid, integer, integer, integer);
 drop function if exists public.apply_finish(uuid, integer, integer, integer);
+
+-- Collector's Record (feature bonuses): does a games.copies array record what a
+-- copy cost ($0 included) or the service/lender it's played through? Player 2
+-- seats are someone else's copy and never count. Mirrors hasCollectorsRecord in
+-- src/lib/featureBonuses.ts.
+create or replace function public.copies_have_collectors_record(p_copies jsonb)
+returns boolean
+language sql
+immutable
+set search_path = public
+as $$
+  select exists (
+    select 1
+      from jsonb_array_elements(
+             case when jsonb_typeof(p_copies) = 'array' then p_copies else '[]'::jsonb end) c
+     where (coalesce(c->>'acquisition', 'owned') <> 'player2'
+            and jsonb_typeof(c->'cost') = 'number' and (c->>'cost')::numeric >= 0)
+        or (c->>'acquisition' in ('subscription', 'borrowed')
+            and nullif(btrim(coalesce(c->>'provider', '')), '') is not null)
+  );
+$$;
+revoke execute on function public.copies_have_collectors_record(jsonb) from public, anon, authenticated;
+
+-- The feature-bonus columns (story_bonus, collector_bonus) widened the RETURNS
+-- TABLE shape; the drops above recreate it.
 create or replace function public.apply_finish(
   p_game uuid, p_full_reward integer, p_replay_reward integer,
   p_completion_reward integer default 0
 )
 returns table (
   coins integer, reward integer, replay boolean, undo_id uuid,
-  streak integer, streak_bonus integer, new_record boolean
+  streak integer, streak_bonus integer, new_record boolean,
+  story_bonus integer, collector_bonus integer
 )
 language plpgsql
 security definer set search_path = public
@@ -7012,16 +7106,21 @@ declare
   v_cs_base      integer;
   v_cs_step      integer;
   v_cs_cap       integer;
+  -- Feature bonuses: Story Order + Collector's Record.
+  v_story_locked    boolean;
+  v_copies          jsonb;
+  v_story_bonus     integer := 0;
+  v_collector_bonus integer := 0;
 begin
   -- Snapshot the pre-action reversible state (slot/lane flags + tag) so undo_action
   -- can restore the game exactly; the update below destroys these.
   select family_id, slot_id, title, resumed, completionist,
          in_rotation, ongoing, finish_tag, started_at, price_paid,
          coalesce(started_economy_off, false), coalesce(length_premium_owed, 0),
-         coalesce(stealth, false)
+         coalesce(stealth, false), coalesce(started_story_locked, false), copies
     into v_family, v_slot_id, v_title, v_resumed, v_completion,
          v_in_rotation, v_ongoing, v_finish_tag, v_started_at, v_price_paid,
-         v_free_start, v_owed, v_stealth
+         v_free_start, v_owed, v_stealth, v_story_locked, v_copies
     from public.games
    where id = p_game and user_id = auth.uid() and status = 'playing';
   if not found then
@@ -7172,12 +7271,47 @@ begin
     end if;
   end if;
 
+  -- Feature bonuses: a paying FIRST clear rewards the optional setup put into the
+  -- game — Story Order for a run started story-locked (the start stamp, never the
+  -- live link, so locking mid-run can't mint it) and Collector's Record for copies
+  -- that note their cost or service. Replays / resumed re-clears and economy-off or
+  -- free-started runs pay neither, exactly like the bounty. Each is its own ledger
+  -- row so it's independently auditable.
+  if v_econ and not v_free_start and not v_replay then
+    select case when v_story_locked then greatest(0, coalesce(story_order_bonus, 20)) else 0 end,
+           case when public.copies_have_collectors_record(v_copies)
+                then greatest(0, coalesce(collectors_record_bonus, 10)) else 0 end
+      into v_story_bonus, v_collector_bonus
+      from public.app_config where id = 1;
+    v_story_bonus := coalesce(v_story_bonus, 0);
+    v_collector_bonus := coalesce(v_collector_bonus, 0);
+    if v_story_bonus > 0 then
+      update public.profiles
+         set coins = coins + v_story_bonus
+       where id = auth.uid()
+       returning coins into v_coins;
+      perform public.log_coin_event(
+        auth.uid(), 'story_order_bonus', v_story_bonus, 0, v_coins, null, p_game, v_title, null
+      );
+    end if;
+    if v_collector_bonus > 0 then
+      update public.profiles
+         set coins = coins + v_collector_bonus
+       where id = auth.uid()
+       returning coins into v_coins;
+      perform public.log_coin_event(
+        auth.uid(), 'collectors_record_bonus', v_collector_bonus, 0, v_coins, null, p_game, v_title, null
+      );
+    end if;
+  end if;
+
   -- Record a short-lived undo snapshot: the pre-action state + coins awarded (the
-  -- bounty net AND the streak bonus, so the reversal rolls back both), plus the
-  -- pre-finish streak counter so undo can put it back exactly (see undo_action).
+  -- bounty net, the streak bonus AND the feature bonuses, so the reversal rolls back
+  -- all of them), plus the pre-finish streak counter so undo can put it back exactly
+  -- (see undo_action).
   insert into public.action_undos (user_id, game_id, game_title, action, coins_delta, prev)
   values (
-    auth.uid(), p_game, v_title, 'finish', v_net + v_streak_bonus,
+    auth.uid(), p_game, v_title, 'finish', v_net + v_streak_bonus + v_story_bonus + v_collector_bonus,
     jsonb_build_object(
       'status', 'playing', 'slot_id', v_slot_id, 'resumed', coalesce(v_resumed, false),
       'completionist', coalesce(v_completion, false), 'in_rotation', coalesce(v_in_rotation, false),
@@ -7189,7 +7323,8 @@ begin
   )
   returning id into v_undo;
 
-  return query select v_coins, v_net, v_replay, v_undo, v_streak, v_streak_bonus, v_new_record;
+  return query select v_coins, v_net, v_replay, v_undo, v_streak, v_streak_bonus, v_new_record,
+                      v_story_bonus, v_collector_bonus;
 end;
 $$;
 
@@ -8094,8 +8229,10 @@ $$;
 -- move here, so the economy freeze isn't consulted.
 drop function if exists public.log_playtime(uuid, real);
 drop function if exists public.log_playtime(uuid, real, text);
+-- The Daily Session bonus column (bonus) widened the RETURNS TABLE shape.
+drop function if exists public.log_playtime(uuid, real, text, text);
 create or replace function public.log_playtime(p_game uuid, p_hours real, p_platform text default null, p_format text default null)
-returns table (coins integer, played_hours real)
+returns table (coins integer, played_hours real, bonus integer)
 language plpgsql
 security definer set search_path = public
 as $$
@@ -8107,6 +8244,11 @@ declare
   v_played    real;
   v_coins     integer;
   v_pact      public.co_op_pacts%rowtype;
+  v_title     text;
+  v_bonus     integer := 0;
+  v_bonus_amt integer;
+  v_bonus_min integer;
+  v_tz        text;
 begin
   if p_hours is null or p_hours <= 0 then
     raise exception 'Hours must be positive';
@@ -8167,11 +8309,108 @@ begin
      where id = v_pact.invitee_game and status = 'playing';
   end if;
 
-  select coins into v_coins from public.profiles where id = auth.uid();
+  -- Daily Session bonus (feature bonuses): the day's first log of at least the
+  -- minimum length pays a small flat bonus — stopwatch stops land here too
+  -- (end_play_session calls this). Days turn over at midnight in the Rotation
+  -- reset's timezone. The profile row is locked first so two logs racing can't
+  -- both pass the once-a-day check. Only the logging player earns it (a co-op
+  -- partner's mirrored time above never does).
+  select coins into v_coins from public.profiles where id = auth.uid() for update;
+  select session_bonus, session_bonus_min_minutes, coalesce(nullif(btrim(rotation_reset_tz), ''), 'UTC')
+    into v_bonus_amt, v_bonus_min, v_tz
+    from public.app_config where id = 1;
+  if public.economy_enabled(auth.uid())
+     and coalesce(v_bonus_amt, 3) > 0
+     and round(p_hours * 60) >= coalesce(v_bonus_min, 20)
+     and not exists (
+       select 1 from public.coin_events e
+        where e.user_id = auth.uid() and e.kind = 'session_bonus'
+          and e.created_at >= (date_trunc('day', now() at time zone v_tz) at time zone v_tz)
+     ) then
+    v_bonus := coalesce(v_bonus_amt, 3);
+    select title into v_title from public.games where id = p_game;
+    update public.profiles
+       set coins = coins + v_bonus
+     where id = auth.uid()
+     returning coins into v_coins;
+    perform public.log_coin_event(
+      auth.uid(), 'session_bonus', v_bonus, 0, v_coins, null, p_game, v_title, null
+    );
+  end if;
 
-  return query select v_coins, v_played;
+  return query select v_coins, v_played, v_bonus;
 end;
 $$;
+
+-- Reviewer bonus (feature bonuses): pay a one-time-per-game bonus for reviewing a
+-- game you finished. Reviews save as a plain owner update on the games row, so
+-- the client calls this right after saving; everything is re-derived from the
+-- stored row, never trusted from the call:
+--   • the game is Finished and its review is at least review_bonus_min_chars;
+--   • it was finished THROUGH THE LOOP — its clear paid out via apply_finish
+--     (a bounty / replay / completion ledger row). A game logged straight to
+--     Finished never did, so adding-as-finished + reviewing can't farm it;
+--   • no review_bonus row for this game yet — editing or re-saving never re-pays;
+--   • the economy is on (off-mode pays nothing; the review still saves).
+-- The profile row is locked first so two quick saves can't both pass the check.
+-- Returns the balance and the coins awarded (0 when it didn't qualify).
+create or replace function public.claim_review_bonus(p_game uuid)
+returns table (coins integer, awarded integer)
+language plpgsql
+security definer set search_path = public
+as $$
+#variable_conflict use_column
+declare
+  v_coins  integer;
+  v_review text;
+  v_status text;
+  v_title  text;
+  v_amt    integer;
+  v_min    integer;
+  v_award  integer := 0;
+begin
+  if auth.uid() is null then raise exception 'Not authenticated'; end if;
+
+  select coins into v_coins from public.profiles where id = auth.uid() for update;
+
+  select review, status, title into v_review, v_status, v_title
+    from public.games
+   where id = p_game and user_id = auth.uid();
+  if not found then
+    raise exception 'Game not found';
+  end if;
+
+  select review_bonus, review_bonus_min_chars into v_amt, v_min
+    from public.app_config where id = 1;
+
+  if public.economy_enabled(auth.uid())
+     and coalesce(v_amt, 15) > 0
+     and v_status = 'finished'
+     and char_length(btrim(coalesce(v_review, ''))) >= coalesce(v_min, 100)
+     and exists (
+       select 1 from public.coin_events e
+        where e.user_id = auth.uid() and e.game_id = p_game
+          and e.kind in ('bounty', 'replay_bonus', 'completion_bonus')
+     )
+     and not exists (
+       select 1 from public.coin_events e
+        where e.user_id = auth.uid() and e.game_id = p_game and e.kind = 'review_bonus'
+     ) then
+    v_award := coalesce(v_amt, 15);
+    update public.profiles
+       set coins = coins + v_award
+     where id = auth.uid()
+     returning coins into v_coins;
+    perform public.log_coin_event(
+      auth.uid(), 'review_bonus', v_award, 0, v_coins, null, p_game, v_title, null
+    );
+  end if;
+
+  return query select v_coins, v_award;
+end;
+$$;
+revoke execute on function public.claim_review_bonus(uuid) from public, anon;
+grant execute on function public.claim_review_bonus(uuid) to authenticated;
 
 -- Shelve a game ("Shelve It"): drop it from Now Playing back to the backlog and
 -- refund what you paid, atomically. The refund is the game's price_paid (read
@@ -11046,8 +11285,11 @@ $$;
 -- client normally stops the watch first), the session is preserved as
 -- discarded — started/ended stay reconstructable — rather than erroring
 -- forever.
+-- The Daily Session bonus column (bonus, passed through from log_playtime)
+-- widened the RETURNS TABLE shape.
+drop function if exists public.end_play_session(uuid, real);
 create or replace function public.end_play_session(p_session uuid, p_hours real default null)
-returns table (logged real, coins integer, played_hours real)
+returns table (logged real, coins integer, played_hours real, bonus integer)
 language plpgsql
 security definer set search_path = public
 as $$
@@ -11058,6 +11300,7 @@ declare
   v_playing boolean;
   v_coins   integer;
   v_played  real;
+  v_bonus   integer;
 begin
   select * into v_sess
     from public.play_sessions
@@ -11085,7 +11328,7 @@ begin
      where id = v_sess.id;
     select p.coins into v_coins from public.profiles p where p.id = auth.uid();
     select g.played_hours into v_played from public.games g where g.id = v_sess.game_id;
-    return query select 0::real, v_coins, v_played;
+    return query select 0::real, v_coins, v_played, 0;
     return;
   end if;
 
@@ -11097,10 +11340,10 @@ begin
      set status = 'logged', ended_at = now(), logged_hours = v_hours
    where id = v_sess.id;
 
-  select l.coins, l.played_hours into v_coins, v_played
+  select l.coins, l.played_hours, l.bonus into v_coins, v_played, v_bonus
     from public.log_playtime(v_sess.game_id, v_hours, v_sess.platform, v_sess.format) l;
 
-  return query select v_hours, v_coins, v_played;
+  return query select v_hours, v_coins, v_played, coalesce(v_bonus, 0);
 end;
 $$;
 
@@ -12354,7 +12597,9 @@ declare
     'default_completionist_slots', 'completion_bonus_pct', 'co_op_bonus_pct',
     'sponsor_max_stake', 'sponsor_monthly_pair_cap', 'sponsor_expiry_days',
     'preorder_strip_days', 'shop_open', 'loan_interest_pct',
-    'rec_discount_pct', 'rec_bounty_pct', 'rec_bounty_cap'
+    'rec_discount_pct', 'rec_bounty_pct', 'rec_bounty_cap',
+    'story_order_bonus', 'collectors_record_bonus', 'review_bonus',
+    'review_bonus_min_chars', 'session_bonus', 'session_bonus_min_minutes'
   ];
 begin
   foreach v_key in array v_cols loop

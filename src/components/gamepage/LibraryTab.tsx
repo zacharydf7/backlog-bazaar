@@ -1,13 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { CloudOff, CreditCard, Crown, Link2, Plus, Trash2, Users } from "lucide-react";
+import { CloudOff, CreditCard, Crown, Link2, Plus, Sparkles, Trash2, Users } from "lucide-react";
 import { toastAction } from "../../lib/toast";
 import type { Game, GameCopy } from "../../types";
 import { useStore } from "../../store";
 import { gameHash } from "../../lib/route";
 import { providerKey, providerTracked } from "../../lib/subscriptions";
 import { catalogKey } from "../../lib/ownershipMerge";
-import { familyName, familyPrimary } from "../../lib/families";
+import { familyName, familyPrimary, isReplayFinish } from "../../lib/families";
+import { hasCollectorsRecord } from "../../lib/featureBonuses";
 import { hubRepresentative } from "../../lib/gameHub";
 import { gameToAddMeta } from "../../lib/addRouting";
 import { isInRotation } from "../../lib/status";
@@ -319,9 +320,23 @@ function InstanceCopies({
     lapseService,
     subscriptions,
     serviceTiers,
+    economyEnabled,
+    featureBonuses,
   } = useStore();
 
   const isWishlist = game.status === "wishlist";
+  // Collector's Record: recording what a copy cost (or the service it's played
+  // through) earns a bonus on the game's first clear — nudge it while it's earnable.
+  const collectorsBonus =
+    economyEnabled &&
+    featureBonuses.collectorsRecord > 0 &&
+    (game.status === "backlog" || game.status === "playing") &&
+    game.ongoing !== true &&
+    game.startedEconomyOff !== true &&
+    game.resumed !== true &&
+    !isReplayFinish(games, game)
+      ? featureBonuses.collectorsRecord
+      : 0;
   const inCompilation = game.compilationId != null;
 
   const [rows, setRows] = useState<CopyRowDraft[]>((game.copies ?? []).map(copyToRow));
@@ -546,6 +561,14 @@ function InstanceCopies({
             : undefined
         }
       />
+      {collectorsBonus > 0 && (
+        <p className="inline-flex items-start gap-1.5 text-xs text-subtle">
+          <Sparkles size={13} className="mt-px shrink-0 text-accent" />
+          {hasCollectorsRecord(game.copies)
+            ? `Collector's Record: earns +${collectorsBonus} when you finish it.`
+            : `Add what you paid — or the service you play it on — to earn +${collectorsBonus} Collector's Record when you finish it.`}
+        </p>
+      )}
       {lockedToInstance && (
         <p className="text-xs text-subtle">
           This card tracks your{" "}

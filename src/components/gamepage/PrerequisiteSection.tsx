@@ -17,7 +17,7 @@ const PREREQ_STATUS_LABEL: Record<Game["status"], string> = {
  *  (like family linking); the lock itself is derived — clearing the link or
  *  finishing the prerequisite unlocks instantly. */
 export function PrerequisiteSection({ game }: { game: Game }) {
-  const { games, setPrerequisite } = useStore();
+  const { games, setPrerequisite, economyEnabled, featureBonuses } = useStore();
   const [picking, setPicking] = useState(false);
   const [query, setQuery] = useState("");
 
@@ -138,6 +138,9 @@ export function PrerequisiteSection({ game }: { game: Game }) {
       <span className="text-[10px] text-subtle">
         A story lock: this game can&apos;t move into Now Playing until the linked game is
         Finished. It unlocks the moment that happens.
+        {economyEnabled && featureBonuses.storyOrder > 0 && (
+          <> Playing it in story order earns a +{featureBonuses.storyOrder} Story Order bonus when you finish it.</>
+        )}
       </span>
     </div>
   );

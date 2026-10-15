@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Star, StarHalf, PenLine, X } from "lucide-react";
+import { Star, StarHalf, PenLine, Sparkles, X } from "lucide-react";
 import type { Game } from "../../types";
 import { useStore } from "../../store";
 import { REVIEW_MAX, clampScore, formatScore } from "../../lib/reviews";
@@ -16,6 +16,8 @@ export function ReviewTab({ game, readOnly = false }: { game: Game; readOnly?: b
 
 function ReviewEditor({ game }: { game: Game }) {
   const setGameReview = useStore((s) => s.setGameReview);
+  const economyEnabled = useStore((s) => s.economyEnabled);
+  const { reviewer, reviewMinChars } = useStore((s) => s.featureBonuses);
   const [score, setScore] = useState<number | null>(clampScore(game.reviewScore ?? null));
   const [text, setText] = useState(game.review ?? "");
 
@@ -66,6 +68,13 @@ function ReviewEditor({ game }: { game: Game }) {
             {text.length}/{REVIEW_MAX}
           </span>
         </div>
+        {economyEnabled && reviewer > 0 && game.status === "finished" && (
+          <p className="inline-flex items-start gap-1.5 text-[11px] text-subtle">
+            <Sparkles size={12} className="mt-px shrink-0 text-accent" />
+            A review of {reviewMinChars}+ characters earns a +{reviewer} Reviewer bonus on a game you
+            cleared for a bounty — once per game.
+          </p>
+        )}
       </div>
     </section>
   );

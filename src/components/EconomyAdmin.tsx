@@ -10,11 +10,13 @@ import {
   Gamepad2,
   Infinity as InfinityIcon,
   Flame,
+  Sparkles,
 } from "lucide-react";
 import { useStore } from "../store";
 import { CoinIcon } from "./CoinIcon";
 import { formatPlaytime } from "../lib/playtime";
 import { rotationResetSummary, resetDayLabel } from "../lib/rotation";
+import type { FeatureBonusConfig } from "../lib/featureBonuses";
 import {
   formulaBreakdown,
   cloneFormula,
@@ -1141,6 +1143,114 @@ function ClearStreakCard() {
   );
 }
 
+/** Admin editor for the feature bonuses: small repeatable rewards for using the
+ *  optional, setup-heavy features. Each amount at 0 switches that bonus off. */
+function FeatureBonusesCard() {
+  const { featureBonuses, setFeatureBonuses } = useStore();
+  const toDraft = (c: FeatureBonusConfig) =>
+    Object.fromEntries(Object.entries(c).map(([k, v]) => [k, String(v)])) as Record<
+      keyof FeatureBonusConfig,
+      string
+    >;
+  const [draft, setDraft] = useState(() => toDraft(featureBonuses));
+  const [saving, setSaving] = useState(false);
+
+  const amt = (s: string) => Math.max(0, Math.min(100000, Math.round(num(s))));
+  const parsed: FeatureBonusConfig = {
+    storyOrder: amt(draft.storyOrder),
+    collectorsRecord: amt(draft.collectorsRecord),
+    reviewer: amt(draft.reviewer),
+    reviewMinChars: Math.max(1, Math.min(8000, Math.round(num(draft.reviewMinChars)))),
+    dailySession: amt(draft.dailySession),
+    dailySessionMinMinutes: Math.max(1, Math.min(1440, Math.round(num(draft.dailySessionMinMinutes)))),
+  };
+  const dirty = JSON.stringify(parsed) !== JSON.stringify(featureBonuses);
+  const field = (key: keyof FeatureBonusConfig) => ({
+    value: draft[key],
+    onChange: (v: string) => setDraft((d) => ({ ...d, [key]: v })),
+  });
+
+  async function save() {
+    setSaving(true);
+    await setFeatureBonuses(parsed);
+    setSaving(false);
+  }
+
+  return (
+    <div className="rounded-2xl border border-line bg-surface p-4">
+      <div className="mb-3">
+        <h3 className="inline-flex items-center gap-2 font-display text-lg text-ink">
+          <Sparkles size={16} className="text-accent" /> Feature bonuses
+        </h3>
+        <p className="text-xs text-muted">
+          Small coin rewards for the optional features that take more setup than just adding a
+          game. Set any amount to 0 to switch that bonus off.
+        </p>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <RateField
+          label="Story Order (coins)"
+          hint="Paid on the first clear of a game started story-locked behind its prerequisite."
+          min={0}
+          max={100000}
+          {...field("storyOrder")}
+        />
+        <RateField
+          label="Collector's Record (coins)"
+          hint="Paid on the first clear of a game whose copy records its cost or the service it's played through."
+          min={0}
+          max={100000}
+          {...field("collectorsRecord")}
+        />
+        <RateField
+          label="Reviewer (coins)"
+          hint="Paid once per game for reviewing a game cleared for a bounty."
+          min={0}
+          max={100000}
+          {...field("reviewer")}
+        />
+        <RateField
+          label="Review minimum (characters)"
+          hint="How long a review must be to earn the Reviewer bonus."
+          min={1}
+          max={8000}
+          {...field("reviewMinChars")}
+        />
+        <RateField
+          label="Daily Session (coins)"
+          hint="Paid for the first play log of the day — stopwatch or manual. Days turn over in the Rotation reset's timezone."
+          min={0}
+          max={100000}
+          {...field("dailySession")}
+        />
+        <RateField
+          label="Session minimum (minutes)"
+          hint="How long a log must be to count toward the Daily Session bonus."
+          min={1}
+          max={1440}
+          {...field("dailySessionMinMinutes")}
+        />
+      </div>
+      <div className="mt-3 flex justify-end gap-2">
+        <button
+          onClick={() => setDraft(toDraft(featureBonuses))}
+          disabled={!dirty || saving}
+          className="rounded-xl border border-line px-3 py-2 text-sm font-medium text-ink transition hover:bg-panel disabled:opacity-50"
+        >
+          Revert
+        </button>
+        <button
+          onClick={save}
+          disabled={!dirty || saving}
+          className="inline-flex items-center gap-1.5 rounded-xl bg-brand px-4 py-2 text-sm font-semibold text-brand-fg shadow-sm transition hover:brightness-105 disabled:opacity-50"
+        >
+          <Check size={15} /> Save
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function EconomyAdmin() {
   const { economy, setEconomyFormulas, can, games } = useStore();
   const [price, setPrice] = useState<FormulaConfig>(() => cloneFormula(economy.price));
@@ -1219,6 +1329,8 @@ export function EconomyAdmin() {
       <RatesCard />
 
       <ClearStreakCard />
+
+      <FeatureBonusesCard />
 
       <SponsorshipsCard />
 

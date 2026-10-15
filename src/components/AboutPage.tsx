@@ -82,6 +82,7 @@ export function AboutPage() {
     recBountyPct,
     recBountyCap,
     clearStreak_cfg,
+    featureBonuses,
   } = useStore();
   const priceBase = economy.price.base;
   const bountyBase = economy.bounty.base;
@@ -131,8 +132,11 @@ export function AboutPage() {
             <Section icon={Clock} title="4 · Play and log your time">
               Log the hours you play to keep track of your progress — type them in, or start the{" "}
               <strong className="text-ink">live stopwatch</strong> on a game you&apos;re playing and
-              it records the time for you when you stop. Logging time doesn&apos;t pay coins on its
-              own — the whole payout comes as a bounty when you finish.
+              it records the time for you when you stop. Logging time isn&apos;t paid by the hour —
+              the real payout comes as a bounty when you finish — but your first session of the
+              day ({featureBonuses.dailySessionMinMinutes} minutes or more) earns a small{" "}
+              <strong className="text-ink">Daily Session</strong> bonus of{" "}
+              <Coin n={featureBonuses.dailySession} />.
             </Section>
             <Section icon={Trophy} title="5 · Finish for the bounty">
               Mark a game finished to collect its <strong className="text-ink">bounty</strong> (at
@@ -183,6 +187,20 @@ export function AboutPage() {
               the game arrives quietly and never breaks the streak — but finishing it never
               extends the streak either. Your all-time best is kept forever on your Master Ledger
               to chase.
+            </p>
+            <p>
+              Putting in a little extra setup pays too. A game you{" "}
+              <strong className="text-ink">story-lock</strong> behind its prequel and start once
+              that prequel is finished earns a <Coin n={featureBonuses.storyOrder} />{" "}
+              <strong className="text-ink">Story Order</strong> bonus when you finish it — every
+              game in a linked series counts. Record what you paid for a copy (or the subscription
+              or friend you play it through) and its first finish adds a{" "}
+              <Coin n={featureBonuses.collectorsRecord} />{" "}
+              <strong className="text-ink">Collector&apos;s Record</strong> bonus. And a review of{" "}
+              {featureBonuses.reviewMinChars}+ characters on a game you cleared for a bounty earns a
+              one-time <Coin n={featureBonuses.reviewer} />{" "}
+              <strong className="text-ink">Reviewer</strong> bonus. Your cards show which bonuses a
+              game is lined up for, and replays never earn them twice.
             </p>
             <p>
               A game&apos;s length comes from a shared estimate, but you can set{" "}
