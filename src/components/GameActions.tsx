@@ -44,7 +44,7 @@ import {
   type Lane,
 } from "../lib/slots";
 import { formatResetCountdown } from "../lib/rotation";
-import { isReplayFinish, isFamilyDiscounted, familyStats } from "../lib/families";
+import { isReplayFinish, isFamilyDiscounted, familyCardPlayed } from "../lib/families";
 import {
   activePactForCard,
   playtimeLockedByPact,
@@ -482,8 +482,8 @@ export function GameActions({
   // Unified family card: the DISPLAYED playtime sums every member's hours
   // (zero migration — each record keeps its own history; the card shows the
   // family total). `played` keeps driving the per-record logic underneath.
-  const familyPlayed =
-    familyMembers && familyMembers.length > 1 ? familyStats(familyMembers).totalPlayed : null;
+  const cardPlayed = familyCardPlayed(game, familyMembers);
+  const familyPlayed = cardPlayed.familyTotal ? cardPlayed.hours : null;
   const displayPlayed = familyPlayed ?? played;
   const familyPlayedTitle =
     familyPlayed != null && familyMembers
@@ -1583,10 +1583,7 @@ export function ReadOnlyFooter({
   const economy = useStore((s) => s.economy);
   // A visited player who turned the coin economy off has no unlock prices.
   const hostEconomyOn = useStore((s) => s.viewing?.economyEnabled !== false);
-  const played =
-    familyMembers && familyMembers.length > 1
-      ? familyStats(familyMembers).totalPlayed
-      : (game.playedHours ?? 0);
+  const played = familyCardPlayed(game, familyMembers).hours;
 
   if (game.status === "backlog") {
     // A visited pre-order isn't startable, so its unlock price is noise —

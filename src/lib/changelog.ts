@@ -85,6 +85,10 @@ export const RELEASES: Release[] = [
         tag: "improvement",
       },
       {
+        text: "When you're playing one edition of a linked game family, its Now Playing card shows that edition's own playtime and highlights the platform you're playing on.",
+        tag: "improvement",
+      },
+      {
         text: "A linked game family's Journey tab now shows one edition at a time, starting with the primary. Pick any other edition from the dropdown, and its hours and milestones are no longer mixed together.",
         tag: "improvement",
       },

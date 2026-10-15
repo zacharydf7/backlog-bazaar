@@ -5,6 +5,7 @@ import {
   applySetFamilyCover,
   applySever,
   applyUnlink,
+  familyCardPlayed,
   familyCoverImage,
   familyMembers,
   familyName,
@@ -18,6 +19,7 @@ import {
   isReplayFinish,
   isFamilyDiscounted,
   occupantKey,
+  playingPlatforms,
   representativeMember,
   visibleLibrary,
 } from "./families";
@@ -513,5 +515,39 @@ describe("familyCoverImage / applySetFamilyCover (9f420872)", () => {
     expect(applySever(designated, "F").every((g) => g.familyCoverGameId == null)).toBe(true);
     const unlinked = applyUnlink(designated, "b");
     expect(unlinked.every((g) => g.familyCoverGameId == null)).toBe(true);
+  });
+});
+
+describe("familyCardPlayed / playingPlatforms (issue fa9ce208)", () => {
+  const ps5 = game("ps5", {
+    familyId: "F",
+    status: "playing",
+    playedHours: 12,
+    copies: [{ id: "c1", platform: "PlayStation 5", format: "digital" }],
+  });
+  const sw2 = game("sw2", {
+    familyId: "F",
+    status: "backlog",
+    playedHours: 28,
+    copies: [{ id: "c2", platform: " Nintendo Switch 2 " }],
+  });
+
+  it("shows the playing edition's own hours while the family card is in play", () => {
+    expect(familyCardPlayed(ps5, [ps5, sw2])).toEqual({ hours: 12, familyTotal: false });
+  });
+
+  it("keeps the combined family total everywhere else", () => {
+    const finished = { ...ps5, status: "finished" as GameStatus };
+    expect(familyCardPlayed(finished, [finished, sw2])).toEqual({ hours: 40, familyTotal: true });
+  });
+
+  it("is a game's own hours outside a family", () => {
+    expect(familyCardPlayed(sw2, undefined)).toEqual({ hours: 28, familyTotal: false });
+    expect(familyCardPlayed(sw2, [sw2])).toEqual({ hours: 28, familyTotal: false });
+  });
+
+  it("collects only the in-play members' platforms, trimmed", () => {
+    expect([...playingPlatforms([ps5, sw2])]).toEqual(["PlayStation 5"]);
+    expect([...playingPlatforms([{ ...ps5, status: "backlog" }, sw2])]).toEqual([]);
   });
 });

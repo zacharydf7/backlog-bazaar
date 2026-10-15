@@ -119,6 +119,35 @@ export function familyPlatformTags(members: Game[]): PlatformOwnership[] {
   return ownedPlatformSummary(ordered.flatMap((m) => m.copies ?? []));
 }
 
+/** Hours a unified family card shows: the family's combined total, EXCEPT
+ *  while the card is in play — then it's the playing edition's own time, so
+ *  the run you're logging isn't blurred with another edition's history
+ *  (issue fa9ce208). `familyTotal` says which one it is. */
+export function familyCardPlayed(
+  game: Game,
+  members: Game[] | undefined,
+): { hours: number; familyTotal: boolean } {
+  if (members && members.length > 1 && game.status !== "playing") {
+    return { hours: familyStats(members).totalPlayed, familyTotal: true };
+  }
+  return { hours: game.playedHours ?? 0, familyTotal: false };
+}
+
+/** The platforms a family is being played on right now — every platform held
+ *  by a member in play — so the card can single out the version being played
+ *  among its merged platform tags (issue fa9ce208). */
+export function playingPlatforms(members: Game[]): Set<string> {
+  const out = new Set<string>();
+  for (const m of members) {
+    if (m.status !== "playing") continue;
+    for (const c of m.copies ?? []) {
+      const p = (c.platform ?? "").trim();
+      if (p) out.add(p);
+    }
+  }
+  return out;
+}
+
 /** Ids of the non-primary members of every ≥2-member family — the rows the
  *  unified card hides. Surfaces that list games as entries (boards, the Master
  *  Ledger, profile shelves) filter these out; the rows themselves — and their

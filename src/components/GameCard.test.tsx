@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { act, render, screen, fireEvent } from "@testing-library/react";
+import { act, render, screen, fireEvent, within } from "@testing-library/react";
 import { GameCard } from "./GameCard";
 import { useStore } from "../store";
 import { ViewingProvider } from "../lib/viewContext";
@@ -568,6 +568,36 @@ describe("GameCard unified family mode", () => {
     render(<GameCard game={primary} family={fam} />);
     // 10h own + 25h hidden sibling = the family total the card displays.
     expect(screen.getByText(/35h played/i)).toBeTruthy();
+  });
+
+  it("in play, shows only the playing edition's hours and singles out its platform (fa9ce208)", () => {
+    const primary = game({
+      id: "p",
+      title: "AC Shadows PS5",
+      familyId: "F",
+      familyPrimaryGameId: "p",
+      status: "playing",
+      playedHours: 12,
+      copies: [{ id: "c1", platform: "PlayStation 5", format: "digital" as const }],
+    });
+    const sibling = game({
+      id: "s",
+      title: "AC Shadows Switch 2",
+      familyId: "F",
+      familyPrimaryGameId: "p",
+      playedHours: 28,
+      copies: [{ id: "c2", platform: "Nintendo Switch 2" }],
+    });
+    act(() => useStore.setState({ viewing: null, games: [primary, sibling] }));
+    render(<GameCard game={primary} family={buildFamily([primary, sibling], primary)} />);
+
+    expect(screen.getByText(/12h played/i)).toBeTruthy();
+    expect(screen.queryByText(/family total/i)).toBeNull();
+    // The PS5 tag reads as the version in play; the Switch 2 tag is dimmed.
+    const ps5 = screen.getByTitle("Now playing the PlayStation 5 version");
+    expect(ps5.className).toContain("border-brand");
+    expect(within(ps5).getByLabelText("Now playing")).toBeTruthy();
+    expect(screen.getByText("Nintendo Switch 2").parentElement!.className).toContain("opacity-60");
   });
 
   it("shows a plain (non-interactive) badge while visiting", () => {

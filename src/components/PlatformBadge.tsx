@@ -1,4 +1,4 @@
-import { Gamepad2, Disc, Download, Puzzle, type LucideIcon } from "lucide-react";
+import { Gamepad2, Disc, Download, Play, Puzzle, type LucideIcon } from "lucide-react";
 import type { CopyFormat } from "../types";
 import { formatLabel, orderedFormats } from "../lib/copies";
 
@@ -18,13 +18,16 @@ const FORMAT_ICON: Record<CopyFormat, LucideIcon> = {
  *  glyphs (all three show when a platform is owned in all three forms); the
  *  verbose surfaces skip it since their label already lists the formats. With
  *  `onClick` the pill becomes a button (e.g. a stacked deck's tags deep-link to
- *  that version's page). */
+ *  that version's page). `playing` singles out the version in play among a
+ *  family card's merged tags: true highlights it, false dims a version that
+ *  isn't being played, omitted is the plain chip. */
 export function PlatformBadge({
   label,
   formats,
   className = "",
   onClick,
   title,
+  playing,
 }: {
   label: string;
   /** The platform's owned formats — renders ordered glyphs when provided. */
@@ -32,13 +35,23 @@ export function PlatformBadge({
   className?: string;
   onClick?: () => void;
   title?: string;
+  playing?: boolean;
 }) {
   const base =
-    "inline-flex items-center gap-1 rounded-md border border-line bg-panel px-1.5 py-0.5 font-mono text-[10px] text-muted";
+    "inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 font-mono text-[10px] " +
+    (playing
+      ? "border-brand bg-brand/15 font-semibold text-ink"
+      : "border-line bg-panel text-muted" + (playing === false ? " opacity-60" : ""));
   const glyphs = formats ? orderedFormats(formats) : [];
+  const LeadIcon = playing ? Play : Gamepad2;
   const body = (
     <>
-      <Gamepad2 size={11} className="shrink-0 text-accent/70" />
+      <LeadIcon
+        size={11}
+        className={"shrink-0 " + (playing ? "fill-current text-accent" : "text-accent/70")}
+        aria-label={playing ? "Now playing" : undefined}
+        role={playing ? "img" : undefined}
+      />
       <span className="min-w-0 truncate">{label}</span>
       {glyphs.map((f) => {
         const Icon = FORMAT_ICON[f];

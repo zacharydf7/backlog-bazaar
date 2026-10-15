@@ -24,7 +24,7 @@ import {
 } from "lucide-react";
 import type { Game } from "../types";
 import { useStore } from "../store";
-import { isLinked, familyPlatformTags, familyCoverImage } from "../lib/families";
+import { isLinked, familyPlatformTags, familyCoverImage, playingPlatforms } from "../lib/families";
 import type { UnifiedFamily } from "../lib/familyGrouping";
 import { prerequisiteOf } from "../lib/prerequisites";
 import { clearedElsewhere } from "../lib/ownershipMerge";
@@ -178,6 +178,9 @@ export function GameCard({
   // A subscription/borrowed copy gets a quiet "rented" flag beside the platforms
   // — flipped to the danger "no longer available" reading when every base copy
   // has lapsed (the game is locked from starting until regained).
+  // A family card in play singles out the version being played among its merged
+  // tags (issue fa9ce208): that edition's platforms highlight, the rest dim.
+  const inPlay = fam && game.status === "playing" ? playingPlatforms(fam.members) : null;
   const acquisitionTag = primaryAcquisition(ownershipCopies);
   const acquisitionProvider = primaryProvider(ownershipCopies);
   const acquisitionLapsed = accessLost(ownershipCopies);
@@ -939,7 +942,14 @@ export function GameCard({
                     key={o.platform}
                     label={o.platform}
                     formats={o.formats}
-                    title={target ? `Open the ${o.platform} version` : undefined}
+                    playing={inPlay ? inPlay.has(o.platform) : undefined}
+                    title={
+                      target
+                        ? `Open the ${o.platform} version`
+                        : inPlay?.has(o.platform)
+                          ? `Now playing the ${o.platform} version`
+                          : undefined
+                    }
                     onClick={
                       target
                         ? () => {
