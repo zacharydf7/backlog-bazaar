@@ -56,6 +56,17 @@ export function orderReleaseItems(items: (string | ReleaseItem)[]): ReleaseItem[
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-10-15-hot-this-week-real-clears",
+    date: "2026-10-15",
+    title: "Hot This Week counts real finishes",
+    items: [
+      {
+        text: "Hot This Week no longer counts a game as finished when someone retires it, cancels a replay, or gives up a 100% run. Only real clears, the ones that show up in Fresh Clears, count as finishes.",
+        tag: "fix",
+      },
+    ],
+  },
+  {
     id: "2026-10-11-earned-cosmetic-alerts",
     date: "2026-10-11",
     title: "Never miss an earned cosmetic",

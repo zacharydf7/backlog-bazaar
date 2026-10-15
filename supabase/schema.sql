@@ -18159,7 +18159,8 @@ grant execute on function public.square_spotlight() to authenticated;
 -- ---------------------------------------------------------------------------
 
 -- Hot This Week: anonymous per-title activity counts over the trailing 7 days,
--- straight from the event logs (the audit-everything investment on screen).
+-- straight from the event logs (the audit-everything investment on screen);
+-- finishes count the feed's clear posts rather than raw status moves.
 -- Titles group by shared catalog identity (rawg id, else catalog id, else the
 -- normalised title — mirroring finished_game_stats/catalogKey), and every
 -- count is DISTINCT players, so one player's per-platform instances or
@@ -18192,21 +18193,20 @@ as $$
        and e.from_status is null
        and not coalesce(g.private, false)
     union all
-    -- Finishes (a move INTO finished, not a re-save of it). A finish undone
-    -- via the 30s undo button never happened — its consumed undo token was
-    -- created in the same transaction (timestamps match exactly), so it nets
-    -- out here instead of inflating the count for 7 days.
-    select g.rawg_id, g.igdb_id, g.catalog_id, g.title, e.user_id, 'finish'
-      from public.game_status_events e
-      join public.games g on g.id = e.game_id
-     where e.created_at >= now() - interval '7 days'
-       and e.to_status = 'finished'
-       and e.from_status is distinct from 'finished'
+    -- Finishes: the clears the activity feed broadcast, the same rows Fresh
+    -- Clears lists. Not every move into Finished in the status log is a clear:
+    -- a Retire It lands there too, and so do a cancelled replay and an
+    -- abandoned completion. emit_game_activity posts none of those, and an
+    -- undone finish has its post retracted by undo_action. A clear whose
+    -- milestones date it earlier than the post is history, not news
+    -- (clear_is_fresh, as in Fresh Clears).
+    select g.rawg_id, g.igdb_id, g.catalog_id, g.title, a.actor, 'finish'
+      from public.activity_events a
+      join public.games g on g.id = a.game_id
+     where a.created_at >= now() - interval '7 days'
+       and a.kind in ('bounty_claimed', 'co_op_completed')
        and not coalesce(g.private, false)
-       and not exists (select 1 from public.action_undos u
-                        where u.game_id = e.game_id
-                          and u.undone_at is not null
-                          and u.created_at = e.created_at)
+       and public.clear_is_fresh(a.game_id, a.created_at)
     union all
     select g.rawg_id, g.igdb_id, g.catalog_id, g.title, l.user_id, 'like'
       from public.like_events l
