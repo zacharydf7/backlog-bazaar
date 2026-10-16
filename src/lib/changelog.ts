@@ -84,6 +84,10 @@ export const RELEASES: Release[] = [
         text: "The compilation progress bar now shows games in play alongside finished ones. Expand / Collapse is gone, because compilations no longer split into separate cards.",
         tag: "improvement",
       },
+      {
+        text: "A game's compilation badge and its \"Open compilation\" menu item now open the compilation's full page instead of a small pop-up.",
+        tag: "improvement",
+      },
     ],
   },
   {

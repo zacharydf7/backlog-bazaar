@@ -41,8 +41,6 @@ import { SponsorChip, BackGameButton } from "./Sponsor";
 import { RecChip, RecommendModal } from "./Recommend";
 import { canInviteToPact } from "../lib/coopPacts";
 import { FamilyHub } from "./FamilyHub";
-import { CompilationHub } from "./CompilationHub";
-import { AddCompilationModal } from "./AddCompilationModal";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { PreorderModal } from "./PreorderModal";
 import { GameActions, ReadOnlyFooter } from "./GameActions";
@@ -96,11 +94,6 @@ export function GameCard({
   const [showCoOpInvite, setShowCoOpInvite] = useState(false);
   const [showRecommend, setShowRecommend] = useState(false);
   const [showFamily, setShowFamily] = useState(false);
-  // The compilation copy whose hub / edit modal is open. For a standalone master
-  // that has absorbed compilation copies, this is the folded copy the badge points
-  // at (a master can belong to no compilation itself, so we track the child here).
-  const [hubChild, setHubChild] = useState<Game | null>(null);
-  const [editChild, setEditChild] = useState<Game | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [confirming, setConfirming] = useState(false);
   // Inline "Move to Finished" tag picker (Beaten / Completed) shown in the menu.
@@ -164,12 +157,6 @@ export function GameCard({
   const bundleGames = bundle ? storeGames.filter((g) => g.compilationId === bundle.id) : [];
   const compilationParts = inCompilation && !bundle ? [game] : [];
   const coverRound = bundle ? "" : "rounded-t-[10.5px] ";
-
-  // The hub/edit modal target and its backing compilation record (looked up from
-  // whichever compilation copy the badge points at).
-  const editCompilation = editChild
-    ? compilations.find((c) => c.id === editChild.compilationId)
-    : undefined;
 
   // The distinct platforms this instance owns (physical + digital on the same
   // platform collapse to one) — the only metadata the focused card surfaces; the
@@ -254,31 +241,6 @@ export function GameCard({
               setShowFamily(false);
               window.location.hash = gameHash(m.id, viewing?.userId ?? null);
             }}
-          />,
-          document.body,
-        )}
-      {hubChild &&
-        createPortal(
-          <CompilationHub
-            game={hubChild}
-            onClose={() => setHubChild(null)}
-            onEdit={
-              compilations.some((c) => c.id === hubChild.compilationId)
-                ? () => {
-                    setEditChild(hubChild);
-                    setHubChild(null);
-                  }
-                : undefined
-            }
-          />,
-          document.body,
-        )}
-      {editChild &&
-        editCompilation &&
-        createPortal(
-          <AddCompilationModal
-            compilation={editCompilation}
-            onClose={() => setEditChild(null)}
           />,
           document.body,
         )}
@@ -696,12 +658,12 @@ export function GameCard({
                       </button>
                     )}
                     {/* A compilation's games can't be removed individually — the
-                        whole compilation is deleted together, from its hub. */}
+                        whole compilation is deleted together, from its page. */}
                     {inCompilation ? (
                       <button
                         onClick={() => {
                           closeMenu();
-                          setHubChild(game);
+                          window.location.hash = compilationHash(game.compilationId!);
                         }}
                         className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-sm text-ink transition hover:bg-panel"
                       >
@@ -858,7 +820,7 @@ export function GameCard({
                   stays clean: a link icon for a Game Family, a package icon per
                   compilation the game belongs to — side by side on one row. The
                   hover tooltip carries the name; for the owner each is a button
-                  (family → Family Hub, package → that Compilation Hub), while
+                  (family → Family Hub, package → that compilation's page), while
                   visiting they're plain labels. A unified family card skips the
                   link chip — its cover badge already marks the grouping. */}
               {linked &&
@@ -899,7 +861,7 @@ export function GameCard({
                     type="button"
                     onClick={(e) => {
                       e.stopPropagation();
-                      setHubChild(part);
+                      window.location.hash = compilationHash(part.compilationId!);
                     }}
                     title={`Part of ${part.compilationName ?? "a compilation"} — open it`}
                     aria-label={`Part of ${part.compilationName ?? "a compilation"} — open it`}

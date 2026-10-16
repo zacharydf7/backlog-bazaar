@@ -230,3 +230,71 @@ describe("CompilationPage", () => {
     expect(onBack).toHaveBeenCalled();
   });
 });
+
+// Ported from the retired CompilationHub modal (issue 86fc0b4b): the page is
+// now the bundle's only management surface.
+describe("CompilationPage delete and card cover", () => {
+  it("deletes the whole compilation after confirming", async () => {
+    render(<CompilationPage compilationId="C" onBack={() => {}} />);
+    fireEvent.click(screen.getByRole("button", { name: /Delete compilation/i }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /Delete everything/i }));
+    });
+    const { games, compilations } = useStore.getState();
+    expect(games).toHaveLength(0);
+    expect(compilations).toHaveLength(0);
+  });
+
+  it("offers Upload on the cloud and sends the picked file to the store", () => {
+    const setCover = vi.fn(async () => {});
+    act(() =>
+      useStore.setState({
+        cloud: true,
+        fetchGameMilestones: vi.fn(async () => []),
+        setCompilationParentImage: setCover,
+      }),
+    );
+    render(<CompilationPage compilationId="C" onBack={() => {}} />);
+    expect(screen.getByText("Card cover")).toBeTruthy();
+    const input = screen.getByText(/Upload image/i).parentElement!.querySelector("input")!;
+    const file = new File(["x"], "cover.png", { type: "image/png" });
+    fireEvent.change(input, { target: { files: [file] } });
+    expect(setCover).toHaveBeenCalledWith("C", file);
+  });
+
+  it("offers Remove only when a custom cover is set, and clears it", () => {
+    const clearCover = vi.fn(async () => {});
+    act(() =>
+      useStore.setState({
+        compilations: [{ ...comp, parentImage: "custom.png" }],
+        clearCompilationParentImage: clearCover,
+      }),
+    );
+    render(<CompilationPage compilationId="C" onBack={() => {}} />);
+    fireEvent.click(screen.getByRole("button", { name: /Remove — use the first game/i }));
+    expect(clearCover).toHaveBeenCalledWith("C");
+  });
+
+  it("previews the cover the bundle card uses — bundle order, not A-Z (regression)", () => {
+    const zebra = game({ id: "z", title: "Zebra Quest", compilationId: "C", image: "zebra.png" });
+    const alpha = game({ id: "al", title: "Alpha Quest", compilationId: "C", image: "alpha.png" });
+    act(() => useStore.setState({ cloud: true, games: [zebra, alpha] }));
+    render(<CompilationPage compilationId="C" onBack={() => {}} />);
+    const srcs = Array.from(document.querySelectorAll("img")).map((i) => i.getAttribute("src"));
+    // Hero and the card-cover preview both show the first game in bundle order.
+    expect(srcs.filter((s) => s === "zebra.png")).toHaveLength(2);
+    expect(srcs).not.toContain("alpha.png");
+  });
+
+  it("hides the cover block offline with no custom cover, and Upload while offline", () => {
+    const first = render(<CompilationPage compilationId="C" onBack={() => {}} />);
+    expect(screen.queryByText("Card cover")).toBeNull();
+    first.unmount();
+    // Offline with a leftover custom cover: Remove still works, Upload doesn't show.
+    act(() => useStore.setState({ compilations: [{ ...comp, parentImage: "custom.png" }] }));
+    render(<CompilationPage compilationId="C" onBack={() => {}} />);
+    expect(screen.getByText("Card cover")).toBeTruthy();
+    expect(screen.queryByText(/Upload image/i)).toBeNull();
+    expect(screen.getByRole("button", { name: /Remove — use the first game/i })).toBeTruthy();
+  });
+});

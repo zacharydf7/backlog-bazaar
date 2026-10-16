@@ -56,7 +56,7 @@ export function CompilationParentCard({ collapsed }: { collapsed: CollapsedCompi
   }, []);
 
   // The card's click-through: the bundle's own page (routed, like a game card
-  // opening its game page) rather than the old hub modal.
+  // opening its game page).
   const openHub = () => {
     setMenuOpen(false);
     window.location.hash = compilationHash(compilation.id);

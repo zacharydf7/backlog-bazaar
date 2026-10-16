@@ -228,8 +228,9 @@ describe("GameCard compilation badge", () => {
     render(<GameCard game={g} />);
     fireEvent.click(screen.getByRole("button", { name: /More options/i }));
     expect(screen.queryByText(/^Remove$/)).toBeNull();
-    // …replaced by an entry that opens the compilation hub.
-    expect(screen.getByText(/Open compilation/i)).toBeTruthy();
+    // …replaced by an entry that opens the compilation's page.
+    fireEvent.click(screen.getByText(/Open compilation/i));
+    expect(window.location.hash).toBe("#c/C");
   });
 
   it("offers Mark finished (not wishlist/link) for a backlog compilation child", () => {
@@ -429,13 +430,12 @@ describe("GameCard instance isolation (standalone + bundle twin)", () => {
     expect(screen.queryByText(/Move to Finished/i)).toBeNull();
   });
 
-  it("opens the child's own compilation hub from its chip", () => {
+  it("opens the child's own compilation page from its chip", () => {
     const child = game({ id: "c", rawgId: 1, compilationId: "C", compilationName: "Alwa's Collection" });
     act(() => useStore.setState({ viewing: null, games: [child], compilations: [] }));
     render(<GameCard game={child} />);
     fireEvent.click(screen.getByLabelText(/Part of Alwa's Collection/i));
-    // The hub for the bundle opens (its heading is the compilation's title).
-    expect(screen.getByRole("heading", { name: /Alwa's Collection/i })).toBeTruthy();
+    expect(window.location.hash).toBe("#c/C");
   });
 });
 
