@@ -10,8 +10,8 @@ import { ReviewTab } from "./ReviewTab";
  *  the game without leaving its bundle. Every control is the game page's own,
  *  so nothing here is a second implementation — the status moves through the
  *  same economy actions as its card (Buy & Start, Finish, Shelve…, with their
- *  fees and bounties), then priority, your length, logged time, and your score
- *  and review. All immediate-write against this game's record; the bundle's
+ *  fees and bounties), then priority, your length, logged time (GameActions'
+ *  own logger while in play), and your score and review. All immediate-write against this game's record; the bundle's
  *  totals are derived from the records, so they follow along. */
 export function BundleGameDrawer({ game }: { game: Game }) {
   return (
@@ -23,7 +23,9 @@ export function BundleGameDrawer({ game }: { game: Game }) {
         <PriorityCard game={game} />
         <YourLengthCard game={game} />
       </div>
-      {game.status !== "wishlist" && <PlayedField game={game} />}
+      {/* In play, GameActions already logs time right above — a second hours
+          editor beside it reads as a duplicate. Corrections stay on its page. */}
+      {game.status !== "wishlist" && game.status !== "playing" && <PlayedField game={game} />}
       <ReviewTab game={game} />
       <button
         type="button"

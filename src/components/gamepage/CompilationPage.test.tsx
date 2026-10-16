@@ -93,6 +93,20 @@ describe("CompilationPage", () => {
     expect(screen.getByTitle("Manage Part 2").getAttribute("aria-expanded")).toBe("false");
   });
 
+  it("keeps one hours control per drawer: the time editor, or GameActions' logger in play", () => {
+    act(() =>
+      useStore.setState({
+        games: children.map((g) => (g.id === "g2" ? { ...g, status: "playing" as const } : g)),
+      }),
+    );
+    render(<CompilationPage compilationId="C" onBack={() => {}} />);
+    fireEvent.click(screen.getByTitle("Manage Part 1")); // finished
+    expect(screen.getByText("Played", { exact: true })).toBeTruthy();
+    fireEvent.click(screen.getByTitle("Manage Part 2")); // playing
+    expect(screen.queryByText("Played", { exact: true })).toBeNull();
+    expect(screen.getByRole("button", { name: "Log" })).toBeTruthy();
+  });
+
   it("renders the bundle in the saved child order, with a handle per game (140ac868)", () => {
     act(() => useStore.setState({ compilations: [{ ...comp, childOrder: ["g2", "g1"] }] }));
     render(<CompilationPage compilationId="C" onBack={() => {}} />);
