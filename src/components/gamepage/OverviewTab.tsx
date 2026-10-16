@@ -145,7 +145,7 @@ export function OverviewTab({
 /** Backlog triage (issue 901eb363): rank how urgently you want to play this.
  *  Drives the boards' Priority sort and the Master Ledger's Priority filter;
  *  personal metadata only — never touches the economy. Immediate-write. */
-function PriorityCard({ game }: { game: Game }) {
+export function PriorityCard({ game }: { game: Game }) {
   const setGamePriority = useStore((s) => s.setGamePriority);
   return (
     <div className="rounded-xl border border-line bg-panel/30 p-3">
@@ -252,7 +252,7 @@ function CatalogCard({
  *  economy (so a game you decide to 100% pays a fairer bounty) without touching
  *  the catalog. Owner-only; hidden for ongoing/live-service games, which have no
  *  buy/finish economy. */
-function YourLengthCard({ game }: { game: Game }) {
+export function YourLengthCard({ game }: { game: Game }) {
   const [open, setOpen] = useState(false);
   if (game.ongoing) return null;
   const personal = hasPersonalLength(game);

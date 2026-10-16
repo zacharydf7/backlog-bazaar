@@ -3,6 +3,7 @@ import { act, render, screen, fireEvent, waitFor } from "@testing-library/react"
 import { CompilationPage } from "./CompilationPage";
 import { useStore } from "../../store";
 import type { Compilation, Game } from "../../types";
+import type { GameMilestone, MilestoneKind } from "../../lib/milestones";
 
 function game(over: Partial<Game> = {}): Game {
   return {
@@ -59,11 +60,37 @@ describe("CompilationPage", () => {
     expect(screen.getByText("Nintendo Switch")).toBeTruthy();
   });
 
-  it("lists every bundled game and opens a child's own page on click", () => {
+  it("lists every bundled game; a row opens its drawer, which links to the game's page", () => {
     render(<CompilationPage compilationId="C" onBack={() => {}} />);
     expect(screen.getByText("Part 1")).toBeTruthy();
-    fireEvent.click(screen.getByTitle("Open Part 2"));
+    const row = screen.getByTitle("Manage Part 2");
+    expect(row.getAttribute("aria-expanded")).toBe("false");
+    fireEvent.click(row);
+    expect(row.getAttribute("aria-expanded")).toBe("true");
+    fireEvent.click(screen.getByRole("button", { name: /Open Part 2's page/ }));
     expect(window.location.hash).toBe("#g/g2");
+  });
+
+  it("drawers manage a game in place with its own controls (86fc0b4b)", () => {
+    act(() =>
+      useStore.setState({
+        games: children.map((g) => (g.id === "g2" ? { ...g, hours: 12 } : g)),
+      }),
+    );
+    render(<CompilationPage compilationId="C" onBack={() => {}} />);
+    // Collapsed header: hours logged against the game's length.
+    expect(screen.getByText("/ 12h")).toBeTruthy();
+    fireEvent.click(screen.getByTitle("Manage Part 2"));
+    // The game's own economy action, not a free status switch.
+    expect(screen.getByRole("button", { name: /Buy & Start/i })).toBeTruthy();
+    // Priority writes straight to the game record, and the header follows.
+    fireEvent.click(screen.getByRole("button", { name: "High" }));
+    expect(useStore.getState().games.find((g) => g.id === "g2")?.priority).toBe("high");
+    expect(screen.getByText("Your length")).toBeTruthy();
+    expect(screen.getByText("Your score")).toBeTruthy();
+    // One drawer at a time: opening Part 1 closes Part 2.
+    fireEvent.click(screen.getByTitle("Manage Part 1"));
+    expect(screen.getByTitle("Manage Part 2").getAttribute("aria-expanded")).toBe("false");
   });
 
   it("renders the bundle in the saved child order, with a handle per game (140ac868)", () => {
@@ -81,6 +108,36 @@ describe("CompilationPage", () => {
   it("offers no Journey tab offline (milestones are cloud-only)", () => {
     render(<CompilationPage compilationId="C" onBack={() => {}} />);
     expect(screen.queryByRole("tab", { name: /Journey/i })).toBeNull();
+  });
+
+  it("interleaves every game's milestones into one dated bundle timeline (86fc0b4b)", async () => {
+    const m = (id: string, gameId: string, kind: MilestoneKind, occurredOn: string): GameMilestone => ({
+      id,
+      gameId,
+      kind,
+      occurredOn,
+      source: "auto",
+      createdAt: 1,
+    });
+    const byGame: Record<string, GameMilestone[]> = {
+      g1: [m("a", "g1", "started", "2026-01-05"), m("b", "g1", "beat", "2026-03-01")],
+      g2: [m("c", "g2", "started", "2026-02-10")],
+    };
+    act(() =>
+      useStore.setState({
+        cloud: true,
+        fetchGameMilestones: vi.fn(async (id: string) => byGame[id] ?? []),
+      }),
+    );
+    render(<CompilationPage compilationId="C" onBack={() => {}} />);
+    fireEvent.click(screen.getByRole("tab", { name: /Journey/i }));
+    const timeline = await screen.findByRole("list", { name: "Bundle timeline" });
+    // Date order across games, each row naming its game.
+    expect(Array.from(timeline.querySelectorAll("li")).map((li) => li.textContent)).toEqual([
+      "2026-01-05StartedPart 1",
+      "2026-02-10StartedPart 2",
+      "2026-03-01BeatPart 1",
+    ]);
   });
 
   it("breaks out a milestone timeline per game on the Journey tab (cloud)", async () => {

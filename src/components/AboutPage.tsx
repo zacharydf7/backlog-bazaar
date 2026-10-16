@@ -449,7 +449,8 @@ export function AboutPage() {
             <strong className="text-ink">Play a Game</strong> to pick which one to start; it&apos;s
             bought like any other game and gets its own card in Now Playing, marked with the
             bundle&apos;s name. Open the compilation to see every game inside, what you spent, and
-            your total time. And when a collection you own as a <em>single</em> card is linked in
+            your total time — tap any game there to play, log time, rate or edit it in place, and
+            its Journey tab tells the whole bundle&apos;s story in one timeline. And when a collection you own as a <em>single</em> card is linked in
             the catalog, its ⋮ menu offers &ldquo;Expand compilation&rdquo; — the card becomes the
             bundle&apos;s games with the cost split evenly, your logged hours kept on the bundle
             total, and any activation fee you paid refunded.

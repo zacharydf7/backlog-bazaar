@@ -73,6 +73,14 @@ export const RELEASES: Release[] = [
         tag: "feature",
       },
       {
+        text: "Manage every game in a compilation without leaving it: tap a game on the compilation's page to start or finish it, log time, set its priority and length, or rate and review it.",
+        tag: "feature",
+      },
+      {
+        text: "A compilation's Journey tab now opens with one timeline of every game's starts and finishes, in date order.",
+        tag: "feature",
+      },
+      {
         text: "The compilation progress bar now shows games in play alongside finished ones. Expand / Collapse is gone, because compilations no longer split into separate cards.",
         tag: "improvement",
       },

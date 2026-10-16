@@ -18,13 +18,19 @@ export function JourneyTab({ game }: { game: Game }) {
 
   return (
     <div className="flex flex-col gap-4">
-      {!isWishlist && (cloud ? <PlaytimeSection game={game} /> : <OfflinePlayedField game={game} />)}
+      {!isWishlist && <PlayedField game={game} />}
       {cloud && <MilestonesSection game={game} />}
       {/* Changing the story lock of a game you're mid-way through is moot —
           the gate only applies on the way INTO Now Playing. */}
       {game.status !== "playing" && <PrerequisiteSection game={game} />}
     </div>
   );
+}
+
+/** The logged-time editor: per version in the cloud, one total offline. */
+export function PlayedField({ game }: { game: Game }) {
+  const cloud = useStore((s) => s.cloud);
+  return cloud ? <PlaytimeSection game={game} /> : <OfflinePlayedField game={game} />;
 }
 
 /** Offline keeps a single total "Played" field; it persists on blur through

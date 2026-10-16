@@ -6,10 +6,12 @@ import {
   Banknote,
   BookOpen,
   CheckCircle2,
+  ChevronDown,
   Clock,
   GripVertical,
   ImagePlus,
   Map as MapIcon,
+  Milestone as MilestoneIcon,
   Package,
   Pencil,
   Play,
@@ -30,6 +32,7 @@ import {
   totalCost,
 } from "../../lib/copies";
 import { formatPlaytime } from "../../lib/playtime";
+import { effectiveLength } from "../../lib/personalLength";
 import { StatusBadge } from "../StatusBadge";
 import { isInRotation } from "../../lib/status";
 import { PlatformBadge } from "../PlatformBadge";
@@ -38,6 +41,14 @@ import { AddCompilationModal } from "../AddCompilationModal";
 import { BundleProgress } from "../CompilationParentCard";
 import { CompilationPlayPicker } from "../CompilationPlayPicker";
 import { MilestonesSection } from "../MilestonesSection";
+import {
+  MILESTONE_KINDS,
+  milestoneLabel,
+  sortMilestones,
+  type GameMilestone,
+} from "../../lib/milestones";
+import { GamePriorityBadge } from "../GamePriorityBadge";
+import { BundleGameDrawer } from "./BundleGameDrawer";
 
 type CompilationTabId = "overview" | "journey";
 
@@ -361,6 +372,8 @@ function BundleGames({
   const byId = useMemo(() => new Map(games.map((g) => [g.id, g])), [games]);
   const ordered = order.map((id) => byId.get(id)).filter((g): g is Game => g != null);
   const draggable = games.length > 1;
+  // One drawer open at a time keeps the list scannable.
+  const [openId, setOpenId] = useState<string | null>(null);
 
   return (
     <Reorder.Group
@@ -373,69 +386,103 @@ function BundleGames({
       className="flex flex-col gap-1"
     >
       {ordered.map((g) => (
-        <BundleRow key={g.id} game={g} draggable={draggable} />
+        <BundleRow
+          key={g.id}
+          game={g}
+          draggable={draggable}
+          open={openId === g.id}
+          onToggle={() => setOpenId((id) => (id === g.id ? null : g.id))}
+        />
       ))}
     </Reorder.Group>
   );
 }
 
-/** One row in the bundle checklist: a drag handle (when reorderable) plus the
- *  clickable body that opens the game's own page. Drag is handle-only
- *  (dragListener off) so a tap still navigates. */
-function BundleRow({ game, draggable }: { game: Game; draggable: boolean }) {
+/** One row in the bundle checklist (issue 86fc0b4b): a drag handle (when
+ *  reorderable) plus a header that opens the game's drawer — status, priority,
+ *  hours against its length, and its share of the cost at a glance; the drawer
+ *  manages the game in place. Drag is handle-only (dragListener off) so a tap
+ *  still toggles. */
+function BundleRow({
+  game,
+  draggable,
+  open,
+  onToggle,
+}: {
+  game: Game;
+  draggable: boolean;
+  open: boolean;
+  onToggle: () => void;
+}) {
   const controls = useDragControls();
   const done = game.status === "finished";
   const cost = totalCost(game.copies);
   const played = game.playedHours ?? 0;
+  const length = effectiveLength(game);
   return (
     <Reorder.Item value={game.id} dragListener={false} dragControls={controls} className="list-none">
-      <div className="flex items-stretch gap-1 rounded-lg border border-line bg-panel/50 transition hover:border-brand/50">
-        {draggable && (
-          <span
-            role="button"
-            aria-label={`Drag to reorder ${game.title}`}
-            onPointerDown={(e) => controls.start(e)}
-            className="flex cursor-grab touch-none items-center pl-1.5 text-subtle transition hover:text-ink"
+      <div
+        className={
+          "overflow-hidden rounded-lg border bg-panel/50 transition " +
+          (open ? "border-brand/50" : "border-line hover:border-brand/50")
+        }
+      >
+        <div className="flex items-stretch gap-1">
+          {draggable && (
+            <span
+              role="button"
+              aria-label={`Drag to reorder ${game.title}`}
+              onPointerDown={(e) => controls.start(e)}
+              className="flex cursor-grab touch-none items-center pl-1.5 text-subtle transition hover:text-ink"
+            >
+              <GripVertical size={16} />
+            </span>
+          )}
+          <button
+            type="button"
+            onClick={onToggle}
+            aria-expanded={open}
+            title={open ? `Close ${game.title}` : `Manage ${game.title}`}
+            className="flex min-w-0 flex-1 items-start justify-between gap-2 px-2.5 py-2 text-left"
           >
-            <GripVertical size={16} />
-          </span>
-        )}
-        <button
-          type="button"
-          onClick={() => {
-            window.location.hash = gameHash(game.id);
-          }}
-          title={`Open ${game.title}`}
-          className="flex min-w-0 flex-1 items-start justify-between gap-2 px-2.5 py-2 text-left"
-        >
-          <div className="flex min-w-0 flex-1 items-start gap-2">
-            {done ? (
-              <CheckCircle2 size={16} className="mt-0.5 shrink-0 text-success" />
-            ) : (
-              <span className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
-            )}
-            <div className="min-w-0 flex-1">
-              <span className="block truncate text-sm text-ink">{game.title}</span>
-              <div className="mt-0.5">
-                <StatusBadge status={game.status} rotation={isInRotation(game)} />
+            <div className="flex min-w-0 flex-1 items-start gap-2">
+              {done ? (
+                <CheckCircle2 size={16} className="mt-0.5 shrink-0 text-success" />
+              ) : (
+                <span className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+              )}
+              <div className="min-w-0 flex-1">
+                <span className="block truncate text-sm text-ink">{game.title}</span>
+                <div className="mt-0.5 flex flex-wrap items-center gap-1">
+                  <StatusBadge status={game.status} rotation={isInRotation(game)} />
+                  {game.priority && <GamePriorityBadge priority={game.priority} />}
+                </div>
               </div>
             </div>
-          </div>
-          <div className="mt-0.5 flex shrink-0 flex-col items-end text-xs">
-            <span className="text-muted">
-              {played > 0 ? `${formatPlaytime(played)} played` : "—"}
-            </span>
-            {cost > 0 && <span className="text-subtle">{formatUsd(cost)}</span>}
-          </div>
-        </button>
+            <div className="mt-0.5 flex shrink-0 items-start gap-1.5">
+              <div className="flex flex-col items-end text-xs">
+                <span className="text-muted">
+                  {played > 0 ? formatPlaytime(played) : "—"}
+                  {length != null && <span className="text-subtle"> / {formatPlaytime(length)}</span>}
+                </span>
+                {cost > 0 && <span className="text-subtle">{formatUsd(cost)}</span>}
+              </div>
+              <ChevronDown
+                size={16}
+                className={"mt-0.5 text-subtle transition-transform " + (open ? "rotate-180" : "")}
+                aria-hidden
+              />
+            </div>
+          </button>
+        </div>
+        {open && <BundleGameDrawer game={game} />}
       </div>
     </Reorder.Item>
   );
 }
 
 /** The bundle at a glance: the checklist of every game inside (each row opens
- *  that game's own page), the per-copy spend breakdown, and the card cover
- *  controls. */
+ *  its drawer), the per-copy spend breakdown, and the card cover controls. */
 function OverviewPane({
   compilation,
   children,
@@ -461,11 +508,11 @@ function OverviewPane({
       <div className="rounded-xl border border-line bg-panel/30 p-3">
         <h3 className="mb-2 font-display text-base text-ink">Games in this bundle</h3>
         <BundleGames games={children} onReorder={onReorderChildren} />
-        {children.length > 1 && (
-          <p className="mt-2 px-1 text-[11px] text-subtle">
-            Drag the handle to reorder — the bundle&apos;s cards list its games in this order.
-          </p>
-        )}
+        <p className="mt-2 px-1 text-[11px] text-subtle">
+          Tap a game to play, log time, rate or edit it right here.
+          {children.length > 1 &&
+            " Drag the handle to reorder — the bundle's cards list its games in this order."}
+        </p>
         {carryover > 0 && (
           <p className="mt-2 px-1 text-[11px] text-subtle">
             Totals include {formatPlaytime(carryover)} logged on the single card before it was
@@ -541,9 +588,8 @@ function OverviewPane({
   );
 }
 
-/** The bundle's play story, broken out per game: each child gets its own
- *  milestone timeline (the same section its own page's Journey tab uses).
- *  Playtime logging stays on the child pages — the bundle is a data view. */
+/** The bundle's play story: one timeline across every game, then each game's
+ *  own milestones (the same section its page's Journey tab uses) to edit. */
 function JourneyPane({ children, carryover }: { children: Game[]; carryover: number }) {
   return (
     <div className="flex flex-col gap-4">
@@ -553,6 +599,7 @@ function JourneyPane({ children, carryover }: { children: Game[]; carryover: num
           those hours belong to the bundle, not any one game below.
         </p>
       )}
+      <BundleTimeline games={children} />
       {children.map((c) => (
         <section key={c.id} className="rounded-xl border border-line bg-panel/30 p-3">
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
@@ -571,5 +618,58 @@ function JourneyPane({ children, carryover }: { children: Game[]; carryover: num
         </section>
       ))}
     </div>
+  );
+}
+
+/** The whole bundle's story in one timeline (issue 86fc0b4b): every game's
+ *  milestones in date order, each labeled with its game. Read-only — dates are
+ *  edited in each game's own section below. Re-fetched whenever a game changes
+ *  status, so a start or finish made on this page shows up straight away. */
+function BundleTimeline({ games }: { games: Game[] }) {
+  const fetchGameMilestones = useStore((s) => s.fetchGameMilestones);
+  const [rows, setRows] = useState<GameMilestone[] | null>(null);
+  const statusKey = games.map((g) => `${g.id}:${g.status}:${g.finishTag ?? ""}`).join(",");
+
+  useEffect(() => {
+    let active = true;
+    void Promise.all(games.map((g) => fetchGameMilestones(g.id))).then((lists) => {
+      if (active) setRows(sortMilestones(lists.flat()));
+    });
+    return () => {
+      active = false;
+    };
+    // statusKey stands in for `games`: refetch on a status move, not on every
+    // unrelated edit (hours, notes) that hands us new game objects.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [statusKey, fetchGameMilestones]);
+
+  const titles = new Map(games.map((g) => [g.id, g.title]));
+  return (
+    <section className="rounded-xl border border-line bg-panel/30 p-3">
+      <h3 className="mb-2 inline-flex items-center gap-1.5 font-display text-base text-ink">
+        <MilestoneIcon size={15} className="text-accent" /> Bundle timeline
+      </h3>
+      {rows === null ? (
+        <p className="text-xs text-subtle">Loading…</p>
+      ) : rows.length === 0 ? (
+        <p className="text-xs text-subtle">
+          Nothing yet — starting and finishing the games here records their milestones.
+        </p>
+      ) : (
+        <ol className="flex flex-col gap-1" aria-label="Bundle timeline">
+          {rows.map((m) => {
+            const meta = MILESTONE_KINDS.find((k) => k.value === m.kind);
+            return (
+              <li key={m.id} className="flex min-w-0 items-center gap-2 text-sm">
+                <span className={"h-2 w-2 shrink-0 rounded-full " + (meta?.dotClass ?? "bg-subtle")} />
+                <span className="shrink-0 font-mono text-xs text-subtle">{m.occurredOn}</span>
+                <span className="shrink-0 text-ink">{milestoneLabel(m.kind)}</span>
+                <span className="min-w-0 truncate text-muted">{titles.get(m.gameId)}</span>
+              </li>
+            );
+          })}
+        </ol>
+      )}
+    </section>
   );
 }
