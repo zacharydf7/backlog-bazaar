@@ -16,7 +16,6 @@ import {
   Lock,
   Eye,
   Expand,
-  Shrink,
   BadgeCheck,
   Handshake,
   CalendarClock,
@@ -34,7 +33,7 @@ import { ownedPlatformSummary, ownedVersions, totalCost, formatUsd, versionLabel
 import { formatPlaytime } from "../lib/playtime";
 import { isLocalCover } from "../lib/covers";
 import { clampScore } from "../lib/reviews";
-import { gameHash } from "../lib/route";
+import { compilationHash, gameHash } from "../lib/route";
 import { ReportModal } from "./ReportModal";
 import { LikeButton } from "./LikeButton";
 import { CoOpBadge, CoOpInviteModal, useActivePact } from "./CoOpPact";
@@ -83,7 +82,7 @@ export function GameCard({
    *  card): the platform tags then aggregate the whole deck, top card first. */
   stack?: Game[];
 }) {
-  const { bazaarToWishlist, bazaarToFinished, importFromWishlist, removeGame, compilations, setCompilationChildStatus, setCompilationExpanded, expandGameToCompilation, parentTemplates, setGamePrivate, severFamily } =
+  const { bazaarToWishlist, bazaarToFinished, importFromWishlist, removeGame, compilations, setCompilationChildStatus, expandGameToCompilation, parentTemplates, setGamePrivate, severFamily } =
     useStore();
   const { readOnly } = useViewing();
   const viewing = useStore((s) => s.viewing);
@@ -155,7 +154,16 @@ export function GameCard({
   // bundle membership (a standalone twin of a bundle-owned game shows separately,
   // marked "Cleared Elsewhere" when the other instance already beat it).
   const sourceGames = viewing ? viewing.games : storeGames;
-  const compilationParts = inCompilation ? [game] : [];
+  // A playing bundle game wears its compilation's strip on Now Playing (issue
+  // 86fc0b4b) — its other games live on the bundle's board cards. The strip
+  // replaces the small "Part of" badge.
+  const bundle =
+    !fam && !viewing && game.status === "playing" && game.compilationId
+      ? compilations.find((c) => c.id === game.compilationId)
+      : undefined;
+  const bundleGames = bundle ? storeGames.filter((g) => g.compilationId === bundle.id) : [];
+  const compilationParts = inCompilation && !bundle ? [game] : [];
+  const coverRound = bundle ? "" : "rounded-t-[10.5px] ";
 
   // The hub/edit modal target and its backing compilation record (looked up from
   // whichever compilation copy the badge points at).
@@ -285,7 +293,7 @@ export function GameCard({
                 <span className="font-medium text-ink">{game.title}</span> becomes{" "}
                 <span className="font-medium text-ink">{expandTemplate.title}</span> with{" "}
                 <span className="font-medium text-ink">{expandTemplate.games.length}</span>{" "}
-                individual game cards.
+                games, kept together on one compilation card.
                 {totalCost(game.copies) > 0 && (
                   <>
                     {" "}
@@ -377,7 +385,24 @@ export function GameCard({
         // its own top rounding instead (nested inside the 1.5px border).
         className="group flex h-full min-h-[22rem] flex-col rounded-xl border-[1.5px] border-edge bg-surface shadow-stamp transition duration-200 hover:-translate-y-0.5 hover:shadow-[4px_5px_0_0_var(--shadow-ink)]"
       >
-        <div className="relative h-36 rounded-t-[10.5px] border-b-[1.5px] border-edge bg-panel">
+        {bundle && (
+          <button
+            type="button"
+            onClick={() => {
+              window.location.hash = compilationHash(bundle.id);
+            }}
+            title={`Open ${bundle.title}`}
+            className="flex min-w-0 items-center gap-1.5 rounded-t-[10.5px] border-b-[1.5px] border-edge bg-accent/10 px-3 py-1.5 text-left text-[11px] font-medium text-accent transition hover:bg-accent/15"
+          >
+            <Package size={12} className="shrink-0" />
+            <span className="min-w-0 truncate">{bundle.title}</span>
+            <span className="shrink-0 text-subtle">
+              · {bundleGames.filter((g) => g.status === "finished").length} of{" "}
+              {bundleGames.length} finished
+            </span>
+          </button>
+        )}
+        <div className={"relative h-36 border-b-[1.5px] border-edge bg-panel " + coverRound}>
           {/* The cover opens the game's own page. Its title/click covers only this
               image region, NOT the whole cell — otherwise the ellipsis menu (a
               sibling below) would inherit this tooltip on every menu option. While
@@ -399,7 +424,7 @@ export function GameCard({
               <img
                 src={cover}
                 alt={game.title}
-                className="h-full w-full rounded-t-[10.5px] object-cover"
+                className={"h-full w-full object-cover " + coverRound}
               />
             ) : (
               <div className="flex h-full items-center justify-center text-4xl opacity-60">🎮</div>
@@ -668,19 +693,6 @@ export function GameCard({
                         className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-sm text-ink transition hover:bg-panel"
                       >
                         <Expand size={15} className="text-accent" /> Expand compilation…
-                      </button>
-                    )}
-                    {/* Fold this bundle's cards into one rollup parent card
-                        (refused with a toast while a piece is in Now Playing). */}
-                    {inCompilation && game.compilationId && (
-                      <button
-                        onClick={() => {
-                          closeMenu();
-                          void setCompilationExpanded(game.compilationId!, false);
-                        }}
-                        className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-sm text-ink transition hover:bg-panel"
-                      >
-                        <Shrink size={15} className="text-accent" /> Collapse compilation
                       </button>
                     )}
                     {/* A compilation's games can't be removed individually — the

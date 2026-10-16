@@ -4,11 +4,10 @@
 // backing out to click the next card. Pure here so it's unit-tested without the
 // DOM; App builds the sequence and the pages render the controls.
 //
-// A board can also show collapsed-compilation cards, which open a bundle page
-// rather than a game page (issue 28ec4975). The sequence therefore walks tagged
-// "stops" — each either a game or a compilation — so Prev/Next steps through the
-// bundle cards too instead of skipping them, matching what happens when the
-// bundle is expanded into its individual game cards.
+// A board can also show compilation cards, which open a bundle page rather than
+// a game page (issue 28ec4975). The sequence therefore walks tagged "stops" —
+// each either a game or a compilation — so Prev/Next steps through the bundle
+// cards too instead of skipping them.
 
 import type { StackedBoardCard } from "./gameStacks";
 

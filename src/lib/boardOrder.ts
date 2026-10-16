@@ -11,8 +11,8 @@
 // already have appeared. A–Z instead uses the card's DISPLAYED title (the
 // bundle/family name is what the eye scans for). Pure; unit-tested offline.
 
-import type { Compilation, Game } from "../types";
-import { orderCompilationChildren, type CollapsedCompilation } from "./compilationGrouping";
+import type { Game } from "../types";
+import type { CollapsedCompilation } from "./compilationGrouping";
 import type { UnifiedFamily } from "./familyGrouping";
 import { sortMetric, type EconomyViewContext, type SortKey } from "./bazaarView";
 import { DEFAULT_ECONOMY, type EconomyConfig } from "./economy";
@@ -36,9 +36,9 @@ export function cardTitle(card: BoardCard): string {
 }
 
 /** One placed item in the board order: one or more cards rendered contiguously,
- *  standing in for `members` when the board sorts. A plain game / collapsed
- *  bundle / family is a single-card unit; a SPLIT compilation the owner has
- *  ordered is a multi-card unit whose cards stay together in that order. */
+ *  standing in for `members` when the board sorts. A plain game / bundle card /
+ *  family is a single-card unit; a visited library's loose bundle children are
+ *  a multi-card unit whose cards stay together. */
 interface BoardUnit {
   cards: BoardCard[];
   members: Game[];
@@ -53,13 +53,10 @@ interface BoardUnit {
  *  context contract as sortGames (coin-value sorts price the way the buy
  *  button will). Returns a new array; the inputs are not mutated.
  *
- *  When a compilation is SPLIT (expanded), its now-individual cards are kept
- *  together as one block rather than scattered by the global board sort — in the
- *  owner's saved child order if there is one, otherwise the bundle's natural
- *  order (which is what the parent card shows by default), so a freshly-added
- *  compilation reads in order without any manual reordering (issue 140ac868).
- *  `compilations` supplies the saved orders; the grouping itself keys off each
- *  game's `compilationId`. */
+ *  A compilation's loose child cards (a visited library, where bundles aren't
+ *  folded) are kept together as one block rather than scattered by the global
+ *  board sort, in the bundle's natural order (issue 140ac868). The grouping
+ *  keys off each game's `compilationId`. */
 export function orderBoardCards(
   games: Game[],
   collapsed: CollapsedCompilation[],
@@ -67,14 +64,11 @@ export function orderBoardCards(
   key: SortKey,
   economy: EconomyConfig = DEFAULT_ECONOMY,
   ctx: EconomyViewContext = {},
-  compilations: Compilation[] = [],
 ): BoardCard[] {
-  const childOrderById = new Map(compilations.map((c) => [c.id, c.childOrder]));
-
   const units: BoardUnit[] = [];
-  // Split (expanded) children of one bundle collect into a single block; every
-  // other game is a one-card unit. A game only reaches here as a plain card when
-  // its bundle is expanded (collapsed children arrive via `collapsed`).
+  // Loose children of one bundle collect into a single block; every other game
+  // is a one-card unit. Children only arrive loose where bundles aren't folded
+  // (a visited library); the owner's arrive via `collapsed`.
   const byComp = new Map<string, Game[]>();
   for (const game of games) {
     if (game.compilationId != null) {
@@ -85,18 +79,19 @@ export function orderBoardCards(
       units.push({ cards: [{ kind: "game", game }], members: [game], sortTitle: game.title });
     }
   }
-  for (const [compId, members] of byComp) {
-    const ordered = orderCompilationChildren(members, childOrderById.get(compId));
+  for (const members of byComp.values()) {
     units.push({
-      cards: ordered.map((game) => ({ kind: "game" as const, game })),
-      members: ordered,
-      sortTitle: ordered.reduce((m, g) => (g.title < m ? g.title : m), ordered[0]?.title ?? ""),
+      cards: members.map((game) => ({ kind: "game" as const, game })),
+      members,
+      sortTitle: members.reduce((m, g) => (g.title < m ? g.title : m), members[0]?.title ?? ""),
     });
   }
+  // A bundle card stands in for its children on THIS board only — a finished
+  // child's bounty or length says nothing about where the Bazaar card belongs.
   for (const c of collapsed) {
     units.push({
       cards: [{ kind: "compilation", collapsed: c }],
-      members: c.children,
+      members: c.boardChildren,
       sortTitle: c.compilation.title,
     });
   }

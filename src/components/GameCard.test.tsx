@@ -258,6 +258,47 @@ describe("GameCard compilation badge", () => {
   });
 });
 
+describe("GameCard compilation strip on Now Playing (86fc0b4b)", () => {
+  const comp = {
+    id: "C",
+    title: "Mario All-Stars",
+    totalCost: 0,
+    createdAt: 1,
+    expanded: true,
+    carryoverHours: 0,
+  };
+  const playing = game({ id: "p", status: "playing", compilationId: "C", compilationName: "Mario All-Stars" });
+  const done = game({ id: "d", status: "finished", compilationId: "C" });
+  const waiting = game({ id: "w", status: "backlog", compilationId: "C" });
+
+  it("frames a playing bundle game with its compilation's name and progress", () => {
+    act(() =>
+      useStore.setState({ viewing: null, cloud: false, games: [playing, done, waiting], compilations: [comp] }),
+    );
+    render(<GameCard game={playing} />);
+    const strip = screen.getByTitle("Open Mario All-Stars");
+    expect(strip.textContent).toMatch(/Mario All-Stars\s*· 1 of 3 finished/);
+    // The strip stands in for the small "Part of" chip.
+    expect(screen.queryByTitle(/Part of Mario All-Stars/i)).toBeNull();
+    fireEvent.click(strip);
+    expect(window.location.hash).toBe("#c/C");
+  });
+
+  it("leaves non-playing bundle games and visited libraries unframed", () => {
+    act(() =>
+      useStore.setState({ viewing: null, cloud: false, games: [playing, waiting], compilations: [comp] }),
+    );
+    const { unmount } = render(<GameCard game={waiting} />);
+    expect(screen.queryByTitle("Open Mario All-Stars")).toBeNull();
+    unmount();
+    // A visitor's snapshot carries no compilations, so the chip stays.
+    act(() => useStore.setState({ compilations: [] }));
+    render(<GameCard game={playing} />);
+    expect(screen.queryByTitle("Open Mario All-Stars")).toBeNull();
+    expect(screen.getByTitle(/Part of Mario All-Stars/i)).toBeTruthy();
+  });
+});
+
 describe("GameCard expand/collapse compilation menu", () => {
   const template = {
     id: "T",
@@ -267,7 +308,7 @@ describe("GameCard expand/collapse compilation menu", () => {
     parentRawgId: 42,
   };
 
-  it("offers Collapse compilation for a bundle piece", () => {
+  it("no longer offers Collapse compilation for a bundle piece (86fc0b4b)", () => {
     const g = game({ id: "gc", compilationId: "C", compilationName: "Bundle" });
     act(() =>
       useStore.setState({
@@ -281,10 +322,7 @@ describe("GameCard expand/collapse compilation menu", () => {
     );
     render(<GameCard game={g} />);
     fireEvent.click(screen.getByRole("button", { name: /More options/i }));
-    act(() => {
-      fireEvent.click(screen.getByText(/Collapse compilation/i));
-    });
-    expect(useStore.getState().compilations[0].expanded).toBe(false);
+    expect(screen.queryByText(/Collapse compilation/i)).toBeNull();
   });
 
   it("offers Expand compilation… for an owned card matching a linked template", () => {

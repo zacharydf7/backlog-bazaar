@@ -73,9 +73,9 @@ describe("CompilationPage", () => {
     const p2 = screen.getByText("Part 2");
     // Custom order puts Part 2 first, so it precedes Part 1 in the document.
     expect(p2.compareDocumentPosition(p1) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    // A drag handle per game, and the note explaining the split-order effect.
+    // A drag handle per game, and the note explaining where the order shows.
     expect(screen.getAllByRole("button", { name: /Drag to reorder/i })).toHaveLength(2);
-    expect(screen.getByText(/order the games take when the bundle is split/i)).toBeTruthy();
+    expect(screen.getByText(/cards list its games in this order/i)).toBeTruthy();
   });
 
   it("offers no Journey tab offline (milestones are cloud-only)", () => {
@@ -102,11 +102,23 @@ describe("CompilationPage", () => {
     expect(screen.getByText(/3h was logged on the single card/)).toBeTruthy();
   });
 
-  it("carries the management actions the hub modal had", () => {
+  it("carries Play a game and the management actions, but no Expand (86fc0b4b)", () => {
     render(<CompilationPage compilationId="C" onBack={() => {}} />);
-    expect(screen.getByRole("button", { name: /Expand into cards/i })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Expand/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Collapse/i })).toBeNull();
     expect(screen.getByRole("button", { name: /Edit compilation/i })).toBeTruthy();
     expect(screen.getByRole("button", { name: /Delete compilation/i })).toBeTruthy();
+    // Part 2 is still in the Bazaar, so the bundle can start a game.
+    fireEvent.click(screen.getByRole("button", { name: /Play a game/i }));
+    expect(screen.getByRole("dialog", { name: /Play a game from Trilogy Collection/ })).toBeTruthy();
+  });
+
+  it("hides Play a game once no game is left in the Bazaar", () => {
+    act(() =>
+      useStore.setState({ games: children.map((g) => ({ ...g, status: "finished" as const })) }),
+    );
+    render(<CompilationPage compilationId="C" onBack={() => {}} />);
+    expect(screen.queryByRole("button", { name: /Play a game/i })).toBeNull();
   });
 
   it("browses to a neighbouring stop with Prev/Next (issue 28ec4975)", () => {

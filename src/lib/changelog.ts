@@ -56,6 +56,29 @@ export function orderReleaseItems(items: (string | ReleaseItem)[]): ReleaseItem[
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-10-16-compilations-stay-together",
+    date: "2026-10-16",
+    title: "Compilations stay together",
+    items: [
+      {
+        text: "A compilation is now always one card. It shows up on every board it has games on: the Bazaar card lists the games still waiting (highest priority first, with their length), and the Finished card lists the ones you've cleared with their finish badges.",
+        tag: "feature",
+      },
+      {
+        text: "Tap Play a Game on a compilation's card or page to pick which game to start. It's bought just like any other game, with the same price and lane choice.",
+        tag: "feature",
+      },
+      {
+        text: "A game you're playing from a compilation is marked with the compilation's name and progress on Now Playing. Tap the name to open the compilation.",
+        tag: "feature",
+      },
+      {
+        text: "The compilation progress bar now shows games in play alongside finished ones. Expand / Collapse is gone, because compilations no longer split into separate cards.",
+        tag: "improvement",
+      },
+    ],
+  },
+  {
     id: "2026-10-15-hot-this-week-real-clears",
     date: "2026-10-15",
     title: "Bonus coins for going the extra mile",

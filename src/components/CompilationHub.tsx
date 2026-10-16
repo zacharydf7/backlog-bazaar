@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Package, X, Trash2, Banknote, CheckCircle2, Pencil, Clock, Expand, Shrink, ImagePlus } from "lucide-react";
+import { Package, X, Trash2, Banknote, CheckCircle2, Pencil, Clock, ImagePlus } from "lucide-react";
 import type { Game } from "../types";
 import { useStore } from "../store";
 import { totalCost, formatUsd, ownedPlatformSummary, ownershipLabel } from "../lib/copies";
@@ -32,7 +32,6 @@ export function CompilationHub({
     games,
     cloud,
     deleteCompilation,
-    setCompilationExpanded,
     setCompilationParentImage,
     clearCompilationParentImage,
   } = useStore();
@@ -58,7 +57,7 @@ export function CompilationHub({
   const ownedCopySummary = compilation
     ? ownedPlatformSummary(compilationCopiesOf(compilation))
     : [];
-  // What the collapsed rollup card actually shows. Computed from the children
+  // What the bundle cards actually show. Computed from the children
   // in LIBRARY order via the shared helper — this hub's own list is sorted
   // alphabetically for display, which used to make the preview disagree with
   // the card's first-child fallback.
@@ -187,7 +186,7 @@ export function CompilationHub({
             })}
           </ul>
 
-          {/* The collapsed card's cover: upload a custom one (cloud-only — the
+          {/* The bundle cards' cover: upload a custom one (cloud-only — the
               blob needs storage) or remove it to fall back to the first game's
               cover. Cosmetic and personal; never touches the shared catalog. */}
           {!readOnly && compilation && (cloud || compilation.parentImage) && (
@@ -200,9 +199,9 @@ export function CompilationHub({
                 )}
               </div>
               <div className="min-w-0 flex-1">
-                <span className="block text-xs font-medium text-ink">Collapsed-card cover</span>
+                <span className="block text-xs font-medium text-ink">Card cover</span>
                 <span className="block text-[11px] text-subtle">
-                  Shown when the bundle folds into one card.
+                  Shown on the bundle&apos;s cards across your boards.
                 </span>
                 <div className="mt-1.5 flex flex-wrap items-center gap-2">
                   {cloud && (
@@ -235,23 +234,6 @@ export function CompilationHub({
 
           {!readOnly && compilation && (
             <div className="flex flex-wrap items-center gap-2">
-              {/* Toggle between individual child cards and the single rollup
-                  parent card (collapse is refused while a piece is playing). */}
-              <button
-                type="button"
-                onClick={() => void setCompilationExpanded(compilation.id, !compilation.expanded)}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-panel px-2.5 py-1.5 text-sm text-ink transition hover:border-brand/50"
-              >
-                {compilation.expanded ? (
-                  <>
-                    <Shrink size={14} className="text-accent" /> Collapse to one card
-                  </>
-                ) : (
-                  <>
-                    <Expand size={14} className="text-accent" /> Expand into cards
-                  </>
-                )}
-              </button>
               {onEdit && (
                 <button
                   type="button"

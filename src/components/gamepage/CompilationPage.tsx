@@ -7,13 +7,12 @@ import {
   BookOpen,
   CheckCircle2,
   Clock,
-  Expand,
   GripVertical,
   ImagePlus,
   Map as MapIcon,
   Package,
   Pencil,
-  Shrink,
+  Play,
   Trash2,
   type LucideIcon,
 } from "lucide-react";
@@ -36,6 +35,8 @@ import { isInRotation } from "../../lib/status";
 import { PlatformBadge } from "../PlatformBadge";
 import { ConfirmDialog } from "../ConfirmDialog";
 import { AddCompilationModal } from "../AddCompilationModal";
+import { BundleProgress } from "../CompilationParentCard";
+import { CompilationPlayPicker } from "../CompilationPlayPicker";
 import { MilestonesSection } from "../MilestonesSection";
 
 type CompilationTabId = "overview" | "journey";
@@ -45,14 +46,14 @@ const TABS: { id: CompilationTabId; label: string; icon: LucideIcon }[] = [
   { id: "journey", label: "Journey", icon: MapIcon },
 ];
 
-/** A collapsed compilation's own page (routed: "#c/<id>") — the bundle-level
- *  counterpart to GamePage, replacing the small hub modal as the parent card's
- *  click-through. A hero identifies the bundle (cover, progress, aggregate
- *  time/spend) and carries its management actions; Overview lists every bundled
- *  game (each linking to its own page) and Journey breaks out a milestone
- *  timeline per game. Owner-only: visits never render collapsed parents, so
- *  there is no read-only variant. Like the rollup card, this is a pure data
- *  view over the children — playtime and the economy live on their pages. */
+/** A compilation's own page (routed: "#c/<id>") — the bundle-level counterpart
+ *  to GamePage and the bundle card's click-through. A hero identifies the bundle
+ *  (cover, progress, aggregate time/spend) and carries Play a game plus its
+ *  management actions; Overview lists every bundled game (each linking to its
+ *  own page) and Journey breaks out a milestone timeline per game. Owner-only:
+ *  visits never render bundle cards, so there is no read-only variant. Like the
+ *  bundle card, this is a pure data view over the children — playtime and the
+ *  economy live on their pages. */
 export function CompilationPage({
   compilationId,
   onBack,
@@ -137,7 +138,6 @@ function CompilationPageBody({
 }) {
   const {
     cloud,
-    setCompilationExpanded,
     setCompilationChildOrder,
     deleteCompilation,
     setCompilationParentImage,
@@ -146,6 +146,7 @@ function CompilationPageBody({
   const [tab, setTab] = useState<CompilationTabId>("overview");
   const [editing, setEditing] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [picking, setPicking] = useState(false);
 
   // Milestones are cloud-only (matching JourneyTab), so offline gets no Journey.
   const tabs = cloud ? TABS : TABS.filter((t) => t.id !== "journey");
@@ -153,13 +154,15 @@ function CompilationPageBody({
 
   // The children in the owner's chosen order (issue 140ac868) — the whole page
   // (cover fallback, lists, journey) reads this one order, so it always agrees
-  // with the collapsed card, which orders the same way.
+  // with the bundle cards, which order the same way.
   const children = useMemo(
     () => orderCompilationChildren(childGames, compilation.childOrder),
     [childGames, compilation.childOrder],
   );
   const cover = compilationCoverOf(compilation, children);
   const finished = children.filter((g) => g.status === "finished").length;
+  const playing = children.filter((g) => g.status === "playing").length;
+  const canPlay = children.some((g) => g.status === "backlog");
   const carryover = compilation.carryoverHours ?? 0;
   const totalPlayed = children.reduce((sum, g) => sum + (g.playedHours ?? 0), 0) + carryover;
   const ownedCopySummary = ownedPlatformSummary(compilationCopiesOf(compilation));
@@ -198,25 +201,7 @@ function CompilationPageBody({
             </span>
           </div>
 
-          {/* Completion toward the collapsed card moving itself to Finished. */}
-          <div className="flex items-center gap-2">
-            <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-panel">
-              <div
-                className={
-                  "h-full rounded-full transition-all " +
-                  (children.length > 0 && finished === children.length
-                    ? "bg-success"
-                    : "bg-accent")
-                }
-                style={{
-                  width: `${children.length ? Math.round((finished / children.length) * 100) : 0}%`,
-                }}
-              />
-            </div>
-            <span className="shrink-0 font-mono text-[11px] text-subtle">
-              {finished}/{children.length}
-            </span>
-          </div>
+          <BundleProgress finished={finished} playing={playing} total={children.length} />
 
           <div className="flex flex-wrap gap-1">
             <span
@@ -241,23 +226,17 @@ function CompilationPageBody({
             ))}
           </div>
 
-          {/* Management actions — the same set the hub modal carried. */}
+          {/* Starting a game, then the bundle's management actions. */}
           <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={() => void setCompilationExpanded(compilation.id, !compilation.expanded)}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-panel px-2.5 py-1.5 text-sm text-ink transition hover:border-brand/50"
-            >
-              {compilation.expanded ? (
-                <>
-                  <Shrink size={14} className="text-accent" /> Collapse to one card
-                </>
-              ) : (
-                <>
-                  <Expand size={14} className="text-accent" /> Expand into cards
-                </>
-              )}
-            </button>
+            {canPlay && (
+              <button
+                type="button"
+                onClick={() => setPicking(true)}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-brand px-2.5 py-1.5 text-sm font-semibold text-brand-fg shadow-stamp-sm transition hover:brightness-105 active:translate-x-px active:translate-y-px active:shadow-none"
+              >
+                <Play size={14} /> Play a game
+              </button>
+            )}
             <button
               type="button"
               onClick={() => setEditing(true)}
@@ -321,6 +300,15 @@ function CompilationPageBody({
           <AddCompilationModal compilation={compilation} onClose={() => setEditing(false)} />,
           document.body,
         )}
+      {picking &&
+        createPortal(
+          <CompilationPlayPicker
+            compilation={compilation}
+            children={children}
+            onClose={() => setPicking(false)}
+          />,
+          document.body,
+        )}
       {confirmDelete &&
         createPortal(
           <ConfirmDialog
@@ -349,9 +337,9 @@ function CompilationPageBody({
 }
 
 /** The reorderable "Games in this bundle" checklist. Dragging a row's handle
- *  sets the bundle's child order (persisted); that order carries to the
- *  collapsed card's cover and to the separate cards when the bundle is split
- *  (issue 140ac868). Pointer-based drag, so it works on touch too. */
+ *  sets the bundle's child order (persisted); that order carries to the bundle
+ *  cards' trays and cover fallback (issue 140ac868). Pointer-based drag, so it
+ *  works on touch too. */
 function BundleGames({
   games,
   onReorder,
@@ -446,8 +434,8 @@ function BundleRow({ game, draggable }: { game: Game; draggable: boolean }) {
 }
 
 /** The bundle at a glance: the checklist of every game inside (each row opens
- *  that game's own page), the per-copy spend breakdown, and the collapsed-card
- *  cover controls. */
+ *  that game's own page), the per-copy spend breakdown, and the card cover
+ *  controls. */
 function OverviewPane({
   compilation,
   children,
@@ -475,8 +463,7 @@ function OverviewPane({
         <BundleGames games={children} onReorder={onReorderChildren} />
         {children.length > 1 && (
           <p className="mt-2 px-1 text-[11px] text-subtle">
-            Drag the handle to reorder — this is the order the games take when the bundle is split
-            into separate cards.
+            Drag the handle to reorder — the bundle&apos;s cards list its games in this order.
           </p>
         )}
         {carryover > 0 && (
@@ -506,7 +493,7 @@ function OverviewPane({
         </div>
       )}
 
-      {/* The collapsed card's cover (cosmetic and personal — never the catalog). */}
+      {/* The bundle cards' cover (cosmetic and personal — never the catalog). */}
       {(cloud || compilation.parentImage) && (
         <div className="flex items-center gap-3 rounded-xl border border-line bg-panel/50 p-2.5">
           <div className="h-14 w-10 shrink-0 overflow-hidden rounded-md border border-line bg-panel">
@@ -517,9 +504,9 @@ function OverviewPane({
             )}
           </div>
           <div className="min-w-0 flex-1">
-            <span className="block text-xs font-medium text-ink">Collapsed-card cover</span>
+            <span className="block text-xs font-medium text-ink">Card cover</span>
             <span className="block text-[11px] text-subtle">
-              Shown when the bundle folds into one card.
+              Shown on the bundle&apos;s cards across your boards.
             </span>
             <div className="mt-1.5 flex flex-wrap items-center gap-2">
               {cloud && (

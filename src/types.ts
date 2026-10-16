@@ -159,7 +159,7 @@ export interface Compilation {
   platform?: string; // legacy single-copy scalar (copies[0] mirror)
   format?: CopyFormat; // legacy single-copy scalar (copies[0] mirror)
   createdAt: number;
-  expanded: boolean; // false = renders as ONE collapsed rollup card instead of child cards
+  expanded: boolean; // RETIRED (issue 86fc0b4b: every bundle now folds into its board cards) — kept so existing data survives; the UI no longer reads it
   templateId?: string | null; // the shared template this bundle came from (null = hand-built)
   carryoverHours: number; // hours logged on the single parent card before it was expanded
   parentImage?: string; // cover of the parent game card this was expanded from

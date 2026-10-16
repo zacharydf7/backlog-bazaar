@@ -434,24 +434,25 @@ export function AboutPage() {
             copies). Its games price like everything else: from the moment the bundle joined your
             Bazaar — a recent pickup of decades-old classics prices as the fresh acquisition it
             is, not the originals. Each game
-            gets its own card to buy, play and finish; every copy&apos;s platform shows on every game,
-            and each copy&apos;s price is split across them (evenly, by length, or however you
-            choose). The split is just for your records — like other costs, it never affects the
-            coin economy. Open any card&apos;s &ldquo;Part of …&rdquo;
-            badge to see the whole compilation, what you spent, and your total time. Built one worth
-            sharing? Suggest it for everyone — once approved, it autocompletes for other players (and
-            you earn coins), and they set their own price. Only the title and games are shared, never
-            your cost or platform.
+            inside is still bought, played and finished on its own; every copy&apos;s platform shows
+            on every game, and each copy&apos;s price is split across them (evenly, by length, or
+            however you choose). The split is just for your records — like other costs, it never
+            affects the coin economy. Built one worth sharing? Suggest it for everyone — once
+            approved, it autocompletes for other players (and you earn coins), and they set their
+            own price. Only the title and games are shared, never your cost or platform.
             <br />
             <br />
-            Any compilation can also be <strong className="text-ink">collapsed</strong> into one
-            rollup card that totals the bundle&apos;s spend and hours — it sits in the Bazaar until
-            every game inside is finished, then moves to Finished by itself. Expand it whenever you
-            want the individual cards back (all playing and time-logging happens on those). And when
-            a collection you own as a <em>single</em> card is linked in the catalog, its ⋮ menu
-            offers &ldquo;Expand compilation&rdquo; — the card becomes the bundle&apos;s games with
-            the cost split evenly, your logged hours kept on the bundle total, and any activation
-            fee you paid refunded.
+            On your boards a compilation stays <strong className="text-ink">one card</strong> that
+            totals the bundle&apos;s spend and hours. It shows up on every board it has games on —
+            the Bazaar card lists the games still waiting (highest priority first), the Finished
+            card the ones you&apos;ve cleared — so one bundle can sit in both at once. Tap{" "}
+            <strong className="text-ink">Play a Game</strong> to pick which one to start; it&apos;s
+            bought like any other game and gets its own card in Now Playing, marked with the
+            bundle&apos;s name. Open the compilation to see every game inside, what you spent, and
+            your total time. And when a collection you own as a <em>single</em> card is linked in
+            the catalog, its ⋮ menu offers &ldquo;Expand compilation&rdquo; — the card becomes the
+            bundle&apos;s games with the cost split evenly, your logged hours kept on the bundle
+            total, and any activation fee you paid refunded.
           </Section>
 
           <Section icon={Link2} title="Game Families">

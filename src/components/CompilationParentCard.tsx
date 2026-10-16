@@ -3,37 +3,49 @@ import { createPortal } from "react-dom";
 import {
   Banknote,
   Clock,
-  Expand,
   MoreVertical,
   Package,
+  Play,
   Trash2,
 } from "lucide-react";
 import { useStore } from "../store";
-import type { CollapsedCompilation } from "../lib/compilationGrouping";
+import type { Game } from "../types";
+import {
+  compilationSummary,
+  compilationTray,
+  type CollapsedCompilation,
+} from "../lib/compilationGrouping";
 import { formatUsd, ownedPlatformSummary } from "../lib/copies";
 import { compilationCopiesOf } from "../lib/compilations";
-import { compilationHash } from "../lib/route";
+import { effectiveLength } from "../lib/personalLength";
+import { compilationHash, gameHash } from "../lib/route";
 import { formatPlaytime } from "../lib/playtime";
 import { ConfirmDialog } from "./ConfirmDialog";
+import { CompilationPlayPicker } from "./CompilationPlayPicker";
+import { FinishTagBadge } from "./FinishTagBadge";
+import { GamePriorityBadge } from "./GamePriorityBadge";
 import { PlatformBadge } from "./PlatformBadge";
 import { useViewing } from "../lib/viewContext";
 
-/** The collapsed compilation's board card — ONE rollup card standing in for all
- *  of the bundle's child cards. Purely a data view: it aggregates money spent and
- *  time played (including hours carried over from before an expansion) and sits
- *  on the board of its least-completed child. It is not a games row, so there is
- *  no playtime input and no buy/finish economy here — Expand brings the child
- *  cards back for all of that. */
+/** A compilation's board card — ONE card standing in for the bundle's games on
+ *  this board (issue 86fc0b4b). The same bundle shows a card on every board it
+ *  has games on, each with a tray of just that board's games; its playing games
+ *  keep their own cards on Now Playing. It aggregates money spent and time
+ *  played (including hours carried over from before an expansion) but is not a
+ *  games row, so it never logs playtime or moves coins itself: Play a Game hands
+ *  the chosen game to that game's own activation dialog. */
 export function CompilationParentCard({ collapsed }: { collapsed: CollapsedCompilation }) {
-  const setCompilationExpanded = useStore((s) => s.setCompilationExpanded);
   const { readOnly, hideSpend } = useViewing();
   const [menuOpen, setMenuOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [picking, setPicking] = useState(false);
   const deleteCompilation = useStore((s) => s.deleteCompilation);
   const menuRef = useRef<HTMLDivElement>(null);
 
-  const { compilation, children, board, totalPlayedHours, finishedCount, image } = collapsed;
+  const { compilation, children, board, totalPlayedHours, finishedCount, playingCount, image } =
+    collapsed;
   const ownedCopySummary = ownedPlatformSummary(compilationCopiesOf(compilation));
+  const tray = compilationTray(collapsed);
 
   useEffect(() => {
     function onDocClick(e: MouseEvent) {
@@ -43,7 +55,6 @@ export function CompilationParentCard({ collapsed }: { collapsed: CollapsedCompi
     return () => document.removeEventListener("mousedown", onDocClick);
   }, []);
 
-  const expand = () => void setCompilationExpanded(compilation.id, true);
   // The card's click-through: the bundle's own page (routed, like a game card
   // opening its game page) rather than the old hub modal.
   const openHub = () => {
@@ -72,6 +83,15 @@ export function CompilationParentCard({ collapsed }: { collapsed: CollapsedCompi
               void deleteCompilation(compilation.id);
             }}
             onCancel={() => setConfirmDelete(false)}
+          />,
+          document.body,
+        )}
+      {picking &&
+        createPortal(
+          <CompilationPlayPicker
+            compilation={compilation}
+            children={children}
+            onClose={() => setPicking(false)}
           />,
           document.body,
         )}
@@ -122,15 +142,6 @@ export function CompilationParentCard({ collapsed }: { collapsed: CollapsedCompi
               {menuOpen && (
                 <div className="absolute right-0 z-40 mt-1 w-48 overflow-hidden rounded-lg border border-edge bg-surface p-1 text-left shadow-stamp">
                   <button
-                    onClick={() => {
-                      setMenuOpen(false);
-                      expand();
-                    }}
-                    className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-sm text-ink transition hover:bg-panel"
-                  >
-                    <Expand size={15} className="text-accent" /> Expand compilation
-                  </button>
-                  <button
                     onClick={openHub}
                     className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-sm text-ink transition hover:bg-panel"
                   >
@@ -157,19 +168,15 @@ export function CompilationParentCard({ collapsed }: { collapsed: CollapsedCompi
               {compilation.title}
             </h3>
             <div className="mt-1 flex flex-wrap items-center gap-1">
-              <span
-                title="A collapsed compilation — expand it to see each game's card"
-                className="inline-flex items-center gap-1 rounded-full border border-accent/30 bg-accent/5 px-1.5 py-0.5 text-[10px] font-medium text-accent"
-              >
-                <Package size={10} /> Compilation · {children.length} game
-                {children.length === 1 ? "" : "s"} · {finishedCount} finished
+              <span className="inline-flex items-center gap-1 rounded-full border border-accent/30 bg-accent/5 px-1.5 py-0.5 text-[10px] font-medium text-accent">
+                <Package size={10} /> {compilationSummary(collapsed)}
               </span>
             </div>
           </div>
 
-          {/* The rollup the collapsed card exists for: aggregated time and spend
-              across every game inside (playtime is logged on the child cards),
-              plus the platforms the bundle is owned on and its release year. */}
+          {/* The bundle-wide rollup: time and spend across every game inside
+              (playtime is logged on each game's own page), plus the platforms
+              the bundle is owned on. */}
           <div className="flex flex-wrap gap-1">
             <span className="inline-flex items-center gap-1 rounded-md border border-line bg-panel px-1.5 py-0.5 font-mono text-[10px] text-muted">
               <Clock size={11} className="shrink-0 text-accent/70" />
@@ -186,32 +193,39 @@ export function CompilationParentCard({ collapsed }: { collapsed: CollapsedCompi
             ))}
           </div>
 
+          {/* The tray: just this board's games, each opening its own page. */}
+          <ul className="flex flex-col gap-1" aria-label={`Games on this board from ${compilation.title}`}>
+            {tray.shown.map((g) => (
+              <li key={g.id}>
+                <TrayRow game={g} board={board} />
+              </li>
+            ))}
+            {tray.more > 0 && (
+              <li>
+                <button
+                  type="button"
+                  onClick={openHub}
+                  className="px-2 text-[11px] text-subtle transition hover:text-accent"
+                >
+                  +{tray.more} more
+                </button>
+              </li>
+            )}
+          </ul>
+
           <div className="mt-auto border-t-2 border-dashed border-line pt-3">
             <div className="flex flex-col gap-2">
-              {/* Completion progress toward the card moving itself to Finished
-                  (it sits in the lane of its least-completed game). */}
-              <div className="flex items-center gap-2">
-                <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-panel">
-                  <div
-                    className={
-                      "h-full rounded-full transition-all " +
-                      (board === "finished" ? "bg-success" : "bg-accent")
-                    }
-                    style={{
-                      width: `${children.length ? Math.round((finishedCount / children.length) * 100) : 0}%`,
-                    }}
-                  />
-                </div>
-                <span className="shrink-0 font-mono text-[11px] text-subtle">
-                  {finishedCount}/{children.length}
-                </span>
-              </div>
-              {!readOnly && (
+              <BundleProgress
+                finished={finishedCount}
+                playing={playingCount}
+                total={children.length}
+              />
+              {!readOnly && board === "backlog" && (
                 <button
-                  onClick={expand}
+                  onClick={() => setPicking(true)}
                   className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-brand px-3 py-2 text-sm font-semibold text-brand-fg shadow-stamp-sm transition hover:brightness-105 active:translate-x-px active:translate-y-px active:shadow-none"
                 >
-                  <Expand size={14} /> Expand
+                  <Play size={14} /> Play a Game
                 </button>
               )}
             </div>
@@ -219,5 +233,70 @@ export function CompilationParentCard({ collapsed }: { collapsed: CollapsedCompi
         </div>
       </div>
     </>
+  );
+}
+
+/** Progress across a whole bundle — finished games solid, games in play in the
+ *  accent ink — shared by the board card and the compilation page. */
+export function BundleProgress({
+  finished,
+  playing,
+  total,
+}: {
+  finished: number;
+  playing: number;
+  total: number;
+}) {
+  const pct = (n: number) => (total ? (n / total) * 100 : 0);
+  return (
+    <div className="flex items-center gap-2">
+      <div
+        className="flex h-1.5 flex-1 overflow-hidden rounded-full bg-panel"
+        title={`${finished} finished · ${playing} playing`}
+      >
+        <div className="h-full bg-success transition-all" style={{ width: `${pct(finished)}%` }} />
+        <div className="h-full bg-accent transition-all" style={{ width: `${pct(playing)}%` }} />
+      </div>
+      <span className="shrink-0 font-mono text-[11px] text-subtle">
+        {finished}/{total}
+      </span>
+    </div>
+  );
+}
+
+/** One tray line: the game's title plus what matters on this board — priority
+ *  and length in the Bazaar, the finish badge and hours on Finished. */
+function TrayRow({ game, board }: { game: Game; board: CollapsedCompilation["board"] }) {
+  const length = effectiveLength(game);
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        window.location.hash = gameHash(game.id);
+      }}
+      title={`Open ${game.title}`}
+      className="flex w-full min-w-0 items-center justify-between gap-2 rounded-md px-2 py-1 text-left transition hover:bg-panel"
+    >
+      <span className="min-w-0 truncate text-xs text-ink">{game.title}</span>
+      <span className="flex shrink-0 items-center gap-1">
+        {board === "finished" ? (
+          <>
+            {game.finishTag && <FinishTagBadge tag={game.finishTag} />}
+            {(game.playedHours ?? 0) > 0 && (
+              <span className="font-mono text-[10px] text-muted">
+                {formatPlaytime(game.playedHours!)}
+              </span>
+            )}
+          </>
+        ) : (
+          <>
+            {board === "backlog" && game.priority && <GamePriorityBadge priority={game.priority} />}
+            {length != null && (
+              <span className="font-mono text-[10px] text-muted">{formatPlaytime(length)}</span>
+            )}
+          </>
+        )}
+      </span>
+    </button>
   );
 }

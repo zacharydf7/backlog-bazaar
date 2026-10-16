@@ -630,8 +630,9 @@ export function AddCompilationModal({
           {!isEdit && (
             <p className="text-xs text-muted">
               A compilation is one purchase that bundles several games (e.g. a remaster
-              collection). Record what you paid once here; each game below gets its own card,
-              with the cost split across them.
+              collection). Record what you paid once here, with the cost split across the games
+              below. They stay together on one compilation card, and you pick which one to play
+              from there.
             </p>
           )}
 
@@ -916,7 +917,7 @@ export function AddCompilationModal({
             )}
           </div>
 
-          {/* Where the child cards land — creation only (edit keeps each game's status). */}
+          {/* Where the bundled games start — creation only (edit keeps each game's status). */}
           {!isEdit && (
             <div className="flex flex-col gap-1.5">
               <span className="text-sm text-muted">Add games to</span>

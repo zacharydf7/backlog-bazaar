@@ -147,7 +147,6 @@ export default function App() {
     userId,
     games,
     compilations,
-    setCompilationExpanded,
     error,
     clearMessages,
     init,
@@ -362,10 +361,10 @@ export default function App() {
   // and again inside a compilation shows both cards, each with its own status.
   const boardGames = viewing ? viewing.games : games;
 
-  // Collapsed compilations fold their child cards into one rollup parent card
-  // (in the lane of the least-completed child). Visitors always see children
-  // individually — their compilation containers aren't shared. Another pure
-  // view transform, layered after the ownership fold above.
+  // Compilations fold their games into one bundle card per board they have
+  // games on; playing games keep their own cards on Now Playing. Visitors always
+  // see children individually — their compilation containers aren't shared.
+  // Another pure view transform, layered after the ownership fold above.
   const grouping = useMemo(
     () => groupCollapsedCompilations(boardGames, viewing ? [] : compilations),
     [boardGames, compilations, viewing],
@@ -379,8 +378,8 @@ export default function App() {
   // member simply passes through.
   const famGrouping = useMemo(() => groupCollapsedFamilies(grouping.boardGames), [grouping]);
 
-  // Counts reflect individual games, except a collapsed compilation or a
-  // focused family, each of which counts once on its derived board.
+  // Counts reflect individual games, except a bundle card or a focused family,
+  // each of which counts once on the board it sits on.
   const counts = useMemo(() => {
     const c: Record<GameStatus, number> = { backlog: 0, playing: 0, finished: 0, wishlist: 0 };
     for (const g of famGrouping.boardGames) c[g.status]++;
@@ -396,9 +395,10 @@ export default function App() {
     [famGrouping, view],
   );
 
-  // Collapsed rollup cards for the current board, honouring the live search and
-  // the slicers the same way family cards do: the bundle matches when ANY child
-  // does (hiding it because one child fails would hide children that pass).
+  // Bundle cards for the current board, honouring the live search and the
+  // slicers the same way family cards do: the bundle matches when ANY of its
+  // games on this board does (hiding it because one fails would hide games that
+  // pass).
   const collapsedForView = useMemo(
     () =>
       grouping.collapsed.filter(
@@ -453,9 +453,8 @@ export default function App() {
         sortKey,
         economy,
         viewing ? {} : { allGames: boardGames, replayBonusPct },
-        viewing ? [] : compilations,
       ),
-    [visibleGames, collapsedForView, familiesForView, sortKey, economy, viewing, boardGames, replayBonusPct, compilations],
+    [visibleGames, collapsedForView, familiesForView, sortKey, economy, viewing, boardGames, replayBonusPct],
   );
 
   // "Stack by game": an optional grid view folding per-platform instances of

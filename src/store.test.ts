@@ -1198,40 +1198,6 @@ describe("compilations (offline)", () => {
     expect(games[0].copies?.[0]?.cost).toBe(20);
   });
 
-  it("collapses and expands a compilation, persisting the flag", async () => {
-    await store().addCompilation(
-      bundle(20),
-      [{ name: "A" }, { name: "B" }],
-      "backlog",
-    );
-    const compId = store().compilations[0].id;
-    expect(store().compilations[0].expanded).toBe(true);
-
-    await store().setCompilationExpanded(compId, false);
-    expect(store().compilations[0].expanded).toBe(false);
-    const saved = JSON.parse(localStorage.getItem("bb-compilations")!);
-    expect(saved[0].expanded).toBe(false);
-
-    await store().setCompilationExpanded(compId, true);
-    expect(store().compilations[0].expanded).toBe(true);
-  });
-
-  it("refuses to collapse while a child is in Now Playing", async () => {
-    await store().addCompilation(
-      bundle(20),
-      [{ name: "A" }, { name: "B" }],
-      "backlog",
-    );
-    const compId = store().compilations[0].id;
-    const child = store().games[0];
-    useStore.setState({
-      games: store().games.map((g) => (g.id === child.id ? { ...g, status: "playing" } : g)),
-    });
-
-    await store().setCompilationExpanded(compId, false);
-    expect(store().compilations[0].expanded).toBe(true); // unchanged
-  });
-
   it("community-template actions no-op cleanly offline", async () => {
     expect(await store().searchCompilationTemplates("mario")).toEqual([]);
     expect(await store().submitCompilationTemplate({ kind: "new", title: "X", games: [{ name: "A" }] })).toEqual({ ok: false });

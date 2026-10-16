@@ -70,13 +70,13 @@ describe("CompilationHub", () => {
   });
 });
 
-describe("CompilationHub collapsed-card cover", () => {
+describe("CompilationHub card cover", () => {
   it("offers Upload on the cloud and sends the picked file to the store", () => {
     const setCover = vi.fn(async () => {});
     act(() => useStore.setState({ cloud: true, setCompilationParentImage: setCover }));
     render(<CompilationHub game={a} onClose={() => {}} />);
 
-    expect(screen.getByText(/Collapsed-card cover/i)).toBeTruthy();
+    expect(screen.getByText(/Card cover/i)).toBeTruthy();
     const input = screen.getByText(/Upload image/i).parentElement!.querySelector("input")!;
     const file = new File(["x"], "cover.png", { type: "image/png" });
     fireEvent.change(input, { target: { files: [file] } });
@@ -97,10 +97,10 @@ describe("CompilationHub collapsed-card cover", () => {
     expect(clearCover).toHaveBeenCalledWith("C");
   });
 
-  it("previews exactly the cover the collapsed card uses — library order, not A-Z (regression)", () => {
+  it("previews exactly the cover the bundle card uses — library order, not A-Z (regression)", () => {
     // Library order: Zebra first (its cover is the card's fallback). The hub
     // lists children alphabetically, which used to make the preview show
-    // Alpha's cover while the collapsed card showed Zebra's.
+    // Alpha's cover while the bundle card showed Zebra's.
     const zebra = game({ id: "z", title: "Zebra Quest", compilationId: "C", image: "zebra.png" });
     const alpha = game({ id: "al", title: "Alpha Quest", compilationId: "C", image: "alpha.png" });
     act(() =>
@@ -110,18 +110,18 @@ describe("CompilationHub collapsed-card cover", () => {
 
     const preview = document.querySelector("img");
     expect(preview?.getAttribute("src")).toBe("zebra.png");
-    expect(preview?.getAttribute("src")).toBe(compilationRollup(comp, [zebra, alpha]).image);
+    expect(preview?.getAttribute("src")).toBe(compilationRollup(comp, [zebra, alpha], "backlog").image);
   });
 
   it("hides the whole block offline with no custom cover, and Upload while offline", () => {
     const first = render(<CompilationHub game={a} onClose={() => {}} />); // cloud: false, no parentImage
-    expect(screen.queryByText(/Collapsed-card cover/i)).toBeNull();
+    expect(screen.queryByText(/Card cover/i)).toBeNull();
     first.unmount();
 
     // Offline with a leftover custom cover: Remove still works, Upload doesn't show.
     act(() => useStore.setState({ compilations: [{ ...comp, parentImage: "custom.png" }] }));
     render(<CompilationHub game={a} onClose={() => {}} />);
-    expect(screen.getByText(/Collapsed-card cover/i)).toBeTruthy();
+    expect(screen.getByText(/Card cover/i)).toBeTruthy();
     expect(screen.queryByText(/Upload image/i)).toBeNull();
     expect(screen.getByRole("button", { name: /Remove — use the first game/i })).toBeTruthy();
   });

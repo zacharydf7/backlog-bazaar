@@ -6,7 +6,8 @@ import {
   compilationMatchesFilters,
   compilationMatchesQuery,
   compilationRollup,
-  deriveCompilationBoard,
+  compilationSummary,
+  compilationTray,
   findExpandTemplate,
   groupCollapsedCompilations,
   orderCompilationChildren,
@@ -64,69 +65,47 @@ describe("orderCompilationChildren (140ac868)", () => {
   });
 });
 
-describe("deriveCompilationBoard", () => {
-  it("keeps the card in the Bazaar while any child is unfinished", () => {
-    expect(
-      deriveCompilationBoard([
-        game({ id: "a", status: "finished" }),
-        game({ id: "b", status: "backlog" }),
-      ]),
-    ).toBe("backlog");
-  });
-
-  it("moves to Finished only when every child is finished", () => {
-    expect(
-      deriveCompilationBoard([
-        game({ id: "a", status: "finished" }),
-        game({ id: "b", status: "finished" }),
-      ]),
-    ).toBe("finished");
-  });
-
-  it("treats a playing child as not-finished (least-completed rules)", () => {
-    expect(
-      deriveCompilationBoard([
-        game({ id: "a", status: "finished" }),
-        game({ id: "b", status: "playing" }),
-      ]),
-    ).toBe("backlog");
-  });
-
-  it("defaults an empty bundle to the Bazaar", () => {
-    expect(deriveCompilationBoard([])).toBe("backlog");
-  });
-});
-
 describe("compilationRollup", () => {
-  it("sums child hours plus the bundle's carryover", () => {
-    const r = compilationRollup(comp({ carryoverHours: 3.5 }), [
-      game({ id: "a", playedHours: 5 }),
-      game({ id: "b", playedHours: 2, status: "finished" }),
-    ]);
-    expect(r.totalPlayedHours).toBeCloseTo(10.5);
+  it("sums child hours plus the bundle's carryover, keeping the board's own children", () => {
+    const r = compilationRollup(
+      comp({ carryoverHours: 3.5 }),
+      [
+        game({ id: "a", playedHours: 5 }),
+        game({ id: "b", playedHours: 2, status: "finished" }),
+        game({ id: "c", playedHours: 1, status: "playing" }),
+      ],
+      "backlog",
+    );
+    expect(r.totalPlayedHours).toBeCloseTo(11.5);
     expect(r.finishedCount).toBe(1);
+    expect(r.playingCount).toBe(1);
     expect(r.board).toBe("backlog");
+    expect(r.boardChildren.map((g) => g.id)).toEqual(["a"]);
   });
 
   it("orders the rollup children by the bundle's childOrder — cover follows it too (140ac868)", () => {
-    const r = compilationRollup(comp({ childOrder: ["b", "a"] }), [
-      game({ id: "a", image: "a.png" }),
-      game({ id: "b", image: "b.png" }),
-    ]);
+    const r = compilationRollup(
+      comp({ childOrder: ["b", "a"] }),
+      [game({ id: "a", image: "a.png" }), game({ id: "b", image: "b.png" })],
+      "backlog",
+    );
     expect(r.children.map((g) => g.id)).toEqual(["b", "a"]);
     // The child-cover fallback is the FIRST child in the chosen order.
     expect(r.image).toBe("b.png");
   });
 
   it("prefers the parent card's cover, falling back to a child's", () => {
-    const withParent = compilationRollup(comp({ parentImage: "parent.png" }), [
-      game({ id: "a", image: "child.png" }),
-    ]);
+    const withParent = compilationRollup(
+      comp({ parentImage: "parent.png" }),
+      [game({ id: "a", image: "child.png" })],
+      "backlog",
+    );
     expect(withParent.image).toBe("parent.png");
-    const withoutParent = compilationRollup(comp(), [
-      game({ id: "a" }),
-      game({ id: "b", image: "child.png" }),
-    ]);
+    const withoutParent = compilationRollup(
+      comp(),
+      [game({ id: "a" }), game({ id: "b", image: "child.png" })],
+      "backlog",
+    );
     expect(withoutParent.image).toBe("child.png");
   });
 
@@ -135,60 +114,126 @@ describe("compilationRollup", () => {
     const ownerWins = compilationRollup(
       comp({ parentImage: "parent.png", templateImage: "mod.png" }),
       [game({ id: "a", image: "child.png" })],
+      "backlog",
     );
     expect(ownerWins.image).toBe("parent.png");
     // …the moderator art fills the gap when the owner set nothing…
-    const modFills = compilationRollup(comp({ templateImage: "mod.png" }), [
-      game({ id: "a", image: "child.png" }),
-    ]);
+    const modFills = compilationRollup(
+      comp({ templateImage: "mod.png" }),
+      [game({ id: "a", image: "child.png" })],
+      "backlog",
+    );
     expect(modFills.image).toBe("mod.png");
     // …and child covers stay the last resort (and are never overwritten).
-    const childLast = compilationRollup(comp(), [game({ id: "a", image: "child.png" })]);
+    const childLast = compilationRollup(comp(), [game({ id: "a", image: "child.png" })], "backlog");
     expect(childLast.image).toBe("child.png");
   });
 });
 
-describe("groupCollapsedCompilations", () => {
-  const children = [
-    game({ id: "a", compilationId: "C", playedHours: 1 }),
-    game({ id: "b", compilationId: "C", status: "finished", playedHours: 2 }),
-  ];
+describe("groupCollapsedCompilations (86fc0b4b)", () => {
   const standalone = game({ id: "s" });
 
-  it("passes everything through while the bundle is expanded", () => {
-    const r = groupCollapsedCompilations([...children, standalone], [comp({ expanded: true })]);
-    expect(r.boardGames).toHaveLength(3);
-    expect(r.collapsed).toHaveLength(0);
-  });
-
-  it("folds children of a collapsed bundle into one rollup", () => {
-    const r = groupCollapsedCompilations([...children, standalone], [comp({ expanded: false })]);
+  it("puts one bundle card on every board the bundle has a child on", () => {
+    const children = [
+      game({ id: "a", compilationId: "C", playedHours: 1 }),
+      game({ id: "b", compilationId: "C", status: "finished", playedHours: 2 }),
+    ];
+    const r = groupCollapsedCompilations([...children, standalone], [comp()]);
     expect(r.boardGames.map((g) => g.id)).toEqual(["s"]);
-    expect(r.collapsed).toHaveLength(1);
-    expect(r.collapsed[0].children.map((g) => g.id)).toEqual(["a", "b"]);
-    expect(r.collapsed[0].totalPlayedHours).toBe(3);
+    expect(r.collapsed.map((c) => c.board)).toEqual(["backlog", "finished"]);
+    for (const card of r.collapsed) {
+      expect(card.children.map((g) => g.id)).toEqual(["a", "b"]);
+      expect(card.totalPlayedHours).toBe(3);
+    }
+    expect(r.collapsed[0].boardChildren.map((g) => g.id)).toEqual(["a"]);
+    expect(r.collapsed[1].boardChildren.map((g) => g.id)).toEqual(["b"]);
   });
 
-  it("never hides a Now Playing child — the bundle stays expanded (safety valve)", () => {
-    const playing = [
+  it("folds a bundle whatever its retired expanded flag says", () => {
+    const children = [game({ id: "a", compilationId: "C" }), game({ id: "b", compilationId: "C" })];
+    for (const expanded of [true, false]) {
+      const r = groupCollapsedCompilations(children, [comp({ expanded })]);
+      expect(r.boardGames).toHaveLength(0);
+      expect(r.collapsed).toHaveLength(1);
+    }
+  });
+
+  it("keeps playing children as their own cards for Now Playing", () => {
+    const children = [
       game({ id: "a", compilationId: "C", status: "playing" }),
       game({ id: "b", compilationId: "C" }),
     ];
-    const r = groupCollapsedCompilations(playing, [comp({ expanded: false })]);
-    expect(r.boardGames).toHaveLength(2);
+    const r = groupCollapsedCompilations(children, [comp()]);
+    expect(r.boardGames.map((g) => g.id)).toEqual(["a"]);
+    expect(r.collapsed.map((c) => c.board)).toEqual(["backlog"]);
+    expect(r.collapsed[0].playingCount).toBe(1);
+  });
+
+  it("gives an all-playing bundle no grid card", () => {
+    const r = groupCollapsedCompilations(
+      [game({ id: "a", compilationId: "C", status: "playing" })],
+      [comp()],
+    );
+    expect(r.boardGames.map((g) => g.id)).toEqual(["a"]);
     expect(r.collapsed).toHaveLength(0);
   });
 
-  it("ignores other users' contexts with no compilations (visitor view)", () => {
+  it("puts a wishlisted child on a Wishlist bundle card", () => {
+    const r = groupCollapsedCompilations(
+      [game({ id: "a", compilationId: "C", status: "wishlist" })],
+      [comp()],
+    );
+    expect(r.collapsed.map((c) => c.board)).toEqual(["wishlist"]);
+  });
+
+  it("passes children through when their compilation isn't loaded (visitor view)", () => {
+    const children = [game({ id: "a", compilationId: "C" }), game({ id: "b", compilationId: "C" })];
     const r = groupCollapsedCompilations(children, []);
     expect(r.boardGames).toHaveLength(2);
     expect(r.collapsed).toHaveLength(0);
   });
 
-  it("skips a collapsed bundle that has no children on the board", () => {
-    const r = groupCollapsedCompilations([standalone], [comp({ expanded: false })]);
+  it("skips a bundle that has no children", () => {
+    const r = groupCollapsedCompilations([standalone], [comp()]);
     expect(r.boardGames).toHaveLength(1);
     expect(r.collapsed).toHaveLength(0);
+  });
+});
+
+describe("compilationTray / compilationSummary (86fc0b4b)", () => {
+  const children = [
+    game({ id: "a", title: "A", compilationId: "C" }),
+    game({ id: "b", title: "B", compilationId: "C", priority: "high" }),
+    game({ id: "c", title: "C", compilationId: "C", priority: "essential" }),
+    game({ id: "d", title: "D", compilationId: "C", priority: "high" }),
+    game({ id: "e", title: "E", compilationId: "C", status: "finished" }),
+    game({ id: "f", title: "F", compilationId: "C", status: "playing" }),
+  ];
+
+  it("lists the Bazaar's highest-priority games first, ties in bundle order", () => {
+    const tray = compilationTray(compilationRollup(comp(), children, "backlog"));
+    expect(tray.shown.map((g) => g.id)).toEqual(["c", "b", "d"]);
+    expect(tray.more).toBe(1);
+  });
+
+  it("lists only the card's own board on the other boards", () => {
+    const tray = compilationTray(compilationRollup(comp(), children, "finished"));
+    expect(tray.shown.map((g) => g.id)).toEqual(["e"]);
+    expect(tray.more).toBe(0);
+  });
+
+  it("phrases the pill for each board", () => {
+    expect(compilationSummary(compilationRollup(comp(), children, "backlog"))).toBe(
+      "Compilation · 6 games · 4 in Bazaar",
+    );
+    expect(compilationSummary(compilationRollup(comp(), children, "finished"))).toBe(
+      "Compilation · 1 of 6 finished",
+    );
+    expect(
+      compilationSummary(
+        compilationRollup(comp(), [game({ id: "w", status: "wishlist" })], "wishlist"),
+      ),
+    ).toBe("Compilation · 1 game · 1 on Wishlist");
   });
 });
 
@@ -222,18 +267,29 @@ describe("findExpandTemplate", () => {
 });
 
 describe("compilationMatchesFilters / compilationMatchesQuery", () => {
-  const collapsed = compilationRollup(comp({ title: "Pikmin 1+2 Bundle" }), [
-    game({
-      id: "p1",
-      title: "Pikmin",
-      copies: [{ id: "c1", platform: "Nintendo Switch", format: "physical" }],
-    }),
-    game({
-      id: "p2",
-      title: "Pikmin 2",
-      copies: [{ id: "c2", platform: "Nintendo Wii", format: "digital" }],
-    }),
-  ]);
+  const collapsed = compilationRollup(
+    comp({ title: "Pikmin 1+2 Bundle" }),
+    [
+      game({
+        id: "p1",
+        title: "Pikmin",
+        copies: [{ id: "c1", platform: "Nintendo Switch", format: "physical" }],
+      }),
+      game({
+        id: "p2",
+        title: "Pikmin 2",
+        copies: [{ id: "c2", platform: "Nintendo Wii", format: "digital" }],
+      }),
+      // Finished, so it sits on the Finished card — the Bazaar card ignores it.
+      game({
+        id: "p3",
+        title: "Pikmin 3",
+        status: "finished",
+        copies: [{ id: "c3", platform: "PC", format: "digital" }],
+      }),
+    ],
+    "backlog",
+  );
 
   it("passes the slicers when ANY child passes (same rule as family cards)", () => {
     expect(compilationMatchesFilters(collapsed, EMPTY_FILTERS)).toBe(true);
@@ -243,7 +299,12 @@ describe("compilationMatchesFilters / compilationMatchesQuery", () => {
     expect(
       compilationMatchesFilters(collapsed, { ...EMPTY_FILTERS, formats: ["digital"] }),
     ).toBe(true);
+  });
+
+  it("asks only the children on the card's board (86fc0b4b)", () => {
+    // Pikmin 3 is on PC but finished — the Bazaar card doesn't answer for it.
     expect(compilationMatchesFilters(collapsed, { ...EMPTY_FILTERS, platforms: ["PC"] })).toBe(false);
+    expect(compilationMatchesQuery(collapsed, "pikmin 3")).toBe(false);
   });
 
   it("matches the search by the bundle's title or any child's", () => {

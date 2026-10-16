@@ -1,38 +1,41 @@
-// Pure logic for the collapsed-compilation board view: folding a bundle's child
-// cards into one synthetic rollup "parent card", deriving which board that card
-// sits on (the lane of its least-completed child), and matching an owned single
-// game card to the moderator-linked template that can expand it. The collapsed
-// parent is a VIEW-LAYER construct — never a games row — so it can't receive
-// playtime, fire status triggers, or touch the economy by construction. Kept
-// free of React/Supabase so it's directly unit-tested.
+// Pure logic for the compilation board view: folding a bundle's child games into
+// synthetic "bundle cards" — one on every board where the bundle has a child
+// (issue 86fc0b4b: a bundle can sit in the Bazaar and Finished at once) — and
+// matching an owned single game card to the moderator-linked template that can
+// expand it. Playing children keep their own cards on Now Playing, since each
+// one holds a lane slot. A bundle card is a VIEW-LAYER construct — never a games
+// row — so it can't receive playtime, fire status triggers, or touch the economy
+// by construction. Kept free of React/Supabase so it's directly unit-tested.
 
 import type { Compilation, Game, GameStatus } from "../types";
 import type { ParentTemplate } from "./compilationTemplates";
 import { gameMatches, type Filters } from "./bazaarView";
 import { gameMatchesQuery } from "./librarySearch";
+import { gamePriorityRank } from "./gamePriority";
 
-/** A collapsed compilation, ready to render as one rollup card. */
+/** The boards a bundle card can sit on. Now Playing isn't one: a playing child
+ *  holds a lane slot, so it keeps its own (bundle-framed) card there. */
+export type BundleBoard = Exclude<GameStatus, "playing">;
+const BUNDLE_BOARDS: BundleBoard[] = ["backlog", "finished", "wishlist"];
+
+/** One bundle card: a compilation as it shows on one board. */
 export interface CollapsedCompilation {
   compilation: Compilation;
+  /** Every child, in the owner's chosen order. */
   children: Game[];
-  /** The board the rollup card sits on: Finished only once EVERY child is
-   *  finished, otherwise the Bazaar (the least-completed child's lane). */
-  board: Extract<GameStatus, "backlog" | "finished">;
+  /** The board this card sits on. */
+  board: BundleBoard;
+  /** The children on this card's board, in the same order. The tray lists
+   *  them, and the board's slicers and sort read only these. */
+  boardChildren: Game[];
   /** Aggregate play time: every child's hours plus the bundle's carryover
    *  (time logged on the single parent card before it was expanded). */
   totalPlayedHours: number;
   finishedCount: number;
+  playingCount: number;
   /** Cover art: the original parent card's cover when the bundle was expanded
    *  from one, else the first child's. */
   image?: string;
-}
-
-/** The board a collapsed bundle belongs on — the lane of its least-completed
- *  child. Any non-finished child (backlog, playing, wishlist) keeps the card in
- *  the Bazaar; it reaches Finished only when every child is done. */
-export function deriveCompilationBoard(children: Game[]): "backlog" | "finished" {
-  if (children.length === 0) return "backlog";
-  return children.every((g) => g.status === "finished") ? "finished" : "backlog";
 }
 
 /** Order a bundle's child games by the owner's chosen order (issue 140ac868):
@@ -53,10 +56,10 @@ export function orderCompilationChildren<T extends Pick<Game, "id">>(
     .map((x) => x.c);
 }
 
-/** The cover the collapsed parent card shows: the owner's custom/expand-time
- *  parent cover first, else the moderator-set cover on the shared template,
- *  else the first child's (in the bundle's chosen order — pass children already
- *  ordered so every surface previewing this fallback agrees with the card). */
+/** The cover the bundle card shows: the owner's custom/expand-time parent cover
+ *  first, else the moderator-set cover on the shared template, else the first
+ *  child's (in the bundle's chosen order — pass children already ordered so
+ *  every surface previewing this fallback agrees with the card). */
 export function compilationCoverOf(
   compilation: Pick<Compilation, "parentImage" | "templateImage">,
   children: Pick<Game, "image">[],
@@ -66,44 +69,42 @@ export function compilationCoverOf(
   );
 }
 
-/** Build the rollup for one compilation's children, in the owner's chosen order
- *  (so the collapsed card, its cover fallback, and any preview all agree). */
+/** Build one board's bundle card, with every child in the owner's chosen order
+ *  (so the card, its cover fallback, and any preview all agree). */
 export function compilationRollup(
   compilation: Compilation,
   children: Game[],
+  board: BundleBoard,
 ): CollapsedCompilation {
   const ordered = orderCompilationChildren(children, compilation.childOrder);
   const played = ordered.reduce((sum, g) => sum + (g.playedHours ?? 0), 0);
   return {
     compilation,
     children: ordered,
-    board: deriveCompilationBoard(ordered),
+    board,
+    boardChildren: ordered.filter((g) => g.status === board),
     totalPlayedHours: played + (compilation.carryoverHours ?? 0),
     finishedCount: ordered.filter((g) => g.status === "finished").length,
+    playingCount: ordered.filter((g) => g.status === "playing").length,
     image: compilationCoverOf(compilation, ordered),
   };
 }
 
-/** Split a board's games into the individually-rendered cards and the collapsed
- *  compilation rollups. Children of a compilation with `expanded === false` are
- *  removed from `boardGames` and returned as one CollapsedCompilation instead.
- *
- *  Safety valve: a bundle with a child in Now Playing is ALWAYS treated as
- *  expanded (a card holding a slot must never vanish from its lane), matching
- *  the server-side collapse guard. Bundles with no children are skipped. */
+/** Split the games into the individually-rendered cards and the bundle cards.
+ *  Every compilation's non-playing children leave `boardGames` and come back as
+ *  one bundle card per board they sit on; playing children stay in
+ *  `boardGames` for Now Playing. Children of a compilation missing from
+ *  `compilations` (a visited library) pass through untouched. */
 export function groupCollapsedCompilations(
   games: Game[],
   compilations: Compilation[],
 ): { boardGames: Game[]; collapsed: CollapsedCompilation[] } {
-  const collapsedById = new Map<string, Compilation>();
-  for (const c of compilations) {
-    if (c.expanded === false) collapsedById.set(c.id, c);
-  }
-  if (collapsedById.size === 0) return { boardGames: games, collapsed: [] };
+  if (compilations.length === 0) return { boardGames: games, collapsed: [] };
+  const byId = new Map(compilations.map((c) => [c.id, c]));
 
   const childrenByComp = new Map<string, Game[]>();
   for (const g of games) {
-    if (g.compilationId != null && collapsedById.has(g.compilationId)) {
+    if (g.compilationId != null && byId.has(g.compilationId)) {
       const list = childrenByComp.get(g.compilationId);
       if (list) list.push(g);
       else childrenByComp.set(g.compilationId, [g]);
@@ -113,30 +114,64 @@ export function groupCollapsedCompilations(
   const hidden = new Set<string>();
   const collapsed: CollapsedCompilation[] = [];
   for (const [compId, children] of childrenByComp) {
-    if (children.some((g) => g.status === "playing")) continue; // safety valve
-    for (const g of children) hidden.add(g.id);
-    collapsed.push(compilationRollup(collapsedById.get(compId)!, children));
+    for (const board of BUNDLE_BOARDS) {
+      if (children.some((g) => g.status === board)) {
+        collapsed.push(compilationRollup(byId.get(compId)!, children, board));
+      }
+    }
+    for (const g of children) if (g.status !== "playing") hidden.add(g.id);
   }
-  if (hidden.size === 0) return { boardGames: games, collapsed: [] };
+  if (hidden.size === 0) return { boardGames: games, collapsed };
   return {
     boardGames: games.filter((g) => !hidden.has(g.id)),
     collapsed,
   };
 }
 
-/** A collapsed bundle passes the board slicers when ANY child passes — the
- *  same rule as family cards: hiding the rollup because one child fails a
- *  filter would hide children that pass. */
-export function compilationMatchesFilters(c: CollapsedCompilation, filters: Filters): boolean {
-  return c.children.some((g) => gameMatches(g, filters));
+/** How many games a bundle card's tray lists before "+N more". */
+export const TRAY_LIMIT = 3;
+
+/** The games a bundle card's tray lists: in the Bazaar, the highest-priority
+ *  games first (ties keep the bundle order); elsewhere, the bundle order. */
+export function compilationTray(c: CollapsedCompilation): { shown: Game[]; more: number } {
+  const list =
+    c.board === "backlog"
+      ? [...c.boardChildren].sort(
+          (a, b) => gamePriorityRank(b.priority) - gamePriorityRank(a.priority),
+        )
+      : c.boardChildren;
+  return { shown: list.slice(0, TRAY_LIMIT), more: Math.max(0, list.length - TRAY_LIMIT) };
 }
 
-/** The live search surfaces the rollup by the bundle's own title or any
- *  child's (searching "Pikmin 2" should find the Pikmin 1+2 bundle). */
+/** The bundle card's status pill, phrased for its board. */
+export function compilationSummary(c: CollapsedCompilation): string {
+  const total = c.children.length;
+  const games = `${total} game${total === 1 ? "" : "s"}`;
+  switch (c.board) {
+    case "finished":
+      return `Compilation · ${c.finishedCount} of ${total} finished`;
+    case "wishlist":
+      return `Compilation · ${games} · ${c.boardChildren.length} on Wishlist`;
+    default:
+      return `Compilation · ${games} · ${c.boardChildren.length} in Bazaar`;
+  }
+}
+
+/** A bundle card passes the board slicers when ANY of its children on that
+ *  board passes — the same rule as family cards: hiding the card because one
+ *  child fails a filter would hide children that pass. A finished child's
+ *  length or priority says nothing about the Bazaar card, so it isn't asked. */
+export function compilationMatchesFilters(c: CollapsedCompilation, filters: Filters): boolean {
+  return c.boardChildren.some((g) => gameMatches(g, filters));
+}
+
+/** The live search surfaces the card by the bundle's own title or any of its
+ *  children on that board (searching "Pikmin 2" finds the Pikmin 1+2 bundle on
+ *  whichever board Pikmin 2 sits). */
 export function compilationMatchesQuery(c: CollapsedCompilation, query: string): boolean {
   if (!query.trim()) return true;
   if (c.compilation.title.toLowerCase().includes(query.trim().toLowerCase())) return true;
-  return c.children.some((g) => gameMatchesQuery(g, query));
+  return c.boardChildren.some((g) => gameMatchesQuery(g, query));
 }
 
 /** The moderator-linked template that can expand this owned single card into a

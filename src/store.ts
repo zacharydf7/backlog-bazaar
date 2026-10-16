@@ -1233,9 +1233,6 @@ interface BazaarState {
   // nothing is spent or rewarded. An escape hatch for a finished game that was
   // accidentally added to the Bazaar; skips the buy→play→finish loop entirely.
   bazaarToFinished: (id: string, tag: Extract<FinishTag, "beaten" | "completed">) => Promise<void>;
-  // Toggle a compilation between individual child cards (expanded) and one
-  // collapsed rollup card. Presentation-only: never touches any child's status.
-  setCompilationExpanded: (id: string, expanded: boolean) => Promise<void>;
   // Persist the owner's chosen display order for a bundle's child games (an
   // ordered list of games.id). Optimistic; server-authoritative via RPC.
   setCompilationChildOrder: (id: string, orderedIds: string[]) => Promise<void>;
@@ -4968,41 +4965,6 @@ export const useStore = create<BazaarState>((set, get) => ({
     set({
       parentTemplates: ((data ?? []) as unknown as ParentTemplateRow[]).map(rowToParentTemplate),
     });
-  },
-
-  setCompilationExpanded: async (id, expanded) => {
-    const { cloud, games, compilations } = get();
-    const comp = compilations.find((c) => c.id === id);
-    if (!comp || comp.expanded === expanded) return;
-    // Mirror the server guard: a bundle with a Now Playing child can't collapse
-    // (its card must never vanish from the lane while it holds a slot).
-    if (!expanded && games.some((g) => g.compilationId === id && g.status === "playing")) {
-      toast("Finish or shelve the Now Playing game in this bundle first", AlertTriangle);
-      return;
-    }
-
-    const patch = (cs: Compilation[]) => cs.map((c) => (c.id === id ? { ...c, expanded } : c));
-    const next = patch(compilations);
-    set({ compilations: next });
-    if (!cloud) {
-      saveLocalCompilations(next);
-      toast(expanded ? `Expanded ${comp.title}` : `Collapsed into ${comp.title}`, Package);
-      return;
-    }
-    if (!supabase) return;
-    const { error } = await supabase.rpc("set_compilation_expanded", {
-      p_id: id,
-      p_expanded: expanded,
-    });
-    if (error) {
-      // Roll the optimistic flip back — the server is authoritative.
-      set({
-        compilations: get().compilations.map((c) => (c.id === id ? { ...c, expanded: comp.expanded } : c)),
-        error: error.message,
-      });
-      return;
-    }
-    toast(expanded ? `Expanded ${comp.title}` : `Collapsed into ${comp.title}`, Package);
   },
 
   setCompilationChildOrder: async (id, orderedIds) => {
