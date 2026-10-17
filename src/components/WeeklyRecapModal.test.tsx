@@ -14,6 +14,7 @@ const RECAP: WeeklyRecap = {
   progress: {
     achievements: [{ name: "Sworn Record", tier: 3 }],
     goals: ["Two Clears"],
+    quickDone: 4,
     close: [{ name: "Seasoned Finisher", description: "Finish 10 games", value: 8, threshold: 10 }],
     unclaimed: 25,
   },
@@ -37,6 +38,7 @@ describe("WeeklyRecapModal", () => {
     expect(card.textContent).toContain("Bounty Claimed");
     expect(card.textContent).toContain("Gold · Sworn Record");
     expect(card.textContent).toContain("Two Clears");
+    expect(card.textContent).toContain("4 daily & weekly goals done");
     expect(card.textContent).toContain("Seasoned Finisher");
     expect(card.textContent).toContain("8 / 10");
     expect(card.textContent).toContain("25 coins in rewards are waiting");

@@ -49,6 +49,35 @@ describe("coerceChallenges", () => {
   });
 });
 
+describe("daily & weekly goals", () => {
+  const goal = (over: Record<string, unknown> = {}) => ({
+    id: "q1", cadence: "daily", goal_key: "d-half-hour", name: "Half an Hour", description: "Log 30 minutes of play",
+    icon: "clock", target: 0.5, progress: 0.25, reward: 10, completed_at: null, reward_paid_at: null, ...over,
+  });
+
+  it("reads today's goal, the week's goals, swaps and the sweep", () => {
+    const c = coerceChallenges({
+      ...DOC,
+      daily: [goal()],
+      weekly: [goal({ id: "w1", cadence: "weekly", reward: 25, completed_at: "2026-10-14T00:00:00Z" })],
+      daily_swap_used: true,
+      weekly_swap_used: false,
+      weekly_bonus: { id: "s1", reward: 25, completed_at: "2026-10-15T00:00:00Z", reward_paid_at: null },
+      week_ends_at: "2026-10-19T00:00:00Z",
+      weekly_sweep: 25,
+    })!;
+    expect(c.daily).toMatchObject({ id: "q1", cadence: "daily", target: 0.5, progress: 0.25 });
+    expect(c.weekly[0]).toMatchObject({ cadence: "weekly", completedAt: Date.parse("2026-10-14T00:00:00Z") });
+    expect([c.dailySwapUsed, c.weeklySwapUsed]).toEqual([true, false]);
+    // The waiting weekly goal (25) and sweep (25) join the monthly/seasonal 90.
+    expect(unclaimedChallengeRewards(c)).toEqual({ count: 5, coins: 140 });
+  });
+
+  it("has no daily goal when none was dealt", () => {
+    expect(coerceChallenges(DOC)!.daily).toBeNull();
+  });
+});
+
 describe("unclaimedChallengeRewards", () => {
   it("adds up completed goals, leftovers and completed events still waiting", () => {
     expect(unclaimedChallengeRewards(coerceChallenges(DOC))).toEqual({ count: 3, coins: 90 });

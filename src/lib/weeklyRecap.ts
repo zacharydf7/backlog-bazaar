@@ -18,6 +18,8 @@ export interface WeeklyRecap {
   progress: {
     achievements: { name: string; tier: AchievementTier }[];
     goals: string[];
+    /** Daily and weekly goals completed in the week. */
+    quickDone: number;
     close: { name: string; description: string; value: number; threshold: number }[];
     unclaimed: number;
   };
@@ -82,6 +84,7 @@ export function coerceWeeklyRecap(raw: unknown): WeeklyRecap | null {
         return { name: str(obj(a).name), tier: (t === 2 || t === 3 ? t : 1) as AchievementTier };
       }),
       goals: list(progress.goals).map(str).filter(Boolean),
+      quickDone: num(progress.quick_done),
       close: list(progress.close).map((c) => ({
         name: str(obj(c).name),
         description: str(obj(c).description),

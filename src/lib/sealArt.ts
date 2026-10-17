@@ -71,6 +71,8 @@ const CRESTS: Record<string, string> = {
   "clean-slate":
     '<path d="M9 31l17-17 11 11-13 13h-8z"/><path d="M18 22l11 11" fill="none" stroke="currentColor" stroke-width="2"/><path d="M26 41h15" fill="none" stroke-width="2.8"/>',
   "speed-clear": '<path d="M27 5L11 27h11l-3 16 18-23H26z"/>',
+  routine:
+    '<rect x="8" y="11" width="32" height="29" rx="3"/><path d="M15 7v8M33 7v8" fill="none" stroke-width="3.2"/><path d="M8 19h32" fill="none" stroke="currentColor" stroke-width="2"/><path d="M16 29l5 5 10-10" fill="none" stroke="currentColor" stroke-width="3"/>',
 };
 
 /** A secret medal not yet earned (the server masks its family). */

@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { ChallengesPage } from "./ChallengesPage";
 import { useStore } from "../store";
-import type { ChallengesState } from "../lib/challenges";
+import type { ChallengesState, QuickGoal } from "../lib/challenges";
 
 const NOW = Date.now();
 const DAY = 86_400_000;
@@ -25,6 +25,14 @@ function state(over: Partial<ChallengesState> = {}): ChallengesState {
     bonus: null,
     unclaimedEarlier: [],
     seasonal: [],
+    daily: null,
+    weekly: [],
+    dailySwapUsed: false,
+    weeklySwapUsed: false,
+    weeklyBonus: null,
+    dayEndsAt: NOW + DAY / 2,
+    weekEndsAt: NOW + 3 * DAY,
+    weeklySweep: 25,
     ...over,
   };
 }
@@ -38,6 +46,7 @@ beforeEach(() => {
       fetchChallenges: vi.fn(async () => {}),
       evaluateChallenges: vi.fn(async () => {}),
       pickMonthlyGoal: vi.fn(async () => {}),
+      swapQuickGoal: vi.fn(async () => {}),
       claimChallengeRewards: vi.fn(async () => {}),
     }),
   );
@@ -88,6 +97,61 @@ describe("ChallengesPage — monthly goals", () => {
     render(<ChallengesPage />);
     expect(screen.queryByRole("button", { name: /Claim/ })).toBeNull();
     expect(screen.getByText(/waiting for when your coin economy is back on/)).toBeTruthy();
+  });
+});
+
+describe("ChallengesPage — daily & weekly", () => {
+  const quick = (id: string, over: Partial<QuickGoal> = {}): QuickGoal => ({
+    id, cadence: "weekly", goalKey: id, name: `Goal ${id}`, description: `Do ${id}`, icon: "clock",
+    target: 5, progress: 2, reward: 25, completedAt: null, rewardPaidAt: null, ...over,
+  });
+
+  it("shows today's goal and the week's goals with progress, and swaps one", () => {
+    act(() =>
+      useStore.setState({
+        challenges: state({
+          daily: quick("d1", { cadence: "daily", name: "Half an Hour", description: "Log 30 minutes of play", target: 0.5, progress: 0.25, reward: 10 }),
+          weekly: [quick("w1"), quick("w2"), quick("w3")],
+        }),
+      }),
+    );
+    render(<ChallengesPage />);
+    const section = within(screen.getByTestId("quick-goals"));
+    expect(section.getByText("Half an Hour")).toBeTruthy();
+    expect(section.getByText("Log 30 minutes of play")).toBeTruthy();
+    expect(section.getByText("0.2 / 0.5")).toBeTruthy();
+    expect(section.getByText("All three weekly goals")).toBeTruthy();
+    fireEvent.click(section.getAllByRole("button", { name: /Swap/ })[0]);
+    expect(useStore.getState().swapQuickGoal).toHaveBeenCalledWith("d1");
+  });
+
+  it("hides Swap once it's used, and on finished goals", () => {
+    act(() =>
+      useStore.setState({
+        challenges: state({
+          daily: quick("d1", { cadence: "daily" }),
+          dailySwapUsed: true,
+          weekly: [quick("w1", { completedAt: NOW, progress: 5 }), quick("w2"), quick("w3")],
+        }),
+      }),
+    );
+    render(<ChallengesPage />);
+    // Only the two unfinished weeklies can still swap.
+    expect(within(screen.getByTestId("quick-goals")).getAllByRole("button", { name: /Swap/ })).toHaveLength(2);
+  });
+
+  it("offers the weekly sweep once all three are done", () => {
+    act(() =>
+      useStore.setState({
+        challenges: state({
+          weekly: [quick("w1", { completedAt: NOW, rewardPaidAt: NOW }), quick("w2", { completedAt: NOW, rewardPaidAt: NOW }), quick("w3", { completedAt: NOW, rewardPaidAt: NOW })],
+          weeklyBonus: { id: "sweep", reward: 25, completedAt: NOW, rewardPaidAt: null },
+        }),
+      }),
+    );
+    render(<ChallengesPage />);
+    fireEvent.click(within(screen.getByTestId("quick-goals")).getByRole("button", { name: /Claim \+25/ }));
+    expect(useStore.getState().claimChallengeRewards).toHaveBeenCalledWith("sweep");
   });
 });
 

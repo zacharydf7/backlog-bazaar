@@ -1655,6 +1655,9 @@ interface BazaarState {
   pickMonthlyGoal: (goalKey: string) => Promise<void>;
   // Claim one completed goal/bonus/event reward by its row id, or all of them.
   claimChallengeRewards: (id?: string) => Promise<void>;
+  // Trade an unfinished daily or weekly goal for another (one swap per day
+  // for the daily, one per week for the weeklies).
+  swapQuickGoal: (id: string) => Promise<void>;
   // Build/fetch last week's recap (server-side, once per week) and open its
   // card if it hasn't been seen. Quiet weeks have none.
   fetchWeeklyRecap: () => Promise<void>;
@@ -2170,7 +2173,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     const { data: cfg } = await supabase
       .from("app_config")
       .select(
-        "maintenance, message, replay_bonus_pct, completion_bonus_pct, co_op_bonus_pct, clear_streak_threshold, clear_streak_bonus_base, clear_streak_bonus_step, clear_streak_bonus_cap, submission_reward, onboarding_vouchers, default_general_slots, default_rotation_slots, default_replay_slots, default_completionist_slots, rotation_checkin_reward, rotation_reset_dow, rotation_reset_hour, rotation_reset_tz, default_coin, price_formula, bounty_formula, sponsor_max_stake, sponsor_monthly_pair_cap, sponsor_expiry_days, preorder_strip_days, shop_open, loan_interest_pct, rec_discount_pct, rec_bounty_pct, rec_bounty_cap, story_order_bonus, collectors_record_bonus, review_bonus, review_bonus_min_chars, session_bonus, session_bonus_min_minutes, session_bonus_daily_cap, challenge_goal_reward, challenge_set_bonus, bounty_gate_pct",
+        "maintenance, message, replay_bonus_pct, completion_bonus_pct, co_op_bonus_pct, clear_streak_threshold, clear_streak_bonus_base, clear_streak_bonus_step, clear_streak_bonus_cap, submission_reward, onboarding_vouchers, default_general_slots, default_rotation_slots, default_replay_slots, default_completionist_slots, rotation_checkin_reward, rotation_reset_dow, rotation_reset_hour, rotation_reset_tz, default_coin, price_formula, bounty_formula, sponsor_max_stake, sponsor_monthly_pair_cap, sponsor_expiry_days, preorder_strip_days, shop_open, loan_interest_pct, rec_discount_pct, rec_bounty_pct, rec_bounty_cap, story_order_bonus, collectors_record_bonus, review_bonus, review_bonus_min_chars, session_bonus, session_bonus_min_minutes, session_bonus_daily_cap, challenge_goal_reward, challenge_set_bonus, challenge_daily_reward, challenge_weekly_reward, challenge_weekly_sweep, bounty_gate_pct",
       )
       .eq("id", 1)
       .single();
@@ -2225,6 +2228,18 @@ export const useStore = create<BazaarState>((set, get) => ({
           typeof cfg?.challenge_set_bonus === "number"
             ? cfg.challenge_set_bonus
             : FEATURE_BONUS_DEFAULTS.goalSetBonus,
+        dailyGoalReward:
+          typeof cfg?.challenge_daily_reward === "number"
+            ? cfg.challenge_daily_reward
+            : FEATURE_BONUS_DEFAULTS.dailyGoalReward,
+        weeklyGoalReward:
+          typeof cfg?.challenge_weekly_reward === "number"
+            ? cfg.challenge_weekly_reward
+            : FEATURE_BONUS_DEFAULTS.weeklyGoalReward,
+        weeklySweepBonus:
+          typeof cfg?.challenge_weekly_sweep === "number"
+            ? cfg.challenge_weekly_sweep
+            : FEATURE_BONUS_DEFAULTS.weeklySweepBonus,
       },
       sponsorMaxStake:
         typeof cfg?.sponsor_max_stake === "number"
@@ -3892,6 +3907,9 @@ export const useStore = create<BazaarState>((set, get) => ({
       dailySessionCap: clamp(cfg.dailySessionCap, 1, 24),
       goalReward: clamp(cfg.goalReward, 0, 100000),
       goalSetBonus: clamp(cfg.goalSetBonus, 0, 100000),
+      dailyGoalReward: clamp(cfg.dailyGoalReward, 0, 100000),
+      weeklyGoalReward: clamp(cfg.weeklyGoalReward, 0, 100000),
+      weeklySweepBonus: clamp(cfg.weeklySweepBonus, 0, 100000),
     };
     const { cloud, can } = get();
     if (!cloud) {
@@ -3912,6 +3930,9 @@ export const useStore = create<BazaarState>((set, get) => ({
         session_bonus_daily_cap: next.dailySessionCap,
         challenge_goal_reward: next.goalReward,
         challenge_set_bonus: next.goalSetBonus,
+        challenge_daily_reward: next.dailyGoalReward,
+        challenge_weekly_reward: next.weeklyGoalReward,
+        challenge_weekly_sweep: next.weeklySweepBonus,
       })
       .eq("id", 1);
     if (error) {
@@ -8349,6 +8370,17 @@ export const useStore = create<BazaarState>((set, get) => ({
     if (!recap) return;
     set({ weeklyRecap: null });
     if (recap.seenAt == null && supabase) void supabase.rpc("mark_weekly_recap_seen", { p_id: recap.id });
+  },
+
+  swapQuickGoal: async (id) => {
+    if (!supabase || !get().cloud) return;
+    const { error } = await supabase.rpc("swap_quick_goal", { p_id: id });
+    if (error) {
+      toast(error.message, AlertTriangle);
+      return;
+    }
+    trackEvent("feature", "quick_goal_swap");
+    await get().fetchChallenges();
   },
 
   fetchSeasonalChallengesAdmin: async () => {

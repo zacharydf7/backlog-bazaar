@@ -18637,6 +18637,13 @@ insert into public.achievements (slug, family, tier, name, description, icon, me
   ('master-archivist',    'contributor',     3, 'Keeper of the Catalog','Get 500 catalog suggestions approved',              'pen-line',    'submissions_approved', 500, 21, 50)
 on conflict (slug) do nothing;
 
+-- Routine (2026-10-17): daily and weekly goals completed.
+insert into public.achievements (slug, family, tier, name, description, icon, metric, threshold, sort, reward) values
+  ('routine-ten',  'routine', 1, 'Good Habits', 'Complete 10 daily or weekly goals',  'calendar-check', 'quick_goals_completed', 10,  22, 10),
+  ('routine-50',   'routine', 2, 'Routine',     'Complete 50 daily or weekly goals',  'calendar-check', 'quick_goals_completed', 50,  22, 25),
+  ('routine-200',  'routine', 3, 'Clockwork',   'Complete 200 daily or weekly goals', 'calendar-check', 'quick_goals_completed', 200, 22, 50)
+on conflict (slug) do nothing;
+
 -- Hidden medals: one each, secret until earned.
 insert into public.achievements (slug, family, tier, name, description, icon, metric, threshold, sort, hidden, reward) values
   ('night-owl',   'night-owl',   1, 'Night Owl',   'Log play between midnight and 4am',           'moon',      'night_owl_logs',       1, 30, true, 25),
@@ -18656,6 +18663,38 @@ immutable
 as $$
   select p_source = 'live' and abs(p_hours) <= 24;
 $$;
+
+-- Daily & weekly goals dealt to each player (the rest of the feature lives
+-- with Challenges below; the table is defined here because achievement_metrics,
+-- next, counts completed goals for the Routine medals). One row per goal dealt;
+-- a goal swapped out keeps its row with swapped_at set, and the goal's name,
+-- metric, target and reward are snapshotted when dealt. Progress counts from
+-- dealt_at, so nothing done before a goal appeared completes it.
+create table if not exists public.user_quick_goals (
+  id             uuid primary key default gen_random_uuid(),
+  user_id        uuid not null references auth.users (id) on delete cascade,
+  cadence        text not null check (cadence in ('daily', 'weekly')),
+  period         date not null,  -- the day, or the Monday the week starts
+  goal_key       text not null,
+  goal_name      text not null,
+  description    text not null,
+  icon           text not null default 'target',
+  metric         text not null,
+  target         numeric not null,
+  reward         integer not null default 0,
+  dealt_at       timestamptz not null default now(),
+  swapped_at     timestamptz,
+  completed_at   timestamptz,
+  value          numeric,
+  reward_paid_at timestamptz,
+  unique (user_id, cadence, period, goal_key)
+);
+create index if not exists user_quick_goals_user_idx on public.user_quick_goals (user_id, cadence, period);
+alter table public.user_quick_goals enable row level security;
+revoke insert, update, delete on public.user_quick_goals from anon, authenticated;
+drop policy if exists "user_quick_goals_select_own" on public.user_quick_goals;
+create policy "user_quick_goals_select_own" on public.user_quick_goals
+  for select to authenticated using (auth.uid() = user_id);
 
 -- Every achievement metric for one user, computed in one place so the evaluator
 -- and the progress display can never disagree. Semantics mirror the visible
@@ -18841,6 +18880,11 @@ as $$
      and coalesce(g.personal_hours, g.hours, 0) > 0
      and coalesce(g.played_hours, 0) >= coalesce((select bounty_gate_pct from public.app_config where id = 1), 25)
                                          / 100.0 * coalesce(g.personal_hours, g.hours)
+  union all
+  -- Daily and weekly goals completed (the Routine medals).
+  select 'quick_goals_completed', count(*)::numeric
+    from public.user_quick_goals q
+   where q.user_id = p_user and q.completed_at is not null
 $$;
 
 -- Award the caller every unearned achievement whose metric now passes, and
@@ -19051,6 +19095,14 @@ alter table public.app_config add column if not exists challenge_set_bonus integ
 alter table public.app_config drop constraint if exists app_config_challenge_rewards_range;
 alter table public.app_config add constraint app_config_challenge_rewards_range
   check (challenge_goal_reward between 0 and 100000 and challenge_set_bonus between 0 and 100000);
+-- Daily & weekly goals (2026-10-17): 10 a daily, 25 a weekly, 25 for all three weeklies.
+alter table public.app_config add column if not exists challenge_daily_reward integer not null default 10;
+alter table public.app_config add column if not exists challenge_weekly_reward integer not null default 25;
+alter table public.app_config add column if not exists challenge_weekly_sweep integer not null default 25;
+alter table public.app_config drop constraint if exists app_config_quick_goal_rewards_range;
+alter table public.app_config add constraint app_config_quick_goal_rewards_range
+  check (challenge_daily_reward between 0 and 100000 and challenge_weekly_reward between 0 and 100000
+     and challenge_weekly_sweep between 0 and 100000);
 
 -- Every metric a challenge can count, in one place for the checks below.
 create or replace function public.challenge_metric_keys()
@@ -19060,7 +19112,8 @@ immutable
 as $$
   select array[
     'games_finished', 'verified_clears', 'backlog_clears', 'hours_logged',
-    'play_days', 'stopwatch_sessions', 'reviews_written', 'rotation_checkins'
+    'play_days', 'stopwatch_sessions', 'reviews_written', 'rotation_checkins',
+    'games_played', 'revisits'
   ]::text[];
 $$;
 
@@ -19119,6 +19172,22 @@ as $$
     when 'rotation_checkins' then
       (select count(*) from public.rotation_checkins r
         where r.user_id = p_user and r.created_at >= p_from and r.created_at < p_to)
+    -- Different games with play logged.
+    when 'games_played' then
+      (select count(distinct e.game_id) from public.playtime_events e
+        where e.user_id = p_user and e.game_id is not null and e.hours > 0
+          and public.is_live_play(e.source, e.hours)
+          and e.created_at >= p_from and e.created_at < p_to)
+    -- Games played that had no play logged in the 30 days before the window.
+    when 'revisits' then
+      (select count(distinct e.game_id) from public.playtime_events e
+        where e.user_id = p_user and e.game_id is not null and e.hours > 0
+          and public.is_live_play(e.source, e.hours)
+          and e.created_at >= p_from and e.created_at < p_to
+          and not exists (select 1 from public.playtime_events b
+                           where b.game_id = e.game_id and b.user_id = p_user and b.hours > 0
+                             and public.is_live_play(b.source, b.hours)
+                             and b.created_at >= p_from - interval '30 days' and b.created_at < p_from))
     else 0
   end)::numeric;
 $$;
@@ -19264,6 +19333,231 @@ revoke insert, update, delete on public.monthly_goal_bonuses     from anon, auth
 revoke insert, update, delete on public.seasonal_challenges      from anon, authenticated;
 revoke insert, update, delete on public.user_seasonal_challenges from anon, authenticated;
 
+-- ---------------------------------------------------------------------------
+-- Daily & weekly goals (owner, 2026-10-17): one daily goal a day and three
+-- weekly goals a week, dealt to each player from these pools (skipping goals
+-- that don't apply to them), with one free swap a day and one a week. A daily
+-- pays challenge_daily_reward, a weekly challenge_weekly_reward, and all three
+-- weeklies add challenge_weekly_sweep; claimed by hand like other challenges.
+-- Days turn over at midnight and weeks on Monday, in the Rotation reset's
+-- timezone.
+-- ---------------------------------------------------------------------------
+create table if not exists public.quick_goals (
+  key             text primary key,
+  cadence         text not null check (cadence in ('daily', 'weekly')),
+  name            text not null,
+  description     text not null,
+  icon            text not null default 'target',
+  metric          text not null check (metric = any (public.challenge_metric_keys())),
+  target          numeric not null check (target > 0),
+  -- Only dealt to players this applies to (quick_goal_applies).
+  eligibility     text check (eligibility in ('idle_game', 'rotation_unchecked', 'unreviewed_clear')),
+  -- At most one goal from a group in a week (e.g. finish vs Verified clear).
+  exclusive_group text,
+  sort            integer not null default 0,
+  active          boolean not null default true,
+  created_at      timestamptz not null default now()
+);
+alter table public.quick_goals enable row level security;
+revoke insert, update, delete on public.quick_goals from anon, authenticated;
+drop policy if exists "quick_goals_select" on public.quick_goals;
+create policy "quick_goals_select" on public.quick_goals for select to authenticated using (true);
+
+insert into public.quick_goals (key, cadence, name, description, icon, metric, target, eligibility, exclusive_group, sort) values
+  ('d-two-games',   'daily',  'Double Feature', 'Log time on 2 different games',                 'layers',      'games_played',       2,   null,                 null,    1),
+  ('d-revisit',     'daily',  'Dust It Off',    'Play a game you haven''t touched in 30+ days',  'shovel',      'revisits',           1,   'idle_game',          null,    2),
+  ('d-stopwatch',   'daily',  'On the Clock',   'Use the stopwatch for a session',               'timer',       'stopwatch_sessions', 1,   null,                 null,    3),
+  ('d-rotation',    'daily',  'Check In',       'Check in a Rotation game',                      'refresh-cw',  'rotation_checkins',  1,   'rotation_unchecked', null,    4),
+  ('d-half-hour',   'daily',  'Half an Hour',   'Log 30 minutes of play',                        'clock',       'hours_logged',       0.5, null,                 null,    5),
+  ('w-three-days',  'weekly', 'Three Days',     'Play on 3 different days',                      'calendar',    'play_days',          3,   null,                 null,    1),
+  ('w-five-hours',  'weekly', 'Five Hours',     'Log 5 hours of play',                           'clock',       'hours_logged',       5,   null,                 null,    2),
+  ('w-three-games', 'weekly', 'Variety Pack',   'Play 3 different games',                        'layers',      'games_played',       3,   null,                 null,    3),
+  ('w-finish',      'weekly', 'Finisher',       'Finish a game',                                 'trophy',      'games_finished',     1,   null,                 'clear', 4),
+  ('w-verified',    'weekly', 'Done Properly',  'Earn a Verified clear',                         'badge-check', 'verified_clears',    1,   null,                 'clear', 5),
+  ('w-stopwatch',   'weekly', 'Timekeeper',     'Use the stopwatch 3 times',                     'timer',       'stopwatch_sessions', 3,   null,                 null,    6),
+  ('w-revisit',     'weekly', 'Old Friend',     'Revisit a game you haven''t touched in 30+ days','shovel',     'revisits',           1,   'idle_game',          null,    7),
+  ('w-review',      'weekly', 'Critic''s Week', 'Review a game you''ve finished',                'star',        'reviews_written',    1,   'unreviewed_clear',   null,    8)
+on conflict (key) do nothing;
+
+-- The bonus for completing all three of a week's goals.
+create table if not exists public.weekly_sweep_bonuses (
+  id             uuid primary key default gen_random_uuid(),
+  user_id        uuid not null references auth.users (id) on delete cascade,
+  period         date not null,
+  reward         integer not null default 0,
+  completed_at   timestamptz not null default now(),
+  reward_paid_at timestamptz,
+  unique (user_id, period)
+);
+alter table public.weekly_sweep_bonuses enable row level security;
+revoke insert, update, delete on public.weekly_sweep_bonuses from anon, authenticated;
+drop policy if exists "weekly_sweep_bonuses_select_own" on public.weekly_sweep_bonuses;
+create policy "weekly_sweep_bonuses_select_own" on public.weekly_sweep_bonuses
+  for select to authenticated using (auth.uid() = user_id);
+
+-- The day `p_at` falls in, and its bounds, in the Rotation reset's timezone.
+create or replace function public.challenge_day(p_at timestamptz default now())
+returns table (day date, starts timestamptz, ends timestamptz)
+language sql
+stable
+set search_path = public
+as $$
+  with tz as (
+    select coalesce(nullif(btrim(c.rotation_reset_tz), ''), 'UTC') as tz
+      from public.app_config c where c.id = 1
+  ),
+  d as (select (p_at at time zone tz.tz)::date as day, tz.tz from tz)
+  select d.day, d.day::timestamp at time zone d.tz, (d.day + 1)::timestamp at time zone d.tz from d;
+$$;
+revoke execute on function public.challenge_day(timestamptz) from public, anon, authenticated;
+
+-- Does a goal's eligibility rule apply to this player right now?
+--   idle_game          — a game in the Bazaar or Now Playing with no play
+--                        logged in 30 days
+--   rotation_unchecked — a Rotation game not yet checked in this week
+--   unreviewed_clear   — a cleared game with no review
+create or replace function public.quick_goal_applies(p_user uuid, p_rule text)
+returns boolean
+language plpgsql
+stable
+security definer set search_path = public
+as $$
+declare
+  v_period timestamptz;
+begin
+  if p_rule is null then return true; end if;
+  if p_rule = 'idle_game' then
+    return exists (
+      select 1 from public.games g
+       where g.user_id = p_user and g.status in ('backlog', 'playing') and g.preordered_at is null
+         and not exists (select 1 from public.playtime_events e
+                          where e.game_id = g.id and e.hours > 0 and public.is_live_play(e.source, e.hours)
+                            and e.created_at >= now() - interval '30 days'));
+  elsif p_rule = 'rotation_unchecked' then
+    select public.rotation_period_start(now(), coalesce(c.rotation_reset_dow, 1), coalesce(c.rotation_reset_hour, 0),
+                                        c.rotation_reset_tz)
+      into v_period from public.app_config c where c.id = 1;
+    return exists (
+      select 1 from public.games g
+       where g.user_id = p_user and g.status = 'playing' and g.in_rotation
+         and not exists (select 1 from public.rotation_checkins r
+                          where r.game_id = g.id and r.user_id = p_user and r.created_at >= v_period));
+  elsif p_rule = 'unreviewed_clear' then
+    return exists (
+      select 1 from public.games g
+       where g.user_id = p_user and g.status = 'finished' and g.finish_tag in ('beaten', 'completed')
+         and coalesce(btrim(g.review), '') = '');
+  end if;
+  return false;
+end;
+$$;
+revoke execute on function public.quick_goal_applies(uuid, text) from public, anon, authenticated;
+
+-- Deal one goal of a cadence for a period: a random active goal from the pool
+-- that applies to the player, hasn't been dealt this period, and doesn't share
+-- an exclusive group with a goal they still hold. False when none is left.
+create or replace function public.deal_quick_goal(p_user uuid, p_cadence text, p_period date)
+returns boolean
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  v_goal   public.quick_goals%rowtype;
+  v_reward integer;
+begin
+  select q.* into v_goal
+    from public.quick_goals q
+   where q.cadence = p_cadence and q.active
+     and not exists (select 1 from public.user_quick_goals u
+                      where u.user_id = p_user and u.cadence = p_cadence and u.period = p_period
+                        and u.goal_key = q.key)
+     and (q.exclusive_group is null or not exists (
+           select 1 from public.user_quick_goals u
+             join public.quick_goals q2 on q2.key = u.goal_key
+            where u.user_id = p_user and u.cadence = p_cadence and u.period = p_period
+              and u.swapped_at is null and q2.exclusive_group = q.exclusive_group))
+     and public.quick_goal_applies(p_user, q.eligibility)
+   order by random()
+   limit 1;
+  if not found then return false; end if;
+  select case when p_cadence = 'daily' then c.challenge_daily_reward else c.challenge_weekly_reward end
+    into v_reward from public.app_config c where c.id = 1;
+  insert into public.user_quick_goals
+    (user_id, cadence, period, goal_key, goal_name, description, icon, metric, target, reward)
+  values (p_user, p_cadence, p_period, v_goal.key, v_goal.name, v_goal.description, v_goal.icon,
+          v_goal.metric, v_goal.target, coalesce(v_reward, 0));
+  return true;
+end;
+$$;
+revoke execute on function public.deal_quick_goal(uuid, text, date) from public, anon, authenticated;
+
+-- Make sure the player holds today's daily goal and this week's three weekly
+-- goals (dealt the first time they're in the app that day/week). The profile
+-- lock keeps two tabs from dealing twice.
+create or replace function public.deal_quick_goals(p_user uuid)
+returns void
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  v_day  date;
+  v_week date;
+  i      integer;
+begin
+  perform 1 from public.profiles where id = p_user for update;
+  select d.day into v_day from public.challenge_day(now()) d;
+  select w.week_start into v_week from public.recap_week(now()) w;
+  if not exists (select 1 from public.user_quick_goals
+                  where user_id = p_user and cadence = 'daily' and period = v_day and swapped_at is null) then
+    perform public.deal_quick_goal(p_user, 'daily', v_day);
+  end if;
+  for i in 1..3 loop
+    exit when (select count(*) from public.user_quick_goals
+                where user_id = p_user and cadence = 'weekly' and period = v_week and swapped_at is null) >= 3;
+    exit when not public.deal_quick_goal(p_user, 'weekly', v_week);
+  end loop;
+end;
+$$;
+revoke execute on function public.deal_quick_goals(uuid) from public, anon, authenticated;
+
+-- Swap one unfinished goal for another (once a day for the daily, once a week
+-- for a weekly). The swapped goal keeps its row, marked swapped_at.
+create or replace function public.swap_quick_goal(p_id uuid)
+returns void
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  v_me  uuid := auth.uid();
+  v_row public.user_quick_goals%rowtype;
+  v_now date;
+begin
+  if v_me is null then raise exception 'Not authenticated'; end if;
+  perform 1 from public.profiles where id = v_me for update;
+  select * into v_row from public.user_quick_goals
+   where id = p_id and user_id = v_me and swapped_at is null;
+  if not found then raise exception 'Goal not found'; end if;
+  if v_row.completed_at is not null then raise exception 'That goal is already done'; end if;
+  if v_row.cadence = 'daily' then
+    select d.day into v_now from public.challenge_day(now()) d;
+  else
+    select w.week_start into v_now from public.recap_week(now()) w;
+  end if;
+  if v_row.period <> v_now then raise exception 'That goal has ended'; end if;
+  if exists (select 1 from public.user_quick_goals
+              where user_id = v_me and cadence = v_row.cadence and period = v_row.period
+                and swapped_at is not null) then
+    raise exception 'You''ve already used this %''s swap', case when v_row.cadence = 'daily' then 'day' else 'week' end;
+  end if;
+  update public.user_quick_goals set swapped_at = now() where id = p_id;
+  if not public.deal_quick_goal(v_me, v_row.cadence, v_row.period) then
+    raise exception 'There''s no other goal to swap to right now';
+  end if;
+end;
+$$;
+revoke execute on function public.swap_quick_goal(uuid) from public, anon;
+grant execute on function public.swap_quick_goal(uuid) to authenticated;
+
 -- Pick one of this month's goals (up to 3; picks are final for the month).
 create or replace function public.pick_monthly_goal(p_goal text)
 returns void
@@ -19330,7 +19624,13 @@ begin
              where b.user_id = p_user and b.reward_paid_at is null
             union all
             select s.reward from public.user_seasonal_challenges s
-             where s.user_id = p_user and s.reward_paid_at is null) x;
+             where s.user_id = p_user and s.reward_paid_at is null
+            union all
+            select q.reward from public.user_quick_goals q
+             where q.user_id = p_user and q.completed_at is not null and q.reward_paid_at is null
+            union all
+            select w.reward from public.weekly_sweep_bonuses w
+             where w.user_id = p_user and w.reward_paid_at is null) x;
     if v_waiting > 0 then
       v_body := v_body || ' You also have ' || v_waiting || ' coins in rewards waiting to be claimed.';
     end if;
@@ -19363,6 +19663,43 @@ declare
 begin
   if v_me is null then raise exception 'Not authenticated'; end if;
   perform public.challenge_month_notice(v_me);
+  perform public.deal_quick_goals(v_me);
+
+  -- Daily and weekly goals: today and yesterday, this week and last (so a
+  -- goal met just before the turnover still lands). Progress counts from when
+  -- each goal was dealt.
+  for v_m in
+    select 'daily'::text as cadence, d.day as period, d.ends from public.challenge_day(now()) d
+    union all
+    select 'daily', d.day, d.ends from public.challenge_day(now() - interval '1 day') d
+    union all
+    select 'weekly', w.week_start, w.ends from public.recap_week(now()) w
+    union all
+    select 'weekly', w.week_start, w.ends from public.recap_week(now() - interval '7 days') w
+  loop
+    return query
+    with done as (
+      update public.user_quick_goals u
+         set completed_at = now(),
+             value = public.challenge_metric(v_me, u.metric, u.dealt_at, v_m.ends)
+       where u.user_id = v_me and u.cadence = v_m.cadence and u.period = v_m.period
+         and u.swapped_at is null and u.completed_at is null
+         and public.challenge_metric(v_me, u.metric, u.dealt_at, v_m.ends) >= u.target
+      returning u.goal_name, u.reward
+    )
+    select v_m.cadence, d.goal_name, d.reward from done d;
+
+    if v_m.cadence = 'weekly'
+       and (select count(*) from public.user_quick_goals
+             where user_id = v_me and cadence = 'weekly' and period = v_m.period
+               and swapped_at is null and completed_at is not null) >= 3 then
+      return query
+      insert into public.weekly_sweep_bonuses (user_id, period, reward)
+      values (v_me, v_m.period, coalesce((select challenge_weekly_sweep from public.app_config where id = 1), 25))
+      on conflict (user_id, period) do nothing
+      returning 'sweep'::text, 'All three weekly goals'::text, weekly_sweep_bonuses.reward;
+    end if;
+  end loop;
 
   for v_m in
     select * from public.challenge_month(now())
@@ -19415,6 +19752,21 @@ begin
 end;
 $$;
 
+-- One dealt daily/weekly goal as the Challenges page shows it.
+create or replace function public.quick_goal_json(p_user uuid, u public.user_quick_goals, p_ends timestamptz)
+returns jsonb
+language sql
+stable
+security definer set search_path = public
+as $$
+  select jsonb_build_object(
+    'id', u.id, 'cadence', u.cadence, 'goal_key', u.goal_key, 'name', u.goal_name,
+    'description', u.description, 'icon', u.icon, 'target', u.target, 'reward', u.reward,
+    'completed_at', u.completed_at, 'reward_paid_at', u.reward_paid_at,
+    'progress', coalesce(u.value, public.challenge_metric(p_user, u.metric, u.dealt_at, p_ends)));
+$$;
+revoke execute on function public.quick_goal_json(uuid, public.user_quick_goals, timestamptz) from public, anon, authenticated;
+
 -- Everything the Challenges page shows, as one JSON document: this month's
 -- menu with live progress, the caller's picks and bonus, and seasonal events
 -- (upcoming within 14 days, live, or ended in the last 35) with progress and
@@ -19426,10 +19778,38 @@ as $$
 declare
   v_me uuid := auth.uid();
   v_m  record;
+  v_d  record;
+  v_w  record;
 begin
   if v_me is null then raise exception 'Not authenticated'; end if;
+  perform public.deal_quick_goals(v_me);
   select * into v_m from public.challenge_month(now());
+  select * into v_d from public.challenge_day(now());
+  select * into v_w from public.recap_week(now());
   return jsonb_build_object(
+    'day_ends_at', v_d.ends,
+    'week_ends_at', v_w.ends,
+    'daily_reward', coalesce((select challenge_daily_reward from public.app_config where id = 1), 10),
+    'weekly_reward', coalesce((select challenge_weekly_reward from public.app_config where id = 1), 25),
+    'weekly_sweep', coalesce((select challenge_weekly_sweep from public.app_config where id = 1), 25),
+    'daily', coalesce((
+      select jsonb_agg(public.quick_goal_json(v_me, u, v_d.ends) order by u.dealt_at)
+        from public.user_quick_goals u
+       where u.user_id = v_me and u.cadence = 'daily' and u.period = v_d.day and u.swapped_at is null), '[]'::jsonb),
+    'weekly', coalesce((
+      select jsonb_agg(public.quick_goal_json(v_me, u, v_w.ends) order by u.dealt_at)
+        from public.user_quick_goals u
+       where u.user_id = v_me and u.cadence = 'weekly' and u.period = v_w.week_start and u.swapped_at is null), '[]'::jsonb),
+    'daily_swap_used', exists (select 1 from public.user_quick_goals u
+                                where u.user_id = v_me and u.cadence = 'daily' and u.period = v_d.day
+                                  and u.swapped_at is not null),
+    'weekly_swap_used', exists (select 1 from public.user_quick_goals u
+                                 where u.user_id = v_me and u.cadence = 'weekly' and u.period = v_w.week_start
+                                   and u.swapped_at is not null),
+    'weekly_bonus', (
+      select jsonb_build_object('id', b.id, 'reward', b.reward, 'completed_at', b.completed_at,
+                                'reward_paid_at', b.reward_paid_at)
+        from public.weekly_sweep_bonuses b where b.user_id = v_me and b.period = v_w.week_start),
     'month', v_m.month,
     'ends_at', v_m.ends,
     'goal_reward', coalesce((select challenge_goal_reward from public.app_config where id = 1), 25),
@@ -19461,7 +19841,14 @@ begin
                  and u.reward_paid_at is null and u.reward > 0
               union all
               select b.id, 'All three goals', b.reward from public.monthly_goal_bonuses b
-               where b.user_id = v_me and b.month < v_m.month and b.reward_paid_at is null and b.reward > 0) x),
+               where b.user_id = v_me and b.month < v_m.month and b.reward_paid_at is null and b.reward > 0
+              union all
+              select q.id, q.goal_name, q.reward from public.user_quick_goals q
+               where q.user_id = v_me and q.completed_at is not null and q.reward_paid_at is null and q.reward > 0
+                 and q.period < case when q.cadence = 'daily' then v_d.day else v_w.week_start end
+              union all
+              select b.id, 'All three weekly goals', b.reward from public.weekly_sweep_bonuses b
+               where b.user_id = v_me and b.period < v_w.week_start and b.reward_paid_at is null and b.reward > 0) x),
       '[]'::jsonb),
     'seasonal', coalesce((
       select jsonb_agg(jsonb_build_object(
@@ -19523,12 +19910,28 @@ begin
       from public.user_seasonal_challenges s
      where s.user_id = v_me and s.reward_paid_at is null and s.reward > 0
        and (p_id is null or s.id = p_id)
+    union all
+    select q.cadence || '_goal', q.id, q.goal_name, q.reward, q.completed_at,
+           jsonb_build_object('goal', q.goal_key, 'period', q.period)
+      from public.user_quick_goals q
+     where q.user_id = v_me and q.completed_at is not null and q.reward_paid_at is null and q.reward > 0
+       and (p_id is null or q.id = p_id)
+    union all
+    select 'weekly_sweep', w.id, 'All three weekly goals', w.reward, w.completed_at,
+           jsonb_build_object('week', w.period)
+      from public.weekly_sweep_bonuses w
+     where w.user_id = v_me and w.reward_paid_at is null and w.reward > 0
+       and (p_id is null or w.id = p_id)
      order by 5
   loop
     if r.kind = 'monthly_goal' then
       update public.user_monthly_goals set reward_paid_at = now() where id = r.id;
     elsif r.kind = 'monthly_goal_bonus' then
       update public.monthly_goal_bonuses set reward_paid_at = now() where id = r.id;
+    elsif r.kind in ('daily_goal', 'weekly_goal') then
+      update public.user_quick_goals set reward_paid_at = now() where id = r.id;
+    elsif r.kind = 'weekly_sweep' then
+      update public.weekly_sweep_bonuses set reward_paid_at = now() where id = r.id;
     else
       update public.user_seasonal_challenges set reward_paid_at = now() where id = r.id;
     end if;
@@ -19779,6 +20182,8 @@ begin
                 union all
                 select s.challenge_name from public.user_seasonal_challenges s
                  where s.user_id = p_user and s.completed_at >= p_from and s.completed_at < p_to) x), '[]'::jsonb),
+      'quick_done', (select count(*) from public.user_quick_goals q
+                      where q.user_id = p_user and q.completed_at >= p_from and q.completed_at < p_to),
       -- Each family's next medal you're at least halfway to, closest first.
       'close', coalesce((
         select jsonb_agg(jsonb_build_object('name', n.name, 'description', n.description,
@@ -19807,6 +20212,10 @@ begin
                      where b.user_id = p_user and b.reward_paid_at is null), 0)
         + coalesce((select sum(s.reward) from public.user_seasonal_challenges s
                      where s.user_id = p_user and s.reward_paid_at is null), 0)
+        + coalesce((select sum(q.reward) from public.user_quick_goals q
+                     where q.user_id = p_user and q.completed_at is not null and q.reward_paid_at is null), 0)
+        + coalesce((select sum(w.reward) from public.weekly_sweep_bonuses w
+                     where w.user_id = p_user and w.reward_paid_at is null), 0)
         else 0 end
     )
   );

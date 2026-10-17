@@ -1233,6 +1233,9 @@ function FeatureBonusesCard() {
     dailySessionCap: Math.max(1, Math.min(24, Math.round(num(draft.dailySessionCap)))),
     goalReward: amt(draft.goalReward),
     goalSetBonus: amt(draft.goalSetBonus),
+    dailyGoalReward: amt(draft.dailyGoalReward),
+    weeklyGoalReward: amt(draft.weeklyGoalReward),
+    weeklySweepBonus: amt(draft.weeklySweepBonus),
   };
   const dirty = JSON.stringify(parsed) !== JSON.stringify(featureBonuses);
   const field = (key: keyof FeatureBonusConfig) => ({
@@ -1320,6 +1323,27 @@ function FeatureBonusesCard() {
           min={0}
           max={100000}
           {...field("goalSetBonus")}
+        />
+        <RateField
+          label="Daily goal (coins)"
+          hint="Paid for each daily goal a player completes. A goal keeps the amount set when it was dealt."
+          min={0}
+          max={100000}
+          {...field("dailyGoalReward")}
+        />
+        <RateField
+          label="Weekly goal (coins)"
+          hint="Paid for each weekly goal a player completes."
+          min={0}
+          max={100000}
+          {...field("weeklyGoalReward")}
+        />
+        <RateField
+          label="All three weekly goals (coins)"
+          hint="Extra coins for completing all three of a week's goals."
+          min={0}
+          max={100000}
+          {...field("weeklySweepBonus")}
         />
       </div>
       <div className="mt-3 flex justify-end gap-2">

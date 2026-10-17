@@ -61,6 +61,14 @@ export const RELEASES: Release[] = [
     title: "Compilations are games too, and bounties follow your time",
     items: [
       {
+        text: "Daily and weekly goals: a new goal every day and three every Monday, chosen for you on the Challenges page. Each daily pays 10 coins and each weekly 25, with 25 more for all three. Don't like one? Swap it, once a day and once a week.",
+        tag: "feature",
+      },
+      {
+        text: "New Routine medals for completing daily and weekly goals.",
+        tag: "feature",
+      },
+      {
         text: "My Cosmetics is now a dressing room: your preview stays in view while you browse titles, frames, stalls and coins one at a time, and tapping anything you own wears it right away, with Undo. Saved looks switch your whole outfit in one tap.",
         tag: "improvement",
       },

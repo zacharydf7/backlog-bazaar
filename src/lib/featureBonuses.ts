@@ -33,6 +33,12 @@ export interface FeatureBonusConfig {
   goalReward: number;
   /** Extra coins for completing all three of a month's goals. */
   goalSetBonus: number;
+  /** Coins for each completed daily goal. */
+  dailyGoalReward: number;
+  /** Coins for each completed weekly goal. */
+  weeklyGoalReward: number;
+  /** Extra coins for completing all three of a week's goals. */
+  weeklySweepBonus: number;
 }
 
 /** Defaults — mirrored by the app_config column defaults in schema.sql. */
@@ -46,6 +52,9 @@ export const FEATURE_BONUS_DEFAULTS: FeatureBonusConfig = {
   dailySessionCap: 3,
   goalReward: 25,
   goalSetBonus: 50,
+  dailyGoalReward: 10,
+  weeklyGoalReward: 25,
+  weeklySweepBonus: 25,
 };
 
 /** True when any copy records what you paid for it (a cost, $0 included) or the

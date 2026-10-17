@@ -29,7 +29,7 @@ describe("seal art", () => {
       "honest-quitter", "chronicler", "curator", "tastemaker", "verified",
       "streak-keeper", "regular", "timekeeper", "archaeologist", "long-haul",
       "well-rounded", "co-op-partner", "lorekeeper", "rotation-regular",
-      "contributor", "night-owl", "full-set", "clean-slate", "speed-clear",
+      "contributor", "night-owl", "full-set", "clean-slate", "speed-clear", "routine",
     ]) {
       expect(CREST_FAMILIES).toContain(family);
     }

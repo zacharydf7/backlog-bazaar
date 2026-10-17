@@ -10,6 +10,8 @@ import {
   Star,
   RefreshCw,
   Flag,
+  Layers,
+  Shuffle,
   Award,
   type LucideIcon,
 } from "lucide-react";
@@ -24,7 +26,7 @@ import {
   seasonalPhase,
   unclaimedChallengeRewards,
   type MenuGoal,
-  type MonthlyPick,
+  type QuickGoal,
   type SeasonalChallenge,
 } from "../lib/challenges";
 
@@ -38,6 +40,7 @@ const GOAL_ICONS: Record<string, LucideIcon> = {
   timer: Timer,
   star: Star,
   "refresh-cw": RefreshCw,
+  layers: Layers,
 };
 
 function ProgressBar({ fraction, done }: { fraction: number; done: boolean }) {
@@ -60,11 +63,17 @@ function shortDate(t: number): string {
   return new Date(t).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
-/** One of your picked goals: progress, then its reward. */
-function PickRow({ pick, icon }: { pick: MonthlyPick; icon: string }) {
+type GoalLike = Pick<QuickGoal, "id" | "name" | "target" | "progress" | "reward" | "completedAt" | "rewardPaidAt"> & {
+  description?: string;
+};
+
+/** One goal you hold (monthly, daily or weekly): progress, then its reward,
+ *  and the free swap when one is offered. */
+function GoalRow({ goal, icon, onSwap }: { goal: GoalLike; icon: string; onSwap?: () => Promise<void> }) {
   const claim = useStore((s) => s.claimChallengeRewards);
+  const [swapping, setSwapping] = useState(false);
   const Icon = GOAL_ICONS[icon] ?? Target;
-  const done = pick.completedAt != null;
+  const done = goal.completedAt != null;
   return (
     <div className="flex items-start gap-3 rounded-xl border border-line bg-surface p-3">
       <span
@@ -76,19 +85,78 @@ function PickRow({ pick, icon }: { pick: MonthlyPick; icon: string }) {
         <Icon size={18} />
       </span>
       <div className="min-w-0 flex-1">
-        <p className="text-sm font-semibold text-ink">{pick.name}</p>
-        <ProgressBar fraction={done ? 1 : progressFraction(pick.progress, pick.target)} done={done} />
+        <p className="text-sm font-semibold text-ink">{goal.name}</p>
+        {goal.description && <p className="text-xs text-muted">{goal.description}</p>}
+        <ProgressBar fraction={done ? 1 : progressFraction(goal.progress, goal.target)} done={done} />
         <p className="mt-0.5 text-[11px] text-subtle">
-          {done ? "Complete" : progressCount(pick.progress, pick.target)}
+          {done ? "Complete" : progressCount(goal.progress, goal.target)}
         </p>
       </div>
+      <div className="flex shrink-0 flex-col items-end gap-1.5">
+        <RewardClaim
+          reward={goal.reward}
+          state={!done ? "locked" : goal.rewardPaidAt == null ? "claimable" : "claimed"}
+          onClaim={() => claim(goal.id)}
+        />
+        {onSwap && !done && (
+          <button
+            type="button"
+            disabled={swapping}
+            title="Trade this goal for another (once per day or week)"
+            onClick={async () => {
+              setSwapping(true);
+              await onSwap();
+              setSwapping(false);
+            }}
+            className="inline-flex items-center gap-1 text-[11px] font-medium text-muted transition hover:text-ink disabled:opacity-50"
+          >
+            <Shuffle size={11} /> Swap
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** The "all three" bonus under a set of goals. */
+function BonusRow({
+  label,
+  reward,
+  done,
+  doneCount,
+}: {
+  label: string;
+  reward: number;
+  done: { id: string; rewardPaidAt: number | null } | null;
+  doneCount: number;
+}) {
+  const claim = useStore((s) => s.claimChallengeRewards);
+  return (
+    <div className="flex items-center gap-3 rounded-xl border border-line bg-panel/60 p-3">
+      <span className="grid size-10 shrink-0 place-items-center rounded-full bg-surface text-accent">
+        <Flag size={18} />
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-semibold text-ink">{label}</p>
+        <p className="text-[11px] text-subtle">{done ? "Complete" : `${doneCount} of 3 done`}</p>
+      </div>
       <RewardClaim
-        reward={pick.reward}
-        state={!done ? "locked" : pick.rewardPaidAt == null ? "claimable" : "claimed"}
-        onClaim={() => claim(pick.id)}
+        reward={reward}
+        state={!done ? "locked" : done.rewardPaidAt == null ? "claimable" : "claimed"}
+        onClaim={async () => {
+          if (done) await claim(done.id);
+        }}
       />
     </div>
   );
+}
+
+/** "5h left" / "2 days left" until a turnover. */
+function timeLeft(endsAt: number, now: number): string {
+  const hours = Math.max(0, (endsAt - now) / 3_600_000);
+  if (hours < 24) return `${Math.max(1, Math.ceil(hours))}h left`;
+  const days = daysLeft(endsAt, now);
+  return `${days} ${days === 1 ? "day" : "days"} left`;
 }
 
 /** A goal you could still pick. Picks are final, so the first tap asks for a
@@ -192,6 +260,7 @@ export function ChallengesPage() {
   const fetchChallenges = useStore((s) => s.fetchChallenges);
   const evaluateChallenges = useStore((s) => s.evaluateChallenges);
   const claimAll = useStore((s) => s.claimChallengeRewards);
+  const swap = useStore((s) => s.swapQuickGoal);
 
   useEffect(() => {
     if (!cloud) return;
@@ -233,12 +302,51 @@ export function ChallengesPage() {
           <Target size={22} className="text-accent" /> Challenges
         </h1>
         <p className="mt-0.5 text-sm text-muted">
-          Pick three goals each month and take on seasonal challenges. Each one pays coins once you
-          claim it.
+          Daily and weekly goals, three monthly goals you pick, and seasonal challenges. Each one
+          pays coins once you claim it.
         </p>
       </div>
 
       <ClaimAllBanner count={waiting.count} coins={waiting.coins} onClaimAll={() => claimAll()} />
+
+      <section className="flex flex-col gap-3" data-testid="quick-goals">
+        <h2 className="font-display text-xl text-ink">Today &amp; this week</h2>
+        <p className="-mt-2 text-xs text-subtle">
+          A new daily goal every day and three weekly goals every Monday. Swap one of each if it
+          doesn&apos;t fit.
+        </p>
+        <p className="text-xs font-semibold uppercase tracking-wide text-subtle">
+          Today · {timeLeft(challenges.dayEndsAt, now)}
+        </p>
+        {challenges.daily ? (
+          <GoalRow
+            goal={challenges.daily}
+            icon={challenges.daily.icon}
+            onSwap={challenges.dailySwapUsed ? undefined : () => swap(challenges.daily!.id)}
+          />
+        ) : (
+          <p className="text-sm text-muted">No daily goal today.</p>
+        )}
+        <p className="text-xs font-semibold uppercase tracking-wide text-subtle">
+          This week · {timeLeft(challenges.weekEndsAt, now)}
+        </p>
+        {challenges.weekly.map((g) => (
+          <GoalRow
+            key={g.id}
+            goal={g}
+            icon={g.icon}
+            onSwap={challenges.weeklySwapUsed ? undefined : () => swap(g.id)}
+          />
+        ))}
+        {challenges.weekly.length === 3 && (
+          <BonusRow
+            label="All three weekly goals"
+            reward={challenges.weeklyBonus?.reward ?? challenges.weeklySweep}
+            done={challenges.weeklyBonus}
+            doneCount={challenges.weekly.filter((g) => g.completedAt != null).length}
+          />
+        )}
+      </section>
 
       <section className="flex flex-col gap-3" data-testid="monthly-goals">
         <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
@@ -250,26 +358,16 @@ export function ChallengesPage() {
         </div>
 
         {challenges.picks.map((p) => (
-          <PickRow key={p.id} pick={p} icon={iconFor(p.goalKey)} />
+          <GoalRow key={p.id} goal={p} icon={iconFor(p.goalKey)} />
         ))}
 
         {challenges.picks.length === PICKS_PER_MONTH && (
-          <div className="flex items-center gap-3 rounded-xl border border-line bg-panel/60 p-3">
-            <span className="grid size-10 shrink-0 place-items-center rounded-full bg-surface text-accent">
-              <Flag size={18} />
-            </span>
-            <div className="min-w-0 flex-1">
-              <p className="text-sm font-semibold text-ink">All three goals</p>
-              <p className="text-[11px] text-subtle">{bonus ? "Complete" : `${doneCount} of 3 done`}</p>
-            </div>
-            <RewardClaim
-              reward={bonus?.reward ?? challenges.setBonus}
-              state={!bonus ? "locked" : bonus.rewardPaidAt == null ? "claimable" : "claimed"}
-              onClaim={async () => {
-                if (bonus) await claimAll(bonus.id);
-              }}
-            />
-          </div>
+          <BonusRow
+            label="All three goals"
+            reward={bonus?.reward ?? challenges.setBonus}
+            done={bonus}
+            doneCount={doneCount}
+          />
         )}
 
         {openSlots > 0 && (

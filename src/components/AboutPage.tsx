@@ -224,7 +224,13 @@ export function AboutPage() {
               up to your achievement score, shown on your profile.
             </p>
             <p>
-              On the <strong className="text-ink">Challenges</strong> page, pick three goals each
+              On the <strong className="text-ink">Challenges</strong> page you get a{" "}
+              <strong className="text-ink">daily goal</strong> each day (
+              <Coin n={featureBonuses.dailyGoalReward} />) and three{" "}
+              <strong className="text-ink">weekly goals</strong> each Monday (
+              <Coin n={featureBonuses.weeklyGoalReward} /> each, plus{" "}
+              <Coin n={featureBonuses.weeklySweepBonus} /> for all three), and you can swap one of
+              each. You also pick three goals each
               month (finish two games, play on ten different days…). Everything you log from the
               1st counts, and your picks are final for the month. Each goal you complete pays{" "}
               <Coin n={featureBonuses.goalReward} />, and finishing all three adds{" "}

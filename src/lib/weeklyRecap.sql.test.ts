@@ -64,6 +64,8 @@ beforeAll(async () => {
     create table public.user_seasonal_challenges (user_id uuid, challenge_name text, reward integer,
       completed_at timestamptz, reward_paid_at timestamptz);
     create table public.notifications (user_id uuid, type text, title text, body text, link text);
+    create table public.user_quick_goals (user_id uuid, reward integer, completed_at timestamptz, reward_paid_at timestamptz);
+    create table public.weekly_sweep_bonuses (user_id uuid, reward integer, reward_paid_at timestamptz);
     create table public.weekly_recaps (id uuid primary key default gen_random_uuid(), user_id uuid,
       week_start date, data jsonb, created_at timestamptz not null default now(), seen_at timestamptz,
       unique (user_id, week_start));
@@ -82,7 +84,7 @@ beforeEach(async () => {
     delete from public.weekly_recaps; delete from public.notifications; delete from public.playtime_events;
     delete from public.game_status_events; delete from public.games; delete from public.coin_events;
     delete from public.achievements; delete from public.user_achievements; delete from public.profiles;
-    delete from public.action_undos;
+    delete from public.action_undos; delete from public.user_quick_goals;
     insert into public.profiles (id, clear_streak, clear_streak_best) values ('${ME}', 2, 5), ('${OTHER}', 0, 0);
     insert into public.achievements (family, tier, name, description, metric, threshold)
       values ('finisher', 2, 'Seasoned Finisher', 'Finish 10 games', 'games_finished', 10);
@@ -109,6 +111,8 @@ async function activeWeek() {
       ('${ME}', '${G2}', 'Hades', 4, now());  -- this week: not in last week's recap
     insert into public.coin_events (user_id, kind, coin_delta, created_at) values
       ('${ME}', 'bounty', 300, ${LAST_WEEK}), ('${ME}', 'purchase', -120, ${LAST_WEEK});
+    insert into public.user_quick_goals (user_id, reward, completed_at, reward_paid_at)
+      values ('${ME}', 10, ${LAST_WEEK}, ${LAST_WEEK}), ('${ME}', 25, now() - interval '30 days', null);
   `);
 }
 
@@ -129,7 +133,7 @@ describe("weekly_recap", () => {
       play: { hours: 5.5, days: 2, top_game: { title: "Hades", hours: 3 } },
       clears: { finished: 1, verified: 1, titles: ["Celeste"], streak: 2, best_streak: 5 },
       coins: { earned: 300, spent: 120, top_sources: [{ kind: "bounty", coins: 300 }] },
-      progress: { close: [{ name: "Seasoned Finisher", value: 8, threshold: 10 }] },
+      progress: { close: [{ name: "Seasoned Finisher", value: 8, threshold: 10 }], quick_done: 1, unclaimed: 25 },
     });
     const notes = await db.query("select title, body, link from public.notifications");
     expect(notes.rows).toEqual([

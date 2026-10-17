@@ -16,6 +16,8 @@ export const CHALLENGE_METRICS = {
   stopwatch_sessions: { label: "Stopwatch sessions", unit: "sessions" },
   reviews_written: { label: "Games reviewed", unit: "reviews" },
   rotation_checkins: { label: "Rotation check-ins", unit: "check-ins" },
+  games_played: { label: "Different games played", unit: "games" },
+  revisits: { label: "Games revisited after 30+ days", unit: "games" },
 } as const;
 
 export type ChallengeMetric = keyof typeof CHALLENGE_METRICS;
@@ -66,6 +68,21 @@ export interface SeasonalChallenge {
   rewardPaidAt: number | null;
 }
 
+/** A daily or weekly goal dealt to you. */
+export interface QuickGoal {
+  id: string;
+  cadence: "daily" | "weekly";
+  goalKey: string;
+  name: string;
+  description: string;
+  icon: string;
+  target: number;
+  progress: number;
+  reward: number;
+  completedAt: number | null;
+  rewardPaidAt: number | null;
+}
+
 export interface ChallengesState {
   /** First of the month, "YYYY-MM-DD". */
   month: string;
@@ -77,6 +94,15 @@ export interface ChallengesState {
   bonus: { id: string; reward: number; completedAt: number; rewardPaidAt: number | null } | null;
   unclaimedEarlier: EarlierReward[];
   seasonal: SeasonalChallenge[];
+  /** Today's daily goal (null if none could be dealt). */
+  daily: QuickGoal | null;
+  weekly: QuickGoal[];
+  dailySwapUsed: boolean;
+  weeklySwapUsed: boolean;
+  weeklyBonus: { id: string; reward: number; completedAt: number; rewardPaidAt: number | null } | null;
+  dayEndsAt: number;
+  weekEndsAt: number;
+  weeklySweep: number;
 }
 
 /** How many goals a player picks each month (the server enforces it too). */
@@ -101,13 +127,43 @@ function rows(v: unknown): Record<string, unknown>[] {
   return Array.isArray(v) ? v.filter((r): r is Record<string, unknown> => !!r && typeof r === "object") : [];
 }
 
+function quickGoal(g: Record<string, unknown>): QuickGoal {
+  return {
+    id: str(g.id),
+    cadence: g.cadence === "weekly" ? "weekly" : "daily",
+    goalKey: str(g.goal_key),
+    name: str(g.name),
+    description: str(g.description),
+    icon: str(g.icon, "target"),
+    target: num(g.target),
+    progress: num(g.progress),
+    reward: num(g.reward),
+    completedAt: time(g.completed_at),
+    rewardPaidAt: time(g.reward_paid_at),
+  };
+}
+
+function bonusRow(v: unknown): ChallengesState["bonus"] {
+  if (!v || typeof v !== "object") return null;
+  const b = v as Record<string, unknown>;
+  return { id: str(b.id), reward: num(b.reward), completedAt: time(b.completed_at) ?? 0, rewardPaidAt: time(b.reward_paid_at) };
+}
+
 /** Coerce the list_challenges document. Null for anything unusable. */
 export function coerceChallenges(raw: unknown): ChallengesState | null {
   if (!raw || typeof raw !== "object") return null;
   const r = raw as Record<string, unknown>;
   if (typeof r.month !== "string") return null;
-  const bonus = r.bonus && typeof r.bonus === "object" ? (r.bonus as Record<string, unknown>) : null;
+  const daily = rows(r.daily).map(quickGoal);
   return {
+    daily: daily[0] ?? null,
+    weekly: rows(r.weekly).map(quickGoal),
+    dailySwapUsed: r.daily_swap_used === true,
+    weeklySwapUsed: r.weekly_swap_used === true,
+    weeklyBonus: bonusRow(r.weekly_bonus),
+    dayEndsAt: time(r.day_ends_at) ?? 0,
+    weekEndsAt: time(r.week_ends_at) ?? 0,
+    weeklySweep: num(r.weekly_sweep),
     month: r.month,
     endsAt: time(r.ends_at) ?? 0,
     goalReward: num(r.goal_reward),
@@ -130,14 +186,7 @@ export function coerceChallenges(raw: unknown): ChallengesState | null {
       completedAt: time(p.completed_at),
       rewardPaidAt: time(p.reward_paid_at),
     })),
-    bonus: bonus
-      ? {
-          id: str(bonus.id),
-          reward: num(bonus.reward),
-          completedAt: time(bonus.completed_at) ?? 0,
-          rewardPaidAt: time(bonus.reward_paid_at),
-        }
-      : null,
+    bonus: bonusRow(r.bonus),
     unclaimedEarlier: rows(r.unclaimed_earlier).map((e) => ({
       id: str(e.id),
       name: str(e.name),
@@ -194,12 +243,16 @@ export function seasonalPhase(c: Pick<SeasonalChallenge, "startsAt" | "endsAt">,
   return now < c.endsAt ? "live" : "ended";
 }
 
-/** Everything waiting to be claimed on the page: completed goals, the
- *  all-three bonus, earlier months' leftovers and completed events. */
+/** Everything waiting to be claimed on the page: completed goals (daily,
+ *  weekly and monthly), the bonuses, earlier leftovers and completed events. */
 export function unclaimedChallengeRewards(state: ChallengesState | null): { count: number; coins: number } {
   if (!state) return { count: 0, coins: 0 };
+  const done = (g: { completedAt: number | null; rewardPaidAt: number | null }) =>
+    g.completedAt != null && g.rewardPaidAt == null;
   const amounts = [
-    ...state.picks.filter((p) => p.completedAt != null && p.rewardPaidAt == null).map((p) => p.reward),
+    ...[state.daily, ...state.weekly].filter((g): g is QuickGoal => g != null && done(g)).map((g) => g.reward),
+    ...(state.weeklyBonus && state.weeklyBonus.rewardPaidAt == null ? [state.weeklyBonus.reward] : []),
+    ...state.picks.filter(done).map((p) => p.reward),
     ...(state.bonus && state.bonus.rewardPaidAt == null ? [state.bonus.reward] : []),
     ...state.unclaimedEarlier.map((e) => e.reward),
     ...state.seasonal.filter((s) => s.entryId != null && s.rewardPaidAt == null).map((s) => s.reward),

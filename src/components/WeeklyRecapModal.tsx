@@ -118,7 +118,7 @@ export function WeeklyRecapModal({ recap, onNavigate }: { recap: WeeklyRecap; on
             </Section>
           )}
 
-          {(progress.achievements.length > 0 || progress.goals.length > 0) && (
+          {(progress.achievements.length > 0 || progress.goals.length > 0 || progress.quickDone > 0) && (
             <Section icon={Medal} title="Earned">
               {progress.achievements.map((a) => (
                 <p key={a.name}>{medalLabel(a)}</p>
@@ -129,6 +129,12 @@ export function WeeklyRecapModal({ recap, onNavigate }: { recap: WeeklyRecap; on
                   {g}
                 </p>
               ))}
+              {progress.quickDone > 0 && (
+                <p>
+                  <Target size={12} className="mr-1 inline text-accent" />
+                  {progress.quickDone} daily &amp; weekly {progress.quickDone === 1 ? "goal" : "goals"} done
+                </p>
+              )}
             </Section>
           )}
 
