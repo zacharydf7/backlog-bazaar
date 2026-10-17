@@ -83,6 +83,7 @@ import { MasterLedger } from "./components/MasterLedger";
 import { PreorderStrip } from "./components/PreorderStrip";
 import { BonusEventStrip } from "./components/BonusEventStrip";
 import { CalendarPage } from "./components/CalendarPage";
+import { RegularStreakStrip } from "./components/RegularStreakStrip";
 import { PactInviteStrip, PactJoinModal } from "./components/CoOpPact";
 import { LoanRequestStrip } from "./components/Loans";
 import { pinPreorderedCards } from "./lib/preorders";
@@ -1477,6 +1478,7 @@ export default function App() {
                 {/* A running coin event (own board only) — finishing here is
                     where a bounty boost pays. */}
                 <BonusEventStrip />
+                <RegularStreakStrip />
                 <PlayingBoard
                   games={visibleGames}
                   families={familiesForView}

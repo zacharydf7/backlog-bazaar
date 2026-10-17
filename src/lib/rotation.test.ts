@@ -7,6 +7,7 @@ import {
   rotationResetSummary,
   formatResetCountdown,
   rotationMilestoneProgress,
+  coerceRegularStreak,
   wallTimeInTz,
   type RotationResetConfig,
 } from "./rotation";
@@ -101,5 +102,22 @@ describe("wallTimeInTz", () => {
   it("finds midnight Eastern on either side of the clock change", () => {
     expect(new Date(wallTimeInTz(2026, 11, 1, 0, "America/New_York")).toISOString()).toBe("2026-11-01T04:00:00.000Z");
     expect(new Date(wallTimeInTz(2026, 11, 2, 0, "America/New_York")).toISOString()).toBe("2026-11-02T05:00:00.000Z");
+  });
+});
+
+describe("coerceRegularStreak", () => {
+  it("reads my_regular_streak", () => {
+    expect(
+      coerceRegularStreak({
+        streak: 2,
+        best: "4",
+        week_hours: 0.5,
+        min_hours: 1,
+        done: false,
+        next_bonus: 20,
+        week_ends: "2026-10-19T04:00:00Z",
+      }),
+    ).toEqual({ streak: 2, best: 4, weekHours: 0.5, minHours: 1, done: false, nextBonus: 20, weekEnds: Date.parse("2026-10-19T04:00:00Z") });
+    expect(coerceRegularStreak(null)).toBeNull();
   });
 });

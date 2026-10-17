@@ -45,6 +45,7 @@ beforeAll(async () => {
       personal_hours real, hours real, played_hours real,
       in_rotation boolean not null default false, ongoing boolean not null default false);
     create table public.rotation_checkins (user_id uuid, game_id uuid, created_at timestamptz not null default now());
+    create table public.regular_weeks (user_id uuid, week date, streak integer);
     create table public.playtime_events (user_id uuid, game_id uuid, game_title text, hours real,
       source text not null default 'live', created_at timestamptz not null default now());
     create table public.action_undos (user_id uuid, game_id uuid, action text, undone_at timestamptz,
@@ -87,7 +88,7 @@ beforeEach(async () => {
     delete from public.weekly_recaps; delete from public.notifications; delete from public.playtime_events;
     delete from public.game_status_events; delete from public.games; delete from public.coin_events;
     delete from public.achievements; delete from public.user_achievements; delete from public.profiles;
-    delete from public.action_undos; delete from public.user_quick_goals; delete from public.rotation_checkins;
+    delete from public.action_undos; delete from public.user_quick_goals; delete from public.rotation_checkins; delete from public.regular_weeks;
     insert into public.profiles (id, clear_streak, clear_streak_best) values ('${ME}', 2, 5), ('${OTHER}', 0, 0);
     insert into public.achievements (family, tier, name, description, metric, threshold)
       values ('finisher', 2, 'Seasoned Finisher', 'Finish 10 games', 'games_finished', 10);

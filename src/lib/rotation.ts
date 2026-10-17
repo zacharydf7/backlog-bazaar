@@ -102,6 +102,37 @@ export function wallTimeInTz(year: number, month: number, day: number, hour: num
   return wall - tzOffsetMs(new Date(guess), zone);
 }
 
+/** The Regular streak (my_regular_streak): Rotation play week after week. */
+export interface RegularStreak {
+  /** The live run (this week's, or last week's until this week counts). */
+  streak: number;
+  best: number;
+  /** Live hours on Rotation games this week, and what makes it count. */
+  weekHours: number;
+  minHours: number;
+  /** This week already counts. */
+  done: boolean;
+  /** What the next Regular week pays. */
+  nextBonus: number;
+  weekEnds: number;
+}
+
+export function coerceRegularStreak(raw: unknown): RegularStreak | null {
+  if (!raw || typeof raw !== "object") return null;
+  const r = raw as Record<string, unknown>;
+  const n = (v: unknown) => (Number.isFinite(Number(v)) ? Number(v) : 0);
+  const ends = typeof r.week_ends === "string" ? Date.parse(r.week_ends) : NaN;
+  return {
+    streak: n(r.streak),
+    best: n(r.best),
+    weekHours: n(r.week_hours),
+    minHours: n(r.min_hours) || 1,
+    done: r.done === true,
+    nextBonus: n(r.next_bonus),
+    weekEnds: Number.isFinite(ends) ? ends : 0,
+  };
+}
+
 /** Progress toward a Rotation game's next hours milestone (every `step` live
  *  hours pays; `paid` milestones are already reached): the hours it lands at,
  *  how far there is to go, and how much of this stretch is done (0-1). */

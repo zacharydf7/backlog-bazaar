@@ -48,9 +48,9 @@ export const RELEASES: Release[] = [
     tag: "feature",
     items: [
       "Rotation games pay 25 coins for every 10 hours you play.",
+      "A Regular streak pays more each week you keep playing Rotation games.",
       "Log time and use the stopwatch right on Rotation cards.",
-      "New daily, weekly and monthly goals for Rotation play.",
-      "Adding a live-service game no longer breaks your Clear Streak.",
+      "New Rotation goals, and live-service adds never break your Clear Streak.",
     ],
     link: { label: "Open Now Playing", view: "playing" },
   },

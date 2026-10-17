@@ -113,6 +113,12 @@ export function WeeklyRecapModal({ recap, onNavigate }: { recap: WeeklyRecap; on
                 {play.rotation.games === 1 ? "game" : "games"}
                 {play.rotation.checkins > 0 && ` · ${checkinsLabel(play.rotation.checkins)}`}
               </p>
+              {play.rotation.regularStreak != null && (
+                <p className="text-muted">
+                  Regular week {play.rotation.regularStreak}
+                  {play.rotation.regularStreak > 1 && " in a row"}
+                </p>
+              )}
             </Section>
           )}
 

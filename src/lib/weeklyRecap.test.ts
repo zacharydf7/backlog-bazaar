@@ -26,7 +26,7 @@ describe("coerceWeeklyRecap", () => {
       days: 2,
       sessions: 1,
       topGame: { id: "g", title: "Hades", hours: 3 },
-      rotation: { hours: 2, games: 1, checkins: 3 },
+      rotation: { hours: 2, games: 1, checkins: 3, regularStreak: null },
     });
     expect(r.clears.bestStreak).toBe(5);
     expect(r.coins!.topSources).toEqual([{ kind: "bounty", coins: 300 }]);

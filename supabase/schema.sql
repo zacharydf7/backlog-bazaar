@@ -9127,7 +9127,7 @@ $$;
 revoke execute on function public.pay_session_bonus(uuid, uuid, real) from public, anon, authenticated;
 
 create or replace function public.log_playtime(p_game uuid, p_hours real, p_platform text default null, p_format text default null)
-returns table (coins integer, played_hours real, bonus integer, milestone integer)
+returns table (coins integer, played_hours real, bonus integer, milestone integer, regular integer)
 language plpgsql
 security definer set search_path = public
 as $$
@@ -9141,6 +9141,7 @@ declare
   v_pact      public.co_op_pacts%rowtype;
   v_bonus     integer := 0;
   v_milestone integer := 0;
+  v_regular   integer := 0;
 begin
   if p_hours is null or p_hours <= 0 then
     raise exception 'Hours must be positive';
@@ -9201,12 +9202,16 @@ begin
      where id = v_pact.invitee_game and status = 'playing';
   end if;
 
-  -- Daily Session bonus (see pay_session_bonus), and any Rotation milestone.
+  -- Daily Session bonus (see pay_session_bonus), and for Rotation play, any
+  -- hours milestone and this week's Regular bonus.
   v_bonus := public.pay_session_bonus(auth.uid(), p_game, p_hours);
-  v_milestone := public.pay_rotation_milestones(auth.uid(), p_game);
+  if exists (select 1 from public.games where id = p_game and in_rotation) then
+    v_milestone := public.pay_rotation_milestones(auth.uid(), p_game);
+    v_regular := public.pay_regular_week(auth.uid());
+  end if;
   select coins into v_coins from public.profiles where id = auth.uid();
 
-  return query select v_coins, v_played, v_bonus, v_milestone;
+  return query select v_coins, v_played, v_bonus, v_milestone, v_regular;
 end;
 $$;
 
@@ -12227,6 +12232,145 @@ revoke execute on function public.my_rotation_progress() from public, anon;
 grant execute on function public.my_rotation_progress() to authenticated;
 
 -- ---------------------------------------------------------------------------
+-- The Regular streak (owner, 2026-10-17): the Rotation player's Clear Streak.
+-- A week (Monday to Sunday, site timezone) with at least regular_min_hours of
+-- live play on Rotation games is a Regular week; weeks in a row build the
+-- streak, and each Regular week pays regular_bonus_base, plus
+-- regular_bonus_step for every week before it in the run, up to
+-- regular_bonus_cap. Missing a week starts it over. One append-only row per
+-- week (paid when the week first qualifies); with the economy off it's
+-- recorded at 0 coins and the streak still counts.
+-- ---------------------------------------------------------------------------
+alter table public.app_config add column if not exists regular_min_hours numeric not null default 1
+  check (regular_min_hours > 0);
+alter table public.app_config add column if not exists regular_bonus_base integer not null default 10
+  check (regular_bonus_base between 0 and 100000);
+alter table public.app_config add column if not exists regular_bonus_step integer not null default 5
+  check (regular_bonus_step between 0 and 100000);
+alter table public.app_config add column if not exists regular_bonus_cap integer not null default 40
+  check (regular_bonus_cap between 0 and 100000);
+
+create table if not exists public.regular_weeks (
+  id         uuid primary key default gen_random_uuid(),
+  user_id    uuid not null references auth.users (id) on delete cascade,
+  week       date not null,
+  hours      numeric not null,
+  streak     integer not null check (streak > 0),
+  coins      integer not null default 0,
+  created_at timestamptz not null default now(),
+  unique (user_id, week)
+);
+alter table public.regular_weeks enable row level security;
+revoke insert, update, delete on public.regular_weeks from anon, authenticated;
+drop policy if exists "regular_weeks_select_own" on public.regular_weeks;
+create policy "regular_weeks_select_own" on public.regular_weeks
+  for select to authenticated using (auth.uid() = user_id);
+
+-- Live hours on Rotation games in [p_from, p_to).
+create or replace function public.rotation_live_hours(p_user uuid, p_from timestamptz, p_to timestamptz)
+returns numeric
+language sql
+stable
+set search_path = public
+as $$
+  select greatest(coalesce(sum(e.hours), 0), 0)::numeric
+    from public.playtime_events e
+   where e.user_id = p_user and e.in_rotation and public.is_live_play(e.source, e.hours)
+     and e.created_at >= p_from and e.created_at < p_to;
+$$;
+revoke execute on function public.rotation_live_hours(uuid, timestamptz, timestamptz) from public, anon, authenticated;
+
+-- Pay this week's Regular bonus once it qualifies; returns the coins paid.
+-- Internal: called by log_playtime after Rotation play.
+create or replace function public.pay_regular_week(p_user uuid)
+returns integer
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  w        record;
+  v_min    numeric;
+  v_base   integer;
+  v_step   integer;
+  v_cap    integer;
+  v_hours  numeric;
+  v_prev   integer;
+  v_streak integer;
+  v_pay    integer;
+  v_econ   boolean := public.economy_enabled(p_user);
+  v_coins  integer;
+begin
+  select * into w from public.recap_week(now());
+  if exists (select 1 from public.regular_weeks where user_id = p_user and week = w.week_start) then
+    return 0;
+  end if;
+  select coalesce(c.regular_min_hours, 1), coalesce(c.regular_bonus_base, 10),
+         coalesce(c.regular_bonus_step, 5), coalesce(c.regular_bonus_cap, 40)
+    into v_min, v_base, v_step, v_cap from public.app_config c where c.id = 1;
+  v_hours := public.rotation_live_hours(p_user, w.starts, w.ends);
+  if v_hours < v_min then return 0; end if;
+  select r.streak into v_prev from public.regular_weeks r
+   where r.user_id = p_user and r.week = w.week_start - 7;
+  v_streak := coalesce(v_prev, 0) + 1;
+  v_pay := case when v_econ then least(v_base + v_step * (v_streak - 1), v_cap) else 0 end;
+  insert into public.regular_weeks (user_id, week, hours, streak, coins)
+  values (p_user, w.week_start, v_hours, v_streak, v_pay)
+  on conflict (user_id, week) do nothing;
+  if not found then return 0; end if;
+  if v_pay > 0 then
+    update public.profiles set coins = coins + v_pay where id = p_user returning coins into v_coins;
+    perform public.log_coin_event(p_user, 'regular_week', v_pay, 0, v_coins, null, null, null,
+                                  'Week ' || v_streak, jsonb_build_object('streak', v_streak, 'week', w.week_start));
+  end if;
+  return v_pay;
+end;
+$$;
+revoke execute on function public.pay_regular_week(uuid) from public, anon, authenticated;
+
+-- The caller's Regular streak, for the Now Playing strip: the live streak
+-- (this week's or last week's run), the best, this week's Rotation hours and
+-- whether the week already counts, and what the next Regular week pays.
+create or replace function public.my_regular_streak()
+returns jsonb
+language plpgsql
+stable
+security definer set search_path = public
+as $$
+declare
+  w       record;
+  v_me    uuid := auth.uid();
+  v_this  integer;
+  v_last  integer;
+  v_base  integer;
+  v_step  integer;
+  v_cap   integer;
+  v_min   numeric;
+  v_run   integer;
+begin
+  if v_me is null then raise exception 'Not authenticated'; end if;
+  select * into w from public.recap_week(now());
+  select coalesce(c.regular_min_hours, 1), coalesce(c.regular_bonus_base, 10),
+         coalesce(c.regular_bonus_step, 5), coalesce(c.regular_bonus_cap, 40)
+    into v_min, v_base, v_step, v_cap from public.app_config c where c.id = 1;
+  select streak into v_this from public.regular_weeks where user_id = v_me and week = w.week_start;
+  select streak into v_last from public.regular_weeks where user_id = v_me and week = w.week_start - 7;
+  v_run := coalesce(v_this, v_last, 0);
+  return jsonb_build_object(
+    'streak', v_run,
+    'best', (select coalesce(max(streak), 0) from public.regular_weeks where user_id = v_me),
+    'week_hours', round(public.rotation_live_hours(v_me, w.starts, w.ends), 2),
+    'min_hours', v_min,
+    'done', v_this is not null,
+    'next_bonus', case when v_this is not null
+                       then least(v_base + v_step * v_this, v_cap)
+                       else least(v_base + v_step * coalesce(v_last, 0), v_cap) end,
+    'week_ends', w.ends);
+end;
+$$;
+revoke execute on function public.my_regular_streak() from public, anon;
+grant execute on function public.my_regular_streak() to authenticated;
+
+-- ---------------------------------------------------------------------------
 -- Play-session stopwatch: start a
 -- live session on a game you're playing, stop it later, and the elapsed time
 -- lands as logged playtime through the same path as manual logging. Sessions
@@ -12328,7 +12472,7 @@ $$;
 -- widened the RETURNS TABLE shape.
 drop function if exists public.end_play_session(uuid, real);
 create or replace function public.end_play_session(p_session uuid, p_hours real default null)
-returns table (logged real, coins integer, played_hours real, bonus integer, milestone integer)
+returns table (logged real, coins integer, played_hours real, bonus integer, milestone integer, regular integer)
 language plpgsql
 security definer set search_path = public
 as $$
@@ -12341,6 +12485,7 @@ declare
   v_played  real;
   v_bonus   integer;
   v_milestone integer;
+  v_regular integer;
 begin
   select * into v_sess
     from public.play_sessions
@@ -12368,7 +12513,7 @@ begin
      where id = v_sess.id;
     select p.coins into v_coins from public.profiles p where p.id = auth.uid();
     select g.played_hours into v_played from public.games g where g.id = v_sess.game_id;
-    return query select 0::real, v_coins, v_played, 0, 0;
+    return query select 0::real, v_coins, v_played, 0, 0, 0;
     return;
   end if;
 
@@ -12380,10 +12525,10 @@ begin
      set status = 'logged', ended_at = now(), logged_hours = v_hours
    where id = v_sess.id;
 
-  select l.coins, l.played_hours, l.bonus, l.milestone into v_coins, v_played, v_bonus, v_milestone
+  select l.coins, l.played_hours, l.bonus, l.milestone, l.regular into v_coins, v_played, v_bonus, v_milestone, v_regular
     from public.log_playtime(v_sess.game_id, v_hours, v_sess.platform, v_sess.format) l;
 
-  return query select v_hours, v_coins, v_played, coalesce(v_bonus, 0), coalesce(v_milestone, 0);
+  return query select v_hours, v_coins, v_played, coalesce(v_bonus, 0), coalesce(v_milestone, 0), coalesce(v_regular, 0);
 end;
 $$;
 
@@ -20622,7 +20767,9 @@ begin
                      'hours', round(greatest(coalesce(sum(e.hours), 0), 0)::numeric, 1),
                      'games', count(distinct e.game_id) filter (where e.hours > 0),
                      'checkins', (select count(*) from public.rotation_checkins r
-                                   where r.user_id = p_user and r.created_at >= p_from and r.created_at < p_to))
+                                   where r.user_id = p_user and r.created_at >= p_from and r.created_at < p_to),
+                     'regular_streak', (select rw.streak from public.regular_weeks rw
+                                         where rw.user_id = p_user and rw.week = (p_from at time zone v_tz)::date))
                      from public.playtime_events e
                      join public.games g on g.id = e.game_id
                     where e.user_id = p_user and public.is_live_play(e.source, e.hours)

@@ -17,7 +17,7 @@ export interface WeeklyRecap {
     sessions: number;
     topGame: { id: string; title: string; hours: number } | null;
     /** Live-service (Rotation) play and check-ins. */
-    rotation: { hours: number; games: number; checkins: number };
+    rotation: { hours: number; games: number; checkins: number; regularStreak: number | null };
   };
   clears: { finished: number; verified: number; titles: string[]; streak: number; bestStreak: number };
   /** Null when the player's coin economy is off. */
@@ -71,7 +71,12 @@ export function coerceWeeklyRecap(raw: unknown): WeeklyRecap | null {
       days: num(play.days),
       sessions: num(play.sessions),
       topGame: top ? { id: str(top.id), title: str(top.title), hours: num(top.hours) } : null,
-      rotation: { hours: num(rotation.hours), games: num(rotation.games), checkins: num(rotation.checkins) },
+      rotation: {
+        hours: num(rotation.hours),
+        games: num(rotation.games),
+        checkins: num(rotation.checkins),
+        regularStreak: rotation.regular_streak == null ? null : num(rotation.regular_streak),
+      },
     },
     clears: {
       finished: num(clears.finished),

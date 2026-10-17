@@ -75,6 +75,7 @@ export function AboutPage() {
     economy,
     rotationCheckinReward,
     rotationMilestone,
+    regularConfig,
     rotationReset,
     coOpBonusPct,
     sponsorMaxStake,
@@ -380,6 +381,13 @@ export function AboutPage() {
               {formatPlaytime(rotationMilestone.hours)} you log on a Rotation game earns{" "}
               <Coin n={rotationMilestone.reward} />. Log time or run the stopwatch right on its card;
               only time played while it&apos;s in Rotation counts.
+            </p>
+            <p>
+              Keep coming back for a <strong className="text-ink">Regular streak</strong>: any week
+              with {formatPlaytime(regularConfig.minHours)} or more on Rotation games is a Regular
+              week, paying <Coin n={regularConfig.base} /> plus <Coin n={regularConfig.step} /> for
+              every week in a row before it (up to <Coin n={regularConfig.cap} />). Miss a week and
+              it starts over. Your Now Playing board shows how close this week is.
             </p>
             <p>
               Rotation play counts like any other: logging time earns{" "}

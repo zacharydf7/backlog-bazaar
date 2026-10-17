@@ -144,6 +144,8 @@ import {
   DEFAULT_ROTATION_SLOTS,
   DEFAULT_ROTATION_CHECKIN_REWARD,
   DEFAULT_ROTATION_RESET,
+  coerceRegularStreak,
+  type RegularStreak,
   type RotationResetConfig,
 } from "./lib/rotation";
 import { autoFinishTag, type FinishTag } from "./lib/finishTags";
@@ -973,6 +975,11 @@ interface BazaarState {
   rotationMilestone: { hours: number; reward: number };
   // Live hours on each Rotation game and the milestones reached, by game id.
   rotationProgress: Record<string, { hours: number; paid: number }>;
+  // The Regular streak (Rotation play week after week); null until loaded.
+  regularStreak: RegularStreak | null;
+  // Its admin-set rules: the weekly hours that make a Regular week, and its
+  // bonus (base, plus step per week in the run, up to cap).
+  regularConfig: { minHours: number; base: number; step: number; cap: number };
   rotationReset: RotationResetConfig; // the weekly Rotation reset schedule, admin-configurable
   rotationCheckedIn: string[]; // gameIds already checked in this weekly Rotation period
   defaultRotationSlots: number; // admin default Rotation-lane capacity for new accounts
@@ -1297,8 +1304,10 @@ interface BazaarState {
     reward: number,
     reset: RotationResetConfig,
     milestone: { hours: number; reward: number },
+    regular: { minHours: number; base: number; step: number; cap: number },
   ) => Promise<boolean>;
-  // Load live hours toward each Rotation game's next milestone.
+  // Load live hours toward each Rotation game's next milestone, and the
+  // Regular streak.
   fetchRotationProgress: () => Promise<void>;
   fetchUserSlots: (userId: string) => Promise<TargetedSlot[]>;
   grantUserSlot: (userId: string, definitionId: string) => Promise<boolean>;
@@ -2074,6 +2083,8 @@ export const useStore = create<BazaarState>((set, get) => ({
   rotationCheckinReward: DEFAULT_ROTATION_CHECKIN_REWARD,
   rotationMilestone: { hours: 10, reward: 25 },
   rotationProgress: {},
+  regularStreak: null,
+  regularConfig: { minHours: 1, base: 10, step: 5, cap: 40 },
   rotationReset: DEFAULT_ROTATION_RESET,
   rotationCheckedIn: [],
   pendingRouteId: null,
@@ -2225,7 +2236,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     const { data: cfg } = await supabase
       .from("app_config")
       .select(
-        "maintenance, message, replay_bonus_pct, completion_bonus_pct, co_op_bonus_pct, clear_streak_threshold, clear_streak_bonus_base, clear_streak_bonus_step, clear_streak_bonus_cap, submission_reward, onboarding_vouchers, default_general_slots, default_rotation_slots, default_replay_slots, default_completionist_slots, rotation_checkin_reward, rotation_milestone_hours, rotation_milestone_reward, rotation_reset_dow, rotation_reset_hour, rotation_reset_tz, default_coin, price_formula, bounty_formula, sponsor_max_stake, sponsor_monthly_pair_cap, sponsor_expiry_days, preorder_strip_days, shop_open, loan_interest_pct, rec_discount_pct, rec_bounty_pct, rec_bounty_cap, story_order_bonus, collectors_record_bonus, review_bonus, review_bonus_min_chars, session_bonus, session_bonus_min_minutes, session_bonus_daily_cap, challenge_goal_reward, challenge_set_bonus, challenge_daily_reward, challenge_weekly_reward, challenge_weekly_sweep, bounty_gate_pct",
+        "maintenance, message, replay_bonus_pct, completion_bonus_pct, co_op_bonus_pct, clear_streak_threshold, clear_streak_bonus_base, clear_streak_bonus_step, clear_streak_bonus_cap, submission_reward, onboarding_vouchers, default_general_slots, default_rotation_slots, default_replay_slots, default_completionist_slots, rotation_checkin_reward, rotation_milestone_hours, rotation_milestone_reward, regular_min_hours, regular_bonus_base, regular_bonus_step, regular_bonus_cap, rotation_reset_dow, rotation_reset_hour, rotation_reset_tz, default_coin, price_formula, bounty_formula, sponsor_max_stake, sponsor_monthly_pair_cap, sponsor_expiry_days, preorder_strip_days, shop_open, loan_interest_pct, rec_discount_pct, rec_bounty_pct, rec_bounty_cap, story_order_bonus, collectors_record_bonus, review_bonus, review_bonus_min_chars, session_bonus, session_bonus_min_minutes, session_bonus_daily_cap, challenge_goal_reward, challenge_set_bonus, challenge_daily_reward, challenge_weekly_reward, challenge_weekly_sweep, bounty_gate_pct",
       )
       .eq("id", 1)
       .single();
@@ -2347,6 +2358,12 @@ export const useStore = create<BazaarState>((set, get) => ({
         typeof cfg?.rotation_checkin_reward === "number"
           ? cfg.rotation_checkin_reward
           : DEFAULT_ROTATION_CHECKIN_REWARD,
+      regularConfig: {
+        minHours: Number(cfg?.regular_min_hours) > 0 ? Number(cfg?.regular_min_hours) : 1,
+        base: cfg?.regular_bonus_base != null ? Number(cfg.regular_bonus_base) : 10,
+        step: cfg?.regular_bonus_step != null ? Number(cfg.regular_bonus_step) : 5,
+        cap: cfg?.regular_bonus_cap != null ? Number(cfg.regular_bonus_cap) : 40,
+      },
       rotationMilestone: {
         hours: Number(cfg?.rotation_milestone_hours) > 0 ? Number(cfg?.rotation_milestone_hours) : 10,
         reward: Number.isFinite(Number(cfg?.rotation_milestone_reward)) && cfg?.rotation_milestone_reward != null
@@ -2427,6 +2444,7 @@ export const useStore = create<BazaarState>((set, get) => ({
         bonusEvents: [],
         bonusPerks: {},
         rotationProgress: {},
+        regularStreak: null,
         shopItems: [],
         shopSets: [],
         shopOwnedIds: [],
@@ -4709,7 +4727,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     return true;
   },
 
-  setRotationConfig: async (reward, reset, milestone) => {
+  setRotationConfig: async (reward, reset, milestone, regular) => {
     if (!supabase || !get().can("economy.edit")) return false;
     const nextReward = Math.max(0, Math.min(100000, Math.floor(reward)));
     const nextReset: RotationResetConfig = {
@@ -4721,12 +4739,23 @@ export const useStore = create<BazaarState>((set, get) => ({
       hours: Math.max(0.5, Math.min(1000, Math.round(milestone.hours * 2) / 2)),
       reward: Math.max(0, Math.min(100000, Math.floor(milestone.reward))),
     };
+    const coinsIn = (n: number) => Math.max(0, Math.min(100000, Math.floor(n)));
+    const nextRegular = {
+      minHours: Math.max(0.25, Math.min(100, Math.round(regular.minHours * 4) / 4)),
+      base: coinsIn(regular.base),
+      step: coinsIn(regular.step),
+      cap: coinsIn(regular.cap),
+    };
     const { error } = await supabase
       .from("app_config")
       .update({
         rotation_checkin_reward: nextReward,
         rotation_milestone_hours: nextMilestone.hours,
         rotation_milestone_reward: nextMilestone.reward,
+        regular_min_hours: nextRegular.minHours,
+        regular_bonus_base: nextRegular.base,
+        regular_bonus_step: nextRegular.step,
+        regular_bonus_cap: nextRegular.cap,
         rotation_reset_dow: nextReset.resetDow,
         rotation_reset_hour: nextReset.resetHour,
         rotation_reset_tz: nextReset.resetTz,
@@ -4736,7 +4765,12 @@ export const useStore = create<BazaarState>((set, get) => ({
       set({ error: error.message });
       return false;
     }
-    set({ rotationCheckinReward: nextReward, rotationReset: nextReset, rotationMilestone: nextMilestone });
+    set({
+      rotationCheckinReward: nextReward,
+      rotationReset: nextReset,
+      rotationMilestone: nextMilestone,
+      regularConfig: nextRegular,
+    });
     toast("Rotation lane settings saved", Pencil);
     return true;
   },
@@ -6998,18 +7032,19 @@ export const useStore = create<BazaarState>((set, get) => ({
       set({ error: error.message });
       return;
     }
-    const { coins: newCoins, played_hours, bonus, milestone } = data as {
+    const { coins: newCoins, played_hours, bonus, milestone, regular } = data as {
       coins: number;
       played_hours: number;
       bonus: number | null;
       milestone: number | null;
+      regular: number | null;
     };
     set({
       coins: newCoins,
       games: get().games.map((g) => (g.id === id ? { ...g, playedHours: played_hours } : g)),
     });
-    const paid = (bonus ?? 0) + (milestone ?? 0);
-    toast(loggedToastText(hours, bonus ?? 0, milestone ?? 0), paid > 0 ? Coins : Gamepad2);
+    const paid = (bonus ?? 0) + (milestone ?? 0) + (regular ?? 0);
+    toast(loggedToastText(hours, bonus ?? 0, milestone ?? 0, regular ?? 0), paid > 0 ? Coins : Gamepad2);
     if (game.inRotation) void get().fetchRotationProgress();
     void get().evaluateAchievements();
   },
@@ -7148,6 +7183,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       played_hours: number | null;
       bonus: number | null;
       milestone: number | null;
+      regular: number | null;
     };
     const andThen = get().sessionStopThen;
     set({
@@ -7163,8 +7199,11 @@ export const useStore = create<BazaarState>((set, get) => ({
           : get().games,
     });
     if (row.logged > 0) {
-      const paid = (row.bonus ?? 0) + (row.milestone ?? 0);
-      toast(loggedToastText(row.logged, row.bonus ?? 0, row.milestone ?? 0), paid > 0 ? Coins : Gamepad2);
+      const paid = (row.bonus ?? 0) + (row.milestone ?? 0) + (row.regular ?? 0);
+      toast(
+        loggedToastText(row.logged, row.bonus ?? 0, row.milestone ?? 0, row.regular ?? 0),
+        paid > 0 ? Coins : Gamepad2,
+      );
       if (s.gameId && get().games.find((g) => g.id === s.gameId)?.inRotation) void get().fetchRotationProgress();
       void get().evaluateAchievements();
     } else {
@@ -8506,10 +8545,14 @@ export const useStore = create<BazaarState>((set, get) => ({
 
   fetchRotationProgress: async () => {
     if (!supabase || !get().cloud) return;
-    const { data, error } = await supabase.rpc("my_rotation_progress");
-    if (error || !data || typeof data !== "object") return;
+    const [prog, regular] = await Promise.all([
+      supabase.rpc("my_rotation_progress"),
+      supabase.rpc("my_regular_streak"),
+    ]);
+    if (!regular.error) set({ regularStreak: coerceRegularStreak(regular.data) });
+    if (prog.error || !prog.data || typeof prog.data !== "object") return;
     const progress: Record<string, { hours: number; paid: number }> = {};
-    for (const [id, v] of Object.entries(data as Record<string, { hours?: unknown; paid?: unknown }>)) {
+    for (const [id, v] of Object.entries(prog.data as Record<string, { hours?: unknown; paid?: unknown }>)) {
       progress[id] = { hours: Number(v?.hours) || 0, paid: Number(v?.paid) || 0 };
     }
     set({ rotationProgress: progress });

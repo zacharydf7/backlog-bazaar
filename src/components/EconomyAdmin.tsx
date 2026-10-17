@@ -384,7 +384,11 @@ const RESET_TZ_OPTIONS = [
  *  mirroring how a live-service game resets its quests. Self-contained Save →
  *  app_config. The lane itself is UNCAPPED, so there is no size to configure. */
 function RotationCard() {
-  const { rotationCheckinReward, rotationMilestone, rotationReset, setRotationConfig } = useStore();
+  const { rotationCheckinReward, rotationMilestone, regularConfig, rotationReset, setRotationConfig } = useStore();
+  const [regMin, setRegMin] = useState(String(regularConfig.minHours));
+  const [regBase, setRegBase] = useState(String(regularConfig.base));
+  const [regStep, setRegStep] = useState(String(regularConfig.step));
+  const [regCap, setRegCap] = useState(String(regularConfig.cap));
   const [reward, setReward] = useState(String(rotationCheckinReward));
   const [milestoneHours, setMilestoneHours] = useState(String(rotationMilestone.hours));
   const [milestoneReward, setMilestoneReward] = useState(String(rotationMilestone.reward));
@@ -398,13 +402,22 @@ function RotationCard() {
     num(reward) !== rotationCheckinReward ||
     num(milestoneHours) !== rotationMilestone.hours ||
     num(milestoneReward) !== rotationMilestone.reward ||
+    num(regMin) !== regularConfig.minHours ||
+    num(regBase) !== regularConfig.base ||
+    num(regStep) !== regularConfig.step ||
+    num(regCap) !== regularConfig.cap ||
     dow !== rotationReset.resetDow ||
     num(hour) !== rotationReset.resetHour ||
     tz !== rotationReset.resetTz;
 
   async function save() {
     setSaving(true);
-    await setRotationConfig(num(reward), draft, { hours: num(milestoneHours), reward: num(milestoneReward) });
+    await setRotationConfig(
+      num(reward),
+      draft,
+      { hours: num(milestoneHours), reward: num(milestoneReward) },
+      { minHours: num(regMin), base: num(regBase), step: num(regStep), cap: num(regCap) },
+    );
     setSaving(false);
   }
 
@@ -412,6 +425,10 @@ function RotationCard() {
     setReward(String(rotationCheckinReward));
     setMilestoneHours(String(rotationMilestone.hours));
     setMilestoneReward(String(rotationMilestone.reward));
+    setRegMin(String(regularConfig.minHours));
+    setRegBase(String(regularConfig.base));
+    setRegStep(String(regularConfig.step));
+    setRegCap(String(regularConfig.cap));
     setDow(rotationReset.resetDow);
     setHour(String(rotationReset.resetHour));
     setTz(rotationReset.resetTz);
@@ -470,6 +487,50 @@ function RotationCard() {
             onChange={(e) => setMilestoneReward(e.target.value)}
             className={inputClass + " mt-1"}
           />
+        </label>
+        <label className="block text-sm text-ink">
+          <span>
+            Regular week <span className="text-xs text-subtle">— Rotation hours in a week</span>
+          </span>
+          <input
+            type="number"
+            min={0.25}
+            step={0.25}
+            value={regMin}
+            onChange={(e) => setRegMin(e.target.value)}
+            className={inputClass + " mt-1"}
+          />
+        </label>
+        <label className="block text-sm text-ink">
+          <span>
+            Regular bonus <span className="text-xs text-subtle">— first week, +per week, cap</span>
+          </span>
+          <span className="mt-1 grid grid-cols-3 gap-1.5">
+            <input
+              type="number"
+              min={0}
+              aria-label="Regular bonus, first week"
+              value={regBase}
+              onChange={(e) => setRegBase(e.target.value)}
+              className={inputClass}
+            />
+            <input
+              type="number"
+              min={0}
+              aria-label="Regular bonus, added per week"
+              value={regStep}
+              onChange={(e) => setRegStep(e.target.value)}
+              className={inputClass}
+            />
+            <input
+              type="number"
+              min={0}
+              aria-label="Regular bonus, cap"
+              value={regCap}
+              onChange={(e) => setRegCap(e.target.value)}
+              className={inputClass}
+            />
+          </span>
         </label>
         <label className="block text-sm text-ink">
           <span>Reset day</span>
