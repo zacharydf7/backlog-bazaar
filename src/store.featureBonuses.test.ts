@@ -183,10 +183,12 @@ describe("feature bonuses — the server-side anti-farm rules", () => {
     expect(fn).toContain("for update");
   });
 
-  it("log_playtime pays the Daily Session bonus once per day, under a row lock", () => {
-    const fn = body("log_playtime");
-    expect(fn).toContain("e.kind = 'session_bonus'");
-    expect(fn).toContain("date_trunc('day', now() at time zone v_tz) at time zone v_tz");
-    expect(fn).toContain("for update");
+  it("every way of logging time pays the Daily Session bonus through one rule", () => {
+    // The rule itself (daily cap, minimum, economy-off) is exercised in
+    // src/lib/sessionBonus.sql.test.ts.
+    expect(body("log_playtime")).toContain("public.pay_session_bonus(auth.uid(), p_game, p_hours)");
+    const played = body("set_platform_playtime");
+    expect(played).toContain("if p_hours > v_current and p_session_bonus then");
+    expect(played).toContain("public.pay_session_bonus(auth.uid(), p_game, p_hours - v_current)");
   });
 });

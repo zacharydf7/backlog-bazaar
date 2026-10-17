@@ -97,6 +97,10 @@ export const RELEASES: Release[] = [
         tag: "improvement",
       },
       {
+        text: "Every time you log play — with the Log button, the stopwatch, or by adding time in a game's Played editor — earns a 5-coin Daily Session bonus, up to 3 times a day. Any length counts.",
+        tag: "improvement",
+      },
+      {
         text: "A Family's cover picker names each edition's platform, so editions with the same name are easy to tell apart.",
         tag: "fix",
       },

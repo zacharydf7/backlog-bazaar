@@ -134,6 +134,22 @@ describe("cloud", () => {
     expect(store().games[0]).toMatchObject({ reward: 300, bountyHeld: 290, bountyHeldTotal: 300 });
   });
 
+  it("credits a Daily Session bonus for time added in the Played editor", async () => {
+    useStore.setState({ coins: 1000, games: [game({ status: "finished", playedHours: 2 })] });
+    h.state.rpcData.set_platform_playtime = 3;
+    h.state.coins = 1005; // the server paid the bonus
+    await store().setPlatformPlaytime("g", null, null, 3);
+    expect(store().coins).toBe(1005);
+    expect(h.rpc).toHaveBeenLastCalledWith("set_platform_playtime", expect.objectContaining({ p_session_bonus: true }));
+  });
+
+  it("asks for no bonus on starting playtime entered at add time", async () => {
+    useStore.setState({ games: [game({ status: "backlog", playedHours: 0 })] });
+    h.state.rpcData.set_platform_playtime = 4;
+    await store().setPlatformPlaytime("g", null, null, 4, { sessionBonus: false });
+    expect(h.rpc).toHaveBeenLastCalledWith("set_platform_playtime", expect.objectContaining({ p_session_bonus: false }));
+  });
+
   it("re-reads the hold after logged hours change and credits the release", async () => {
     useStore.setState({
       games: [game({ status: "finished", bountyHeld: 290, bountyHeldTotal: 300, bountyGateHours: 10 })],

@@ -134,9 +134,12 @@ export function AboutPage() {
               Log the hours you play to keep track of your progress — type them in, or start the{" "}
               <strong className="text-ink">live stopwatch</strong> on a game you&apos;re playing and
               it records the time for you when you stop. Logging time isn&apos;t paid by the hour —
-              the real payout comes as a bounty when you finish — but your first session of the
-              day ({featureBonuses.dailySessionMinMinutes} minutes or more) earns a small{" "}
-              <strong className="text-ink">Daily Session</strong> bonus of{" "}
+              the real payout comes as a bounty when you finish — but each time you log play,
+              up to {featureBonuses.dailySessionCap} times a day
+              {featureBonuses.dailySessionMinMinutes > 0
+                ? ` (${featureBonuses.dailySessionMinMinutes} minutes or more)`
+                : ""}
+              , earns a small <strong className="text-ink">Daily Session</strong> bonus of{" "}
               <Coin n={featureBonuses.dailySession} />.
             </Section>
             <Section icon={Trophy} title="5 · Finish for the bounty">

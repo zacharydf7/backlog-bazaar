@@ -1461,11 +1461,14 @@ interface BazaarState {
   // Set the total logged hours for one version (platform + format) of a game — or
   // the Unspecified bucket when platform is null — logging an attributed
   // correction. Cloud only; used by the per-version playtime editor.
+  // `sessionBonus: false` for starting playtime entered at add/attach time
+  // (past play), which never earns a Daily Session bonus.
   setPlatformPlaytime: (
     id: string,
     platform: string | null,
     format: CopyFormat | null,
     hours: number,
+    opts?: { sessionBonus?: boolean },
   ) => Promise<void>;
   // Page through the Transaction Ledger newest-first; `done` = no older rows.
   fetchLedger: (offset: number) => Promise<{ entries: LedgerEntry[]; done: boolean }>;
@@ -2113,7 +2116,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     const { data: cfg } = await supabase
       .from("app_config")
       .select(
-        "maintenance, message, replay_bonus_pct, completion_bonus_pct, co_op_bonus_pct, clear_streak_threshold, clear_streak_bonus_base, clear_streak_bonus_step, clear_streak_bonus_cap, submission_reward, onboarding_vouchers, default_general_slots, default_rotation_slots, default_replay_slots, default_completionist_slots, rotation_checkin_reward, rotation_reset_dow, rotation_reset_hour, rotation_reset_tz, default_coin, price_formula, bounty_formula, sponsor_max_stake, sponsor_monthly_pair_cap, sponsor_expiry_days, preorder_strip_days, shop_open, loan_interest_pct, rec_discount_pct, rec_bounty_pct, rec_bounty_cap, story_order_bonus, collectors_record_bonus, review_bonus, review_bonus_min_chars, session_bonus, session_bonus_min_minutes, bounty_gate_pct",
+        "maintenance, message, replay_bonus_pct, completion_bonus_pct, co_op_bonus_pct, clear_streak_threshold, clear_streak_bonus_base, clear_streak_bonus_step, clear_streak_bonus_cap, submission_reward, onboarding_vouchers, default_general_slots, default_rotation_slots, default_replay_slots, default_completionist_slots, rotation_checkin_reward, rotation_reset_dow, rotation_reset_hour, rotation_reset_tz, default_coin, price_formula, bounty_formula, sponsor_max_stake, sponsor_monthly_pair_cap, sponsor_expiry_days, preorder_strip_days, shop_open, loan_interest_pct, rec_discount_pct, rec_bounty_pct, rec_bounty_cap, story_order_bonus, collectors_record_bonus, review_bonus, review_bonus_min_chars, session_bonus, session_bonus_min_minutes, session_bonus_daily_cap, bounty_gate_pct",
       )
       .eq("id", 1)
       .single();
@@ -2156,6 +2159,10 @@ export const useStore = create<BazaarState>((set, get) => ({
           typeof cfg?.session_bonus_min_minutes === "number"
             ? cfg.session_bonus_min_minutes
             : FEATURE_BONUS_DEFAULTS.dailySessionMinMinutes,
+        dailySessionCap:
+          typeof cfg?.session_bonus_daily_cap === "number"
+            ? cfg.session_bonus_daily_cap
+            : FEATURE_BONUS_DEFAULTS.dailySessionCap,
       },
       sponsorMaxStake:
         typeof cfg?.sponsor_max_stake === "number"
@@ -3815,7 +3822,8 @@ export const useStore = create<BazaarState>((set, get) => ({
       reviewer: clamp(cfg.reviewer, 0, 100000),
       reviewMinChars: clamp(cfg.reviewMinChars, 1, REVIEW_MAX),
       dailySession: clamp(cfg.dailySession, 0, 100000),
-      dailySessionMinMinutes: clamp(cfg.dailySessionMinMinutes, 1, 1440),
+      dailySessionMinMinutes: clamp(cfg.dailySessionMinMinutes, 0, 1440),
+      dailySessionCap: clamp(cfg.dailySessionCap, 1, 24),
     };
     const { cloud, can } = get();
     if (!cloud) {
@@ -3833,6 +3841,7 @@ export const useStore = create<BazaarState>((set, get) => ({
         review_bonus_min_chars: next.reviewMinChars,
         session_bonus: next.dailySession,
         session_bonus_min_minutes: next.dailySessionMinMinutes,
+        session_bonus_daily_cap: next.dailySessionCap,
       })
       .eq("id", 1);
     if (error) {
@@ -4792,7 +4801,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     // RPC needs the row to exist, and each logs an attributed playtime event and
     // mirrors the new total into state via setPlatformPlaytime).
     for (const vh of versionHours) {
-      await get().setPlatformPlaytime(row.id, vh.platform, vh.format, vh.hours);
+      await get().setPlatformPlaytime(row.id, vh.platform, vh.format, vh.hours, { sessionBonus: false });
     }
     addedToast(meta.title, status);
     // Library growth (and a straight-to-Finished add) can cross thresholds.
@@ -4851,7 +4860,9 @@ export const useStore = create<BazaarState>((set, get) => ({
           breakdown.byVersion.find(
             (v) => v.platform === vh.platform && (v.format ?? null) === (vh.format ?? null),
           )?.hours ?? 0;
-        await get().setPlatformPlaytime(id, vh.platform, vh.format, current + vh.hours);
+        await get().setPlatformPlaytime(id, vh.platform, vh.format, current + vh.hours, {
+          sessionBonus: false,
+        });
       }
     }
     toast(`Added a new copy of ${game.title}`, Package);
@@ -7071,14 +7082,17 @@ export const useStore = create<BazaarState>((set, get) => ({
   // Set one version's logged hours (or the Unspecified bucket when platform is
   // null). The RPC logs an attributed correction and returns the game's new grand
   // total, which we mirror into the local games state. Cloud only.
-  setPlatformPlaytime: async (id, platform, format, hours) => {
+  setPlatformPlaytime: async (id, platform, format, hours, opts) => {
     if (!supabase || !get().cloud) return;
     const safe = Math.max(0, Math.round(hours * 60) / 60); // ≥0, snap to the minute
+    const sessionBonus = opts?.sessionBonus !== false;
+    const before = get().games.find((g) => g.id === id)?.playedHours ?? 0;
     const { data, error } = await supabase.rpc("set_platform_playtime", {
       p_game: id,
       p_platform: platform,
       p_format: format,
       p_hours: safe,
+      p_session_bonus: sessionBonus,
     });
     if (error) {
       set({ error: error.message });
@@ -7089,6 +7103,21 @@ export const useStore = create<BazaarState>((set, get) => ({
       set({ games: get().games.map((g) => (g.id === id ? { ...g, playedHours: total } : g)) });
     }
     await get().refreshHeldBounty(id);
+    // Added time can earn a Daily Session bonus server-side: re-read the
+    // balance and say so (a hold release above already re-read it too).
+    if (sessionBonus && Number.isFinite(total) && total > before) {
+      const coinsBefore = get().coins;
+      const { data: prof } = await supabase
+        .from("profiles")
+        .select("coins")
+        .eq("id", get().userId ?? "")
+        .maybeSingle();
+      const coins = (prof as { coins?: number } | null)?.coins;
+      if (typeof coins === "number") {
+        set({ coins });
+        if (coins > coinsBefore) toast(`Daily Session +${coins - coinsBefore}`, Sparkles);
+      }
+    }
   },
 
   // Replace a game's list of copies (the platforms you own it on + what each

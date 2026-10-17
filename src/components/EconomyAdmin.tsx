@@ -1229,7 +1229,8 @@ function FeatureBonusesCard() {
     reviewer: amt(draft.reviewer),
     reviewMinChars: Math.max(1, Math.min(8000, Math.round(num(draft.reviewMinChars)))),
     dailySession: amt(draft.dailySession),
-    dailySessionMinMinutes: Math.max(1, Math.min(1440, Math.round(num(draft.dailySessionMinMinutes)))),
+    dailySessionMinMinutes: Math.max(0, Math.min(1440, Math.round(num(draft.dailySessionMinMinutes)))),
+    dailySessionCap: Math.max(1, Math.min(24, Math.round(num(draft.dailySessionCap)))),
   };
   const dirty = JSON.stringify(parsed) !== JSON.stringify(featureBonuses);
   const field = (key: keyof FeatureBonusConfig) => ({
@@ -1285,17 +1286,24 @@ function FeatureBonusesCard() {
         />
         <RateField
           label="Daily Session (coins)"
-          hint="Paid for the first play log of the day — stopwatch or manual. Days turn over in the Rotation reset's timezone."
+          hint="Paid for each play log — the Log button, a stopwatch, or time added in the Played editor — up to the daily limit. Days turn over in the Rotation reset's timezone."
           min={0}
           max={100000}
           {...field("dailySession")}
         />
         <RateField
           label="Session minimum (minutes)"
-          hint="How long a log must be to count toward the Daily Session bonus."
-          min={1}
+          hint="How long a log must be to count toward the Daily Session bonus. 0 counts any length."
+          min={0}
           max={1440}
           {...field("dailySessionMinMinutes")}
+        />
+        <RateField
+          label="Daily Sessions per day"
+          hint="How many logs a day earn the Daily Session bonus."
+          min={1}
+          max={24}
+          {...field("dailySessionCap")}
         />
       </div>
       <div className="mt-3 flex justify-end gap-2">

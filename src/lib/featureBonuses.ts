@@ -23,10 +23,12 @@ export interface FeatureBonusConfig {
   reviewer: number;
   /** Minimum review length (characters) that earns the Reviewer bonus. */
   reviewMinChars: number;
-  /** Coins for the first qualifying play log of the day. */
+  /** Coins for each qualifying play log, up to `dailySessionCap` a day. */
   dailySession: number;
-  /** Minimum logged minutes that count toward the Daily Session bonus. */
+  /** Minimum logged minutes that count toward the Daily Session bonus (0 = any). */
   dailySessionMinMinutes: number;
+  /** How many Daily Session bonuses a day can pay. */
+  dailySessionCap: number;
 }
 
 /** Defaults — mirrored by the app_config column defaults in schema.sql. */
@@ -35,8 +37,9 @@ export const FEATURE_BONUS_DEFAULTS: FeatureBonusConfig = {
   collectorsRecord: 10,
   reviewer: 15,
   reviewMinChars: 100,
-  dailySession: 3,
-  dailySessionMinMinutes: 20,
+  dailySession: 5,
+  dailySessionMinMinutes: 0,
+  dailySessionCap: 3,
 };
 
 /** True when any copy records what you paid for it (a cost, $0 included) or the
@@ -107,7 +110,7 @@ export function reviewQualifies(text: string | undefined, minChars: number): boo
 /** Does a play log count toward the Daily Session bonus? Whole minutes, matching
  *  the server's round(hours × 60). */
 export function sessionQualifies(hours: number, minMinutes: number): boolean {
-  return Number.isFinite(hours) && Math.round(hours * 60) >= Math.max(1, minMinutes);
+  return Number.isFinite(hours) && hours > 0 && Math.round(hours * 60) >= Math.max(0, minMinutes);
 }
 
 /** "1h 30m logged", plus " · Daily Session +3" when the log earned the bonus. */

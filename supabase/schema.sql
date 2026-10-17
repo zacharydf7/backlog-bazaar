@@ -6211,7 +6211,13 @@ alter table public.app_config add constraint app_config_feature_bonus_range
      and review_bonus between 0 and 100000
      and review_bonus_min_chars between 1 and 8000
      and session_bonus between 0 and 100000
-     and session_bonus_min_minutes between 1 and 1440);
+     and session_bonus_min_minutes between 0 and 1440);
+-- How many Daily Session bonuses a day can pay (each logging of play time
+-- earns one, up to this many).
+alter table public.app_config add column if not exists session_bonus_daily_cap integer not null default 3;
+alter table public.app_config drop constraint if exists app_config_session_bonus_cap_range;
+alter table public.app_config add constraint app_config_session_bonus_cap_range
+  check (session_bonus_daily_cap between 1 and 24);
 
 alter table public.app_config enable row level security;
 drop policy if exists "app_config_read" on public.app_config;
@@ -9015,6 +9021,54 @@ drop function if exists public.log_playtime(uuid, real);
 drop function if exists public.log_playtime(uuid, real, text);
 -- The Daily Session bonus column (bonus) widened the RETURNS TABLE shape.
 drop function if exists public.log_playtime(uuid, real, text, text);
+-- Daily Session bonus (feature bonuses): each logging of play time — the Log
+-- button, a stopwatch stop (end_play_session -> log_playtime) or time added in
+-- the Played editor (set_platform_playtime) — pays session_bonus coins, up to
+-- session_bonus_daily_cap times a day (owner, 2026-10-17: 3 x 5 coins), for a
+-- log of at least session_bonus_min_minutes (0 = any length). Days turn over at
+-- midnight in the Rotation reset's timezone. The profile row is locked first so
+-- racing logs can't both take the last slot. Only the logging player earns it
+-- (a co-op partner's mirrored time never does). Returns the coins paid.
+create or replace function public.pay_session_bonus(p_user uuid, p_game uuid, p_hours real)
+returns integer
+language plpgsql security definer set search_path = public
+as $$
+declare
+  v_amt    integer;
+  v_min    integer;
+  v_cap    integer;
+  v_tz     text;
+  v_coins  integer;
+  v_title  text;
+begin
+  if p_user is null or p_hours is null or p_hours <= 0 then return 0; end if;
+  perform 1 from public.profiles where id = p_user for update;
+  select session_bonus, session_bonus_min_minutes, session_bonus_daily_cap,
+         coalesce(nullif(btrim(rotation_reset_tz), ''), 'UTC')
+    into v_amt, v_min, v_cap, v_tz
+    from public.app_config where id = 1;
+  if not public.economy_enabled(p_user)
+     or coalesce(v_amt, 5) <= 0
+     or round(p_hours * 60) < coalesce(v_min, 0)
+     or (select count(*) from public.coin_events e
+          where e.user_id = p_user and e.kind = 'session_bonus'
+            and e.created_at >= (date_trunc('day', now() at time zone v_tz) at time zone v_tz))
+        >= coalesce(v_cap, 3) then
+    return 0;
+  end if;
+  select title into v_title from public.games where id = p_game;
+  update public.profiles
+     set coins = coins + coalesce(v_amt, 5)
+   where id = p_user
+   returning coins into v_coins;
+  perform public.log_coin_event(
+    p_user, 'session_bonus', coalesce(v_amt, 5), 0, v_coins, null, p_game, v_title, null
+  );
+  return coalesce(v_amt, 5);
+end;
+$$;
+revoke execute on function public.pay_session_bonus(uuid, uuid, real) from public, anon, authenticated;
+
 create or replace function public.log_playtime(p_game uuid, p_hours real, p_platform text default null, p_format text default null)
 returns table (coins integer, played_hours real, bonus integer)
 language plpgsql
@@ -9028,11 +9082,7 @@ declare
   v_played    real;
   v_coins     integer;
   v_pact      public.co_op_pacts%rowtype;
-  v_title     text;
   v_bonus     integer := 0;
-  v_bonus_amt integer;
-  v_bonus_min integer;
-  v_tz        text;
 begin
   if p_hours is null or p_hours <= 0 then
     raise exception 'Hours must be positive';
@@ -9093,34 +9143,9 @@ begin
      where id = v_pact.invitee_game and status = 'playing';
   end if;
 
-  -- Daily Session bonus (feature bonuses): the day's first log of at least the
-  -- minimum length pays a small flat bonus — stopwatch stops land here too
-  -- (end_play_session calls this). Days turn over at midnight in the Rotation
-  -- reset's timezone. The profile row is locked first so two logs racing can't
-  -- both pass the once-a-day check. Only the logging player earns it (a co-op
-  -- partner's mirrored time above never does).
-  select coins into v_coins from public.profiles where id = auth.uid() for update;
-  select session_bonus, session_bonus_min_minutes, coalesce(nullif(btrim(rotation_reset_tz), ''), 'UTC')
-    into v_bonus_amt, v_bonus_min, v_tz
-    from public.app_config where id = 1;
-  if public.economy_enabled(auth.uid())
-     and coalesce(v_bonus_amt, 3) > 0
-     and round(p_hours * 60) >= coalesce(v_bonus_min, 20)
-     and not exists (
-       select 1 from public.coin_events e
-        where e.user_id = auth.uid() and e.kind = 'session_bonus'
-          and e.created_at >= (date_trunc('day', now() at time zone v_tz) at time zone v_tz)
-     ) then
-    v_bonus := coalesce(v_bonus_amt, 3);
-    select title into v_title from public.games where id = p_game;
-    update public.profiles
-       set coins = coins + v_bonus
-     where id = auth.uid()
-     returning coins into v_coins;
-    perform public.log_coin_event(
-      auth.uid(), 'session_bonus', v_bonus, 0, v_coins, null, p_game, v_title, null
-    );
-  end if;
+  -- Daily Session bonus (see pay_session_bonus).
+  v_bonus := public.pay_session_bonus(auth.uid(), p_game, p_hours);
+  select coins into v_coins from public.profiles where id = auth.uid();
 
   return query select v_coins, v_played, v_bonus;
 end;
@@ -12349,7 +12374,14 @@ create trigger profiles_log_event
 -- (corrections aren't limited to Now Playing). Returns the new grand total.
 -- Signature changed (added p_format), so the older 3-arg version is dropped.
 drop function if exists public.set_platform_playtime(uuid, text, real);
-create or replace function public.set_platform_playtime(p_game uuid, p_platform text, p_format text, p_hours real)
+-- p_session_bonus (2026-10-17): time added here earns a Daily Session bonus,
+-- except the starting playtime entered when a game is added or a copy attached
+-- (past play, not a session) — those callers pass false. Dropped first: the
+-- 4-arg version would otherwise linger as an overload.
+drop function if exists public.set_platform_playtime(uuid, text, text, real);
+create or replace function public.set_platform_playtime(
+  p_game uuid, p_platform text, p_format text, p_hours real, p_session_bonus boolean default true
+)
 returns real
 language plpgsql
 security definer set search_path = public
@@ -12390,6 +12422,12 @@ begin
      set played_hours = greatest(0, played_hours + (p_hours - v_current))
    where id = p_game and user_id = auth.uid()
    returning played_hours into v_total;
+
+  -- Time added here is logged play too, so it earns a Daily Session bonus
+  -- like the Log button (a correction downward never does).
+  if p_hours > v_current and p_session_bonus then
+    perform public.pay_session_bonus(auth.uid(), p_game, p_hours - v_current);
+  end if;
 
   return v_total;
 end;
@@ -14856,7 +14894,7 @@ revoke execute on function public.set_family_split(uuid, boolean)    from public
 revoke execute on function public.set_family_primary(uuid, uuid)     from public, anon;
 revoke execute on function public.sever_family(uuid)                 from public, anon;
 revoke execute on function public.log_playtime(uuid, real, text, text) from public, anon;
-revoke execute on function public.set_platform_playtime(uuid, text, text, real) from public, anon;
+revoke execute on function public.set_platform_playtime(uuid, text, text, real, boolean) from public, anon;
 revoke execute on function public.leaderboard()                 from public, anon;
 revoke execute on function public.player_library(uuid)          from public, anon;
 revoke execute on function public.list_game_reviews(integer, uuid, integer) from public, anon;
@@ -14974,7 +15012,7 @@ grant execute on function public.set_family_split(uuid, boolean)    to authentic
 grant execute on function public.set_family_primary(uuid, uuid)     to authenticated;
 grant execute on function public.sever_family(uuid)                 to authenticated;
 grant execute on function public.log_playtime(uuid, real, text, text) to authenticated;
-grant execute on function public.set_platform_playtime(uuid, text, text, real) to authenticated;
+grant execute on function public.set_platform_playtime(uuid, text, text, real, boolean) to authenticated;
 grant execute on function public.leaderboard()                 to authenticated;
 grant execute on function public.player_library(uuid)          to authenticated;
 grant execute on function public.list_game_reviews(integer, uuid, integer) to authenticated;
