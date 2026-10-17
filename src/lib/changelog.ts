@@ -77,7 +77,7 @@ export const RELEASES: Release[] = [
         tag: "feature",
       },
       {
-        text: "The weekly Rotation check-in now resets on Mondays instead of Tuesdays, in step with your weekly recap.",
+        text: "The weekly Rotation check-in now resets on Mondays instead of Tuesdays, in step with your weekly recap. Daily, weekly and monthly resets now happen at midnight Eastern time.",
         tag: "improvement",
       },
       {

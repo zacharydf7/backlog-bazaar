@@ -6120,8 +6120,9 @@ alter table public.app_config add constraint app_config_default_general_slots_ra
 --   rotation_reset_dow      — the reset's day of week, Postgres dow (0=Sun..6=Sat).
 --   rotation_reset_hour     — the reset's hour of day (0–23) in rotation_reset_tz.
 --   rotation_reset_tz       — IANA timezone the reset day/hour are expressed in.
--- Defaults: 2 slots (symmetric 4×2 board), 3 coins, Monday 00:00 UTC (Tuesday until
--- 2026-10-17, when weekly resets moved to Monday to match the weekly recap).
+-- Defaults: 2 slots (symmetric 4×2 board), 3 coins, Monday 00:00 Eastern (until
+-- 2026-10-17: Tuesday, UTC; moved to Monday to match the weekly recap, and to
+-- the owner's Eastern time).
 alter table public.app_config add column if not exists default_rotation_slots integer not null default 2;
 -- 4×2 symmetry: cap the live default at 2 as well (reduce-only, safe to re-run).
 update public.app_config set default_rotation_slots = 2 where id = 1 and default_rotation_slots > 2;
@@ -6141,7 +6142,11 @@ alter table public.app_config add column if not exists rotation_reset_hour integ
 alter table public.app_config drop constraint if exists app_config_rotation_reset_hour_range;
 alter table public.app_config add constraint app_config_rotation_reset_hour_range
   check (rotation_reset_hour between 0 and 23);
-alter table public.app_config add column if not exists rotation_reset_tz text not null default 'UTC';
+alter table public.app_config add column if not exists rotation_reset_tz text not null default 'America/New_York';
+-- The site timezone for every turnover (daily/weekly/monthly goals, the
+-- recap week, the Rotation reset): Eastern time since 2026-10-17 (owner: where
+-- the site is run), DST-aware so resets stay at local midnight all year.
+alter table public.app_config alter column rotation_reset_tz set default 'America/New_York';
 
 -- Now Playing lane defaults + the Completion Bonus, admin-tunable on the Economy
 -- page. default_replay_slots / default_completionist_slots are the Replay and
