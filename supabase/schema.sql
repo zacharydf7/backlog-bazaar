@@ -9033,6 +9033,17 @@ begin
     from public.shadow_economy_adjustments a
    where a.undo_id = p_undo and a.kind = 'applied';
 
+  -- Likewise a coin event's boost on the undone finish (paid in the same
+  -- transaction, so stamped with the undo row's time): a reversing payout row
+  -- keeps per-run caps and the admin totals in step with the coins taken back.
+  if v_action = 'finish' then
+    insert into public.bonus_event_payouts (event_id, event_name, user_id, game_id, kind, amount)
+    select b.event_id, b.event_name, b.user_id, b.game_id, b.kind, -b.amount
+      from public.bonus_event_payouts b
+     where b.user_id = auth.uid() and b.game_id = v_game and b.kind = 'bounty'
+       and b.created_at = v_created and b.amount > 0;
+  end if;
+
   update public.action_undos set undone_at = now() where id = p_undo;
 
   return query select v_coins;
@@ -18889,9 +18900,12 @@ as $$
     from public.playtime_events e
    where e.user_id = p_user
   union all
+  -- Coins earned: every payout, less any undone (an undo's own row takes it
+  -- back; an undo never counts as earning).
   select 'coins_earned', coalesce(sum(e.coin_delta), 0)::numeric
     from public.coin_events e
-   where e.user_id = p_user and e.coin_delta > 0 and e.kind <> 'opening'
+   where e.user_id = p_user and e.kind <> 'opening'
+     and (case when e.kind like 'undo%' then e.coin_delta < 0 else e.coin_delta > 0 end)
   union all
   select 'games_owned',
          count(distinct coalesce(
