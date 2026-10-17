@@ -542,7 +542,9 @@ export function AboutPage() {
               <strong className="text-ink">both</strong> of you have finished, each player earns an
               extra {coOpBonusPct}% on top of their own bounty. Shelving, retiring or deleting a
               pacted game dissolves the pact — dissolving it yourself sends your active copy back
-              to the Bazaar with the usual shelve refund. No bonus is paid on a dissolved pact, but
+              to the Bazaar with the usual shelve refund. A Player 2 copy (one you joined on your
+              friend&apos;s console) leaves your collection with the pact, playtime and all, unless
+              you&apos;d already finished it. No bonus is paid on a dissolved pact, but
               there&apos;s no penalty either.
             </p>
           </Section>

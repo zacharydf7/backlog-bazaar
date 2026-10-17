@@ -16097,7 +16097,8 @@ $$;
 -- Dissolve a live pact (either participant; a pending invite's inviter cancels
 -- the same way). Per the pact's terms the breaker's own playing copy is shelved
 -- back to the Bazaar through the standard shelve (normal refund); the partner's
--- card simply reverts to a solo playthrough. The pact row is updated FIRST so
+-- card simply reverts to a solo playthrough — except a Player 2 copy, which
+-- leaves with the pact (co_op_pact_remove_player2, issue 76409d16). The pact row is updated FIRST so
 -- the games guard trigger below sees no live pact when the shelve runs.
 create or replace function public.dissolve_co_op_pact(p_id uuid)
 returns boolean
@@ -16492,8 +16493,75 @@ create trigger games_co_op_pact_deleted
   after delete on public.games
   for each row execute function public.co_op_pact_game_deleted();
 
+-- A dissolved pact takes the invitee's Player 2 copy with it (issue 76409d16):
+-- that copy only existed to play on the partner's console, so once the pact is
+-- off it leaves the collection, playtime and all, exactly as if its owner had
+-- deleted it (the delete triggers settle sponsorships/loans and log the
+-- 'deleted' status event; the event logs keep their rows). A FINISHED copy is
+-- a real clear with its bounty paid, so it stays; a card that also holds a
+-- copy of the player's own keeps the card and drops only the Player 2 copy.
+-- A copy still being played (the partner dissolved) is refunded like a shelve.
+-- Deferred to commit, so it runs after whatever dissolved the pact — the
+-- dissolve RPC's own shelve, or a games trigger mid-update on this very row.
+create or replace function public.co_op_pact_remove_player2()
+returns trigger
+language plpgsql security definer set search_path = public
+as $$
+declare
+  v_game   public.games%rowtype;
+  v_coins  integer;
+begin
+  if new.status <> 'dissolved' or old.status not in ('pending', 'active')
+     or new.invitee_game is null then
+    return null;
+  end if;
+
+  select * into v_game from public.games
+   where id = new.invitee_game and user_id = new.invitee
+   for update;
+  if not found or v_game.status = 'finished' then return null; end if;
+  if not exists (select 1 from jsonb_array_elements(coalesce(v_game.copies, '[]'::jsonb)) c
+                  where c->>'acquisition' = 'player2') then
+    return null;
+  end if;
+
+  if exists (select 1 from jsonb_array_elements(v_game.copies) c
+              where c->>'acquisition' is distinct from 'player2') then
+    update public.games
+       set copies = (select jsonb_agg(c) from jsonb_array_elements(v_game.copies) c
+                      where c->>'acquisition' is distinct from 'player2')
+     where id = v_game.id;
+    return null;
+  end if;
+
+  if v_game.status = 'playing' and coalesce(v_game.price_paid, 0) > 0
+     and public.economy_enabled(v_game.user_id) then
+    update public.profiles
+       set coins = coins + v_game.price_paid
+     where id = v_game.user_id
+     returning coins into v_coins;
+    perform public.log_coin_event(
+      v_game.user_id, 'shelve_refund', v_game.price_paid, 0, v_coins, null, v_game.id,
+      v_game.title, null,
+      jsonb_build_object('forfeit', 0, 'price_paid', v_game.price_paid,
+                         'reason', 'co_op_dissolved')
+    );
+  end if;
+
+  delete from public.games where id = v_game.id;
+  return null;
+end;
+$$;
+
+drop trigger if exists co_op_pacts_remove_player2 on public.co_op_pacts;
+create constraint trigger co_op_pacts_remove_player2
+  after update of status on public.co_op_pacts
+  deferrable initially deferred
+  for each row execute function public.co_op_pact_remove_player2();
+
 revoke execute on function public.co_op_pact_game_guard()        from public, anon, authenticated;
 revoke execute on function public.co_op_pact_game_deleted()      from public, anon, authenticated;
+revoke execute on function public.co_op_pact_remove_player2()    from public, anon, authenticated;
 revoke execute on function public.co_op_pact_platform(jsonb)     from public, anon, authenticated;
 revoke execute on function public.co_op_card_on_platform(jsonb, text) from public, anon, authenticated;
 revoke execute on function public.co_op_partner_options(uuid)    from public, anon;

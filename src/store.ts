@@ -136,7 +136,7 @@ import {
   startsStoryLocked,
   type FeatureBonusConfig,
 } from "./lib/featureBonuses";
-import { isLivePact, pactJoinDraft } from "./lib/coopPacts";
+import { isLivePact, isRemovablePlayer2Copy, pactJoinDraft } from "./lib/coopPacts";
 import { coerceMilestoneRow, sortMilestones, type GameMilestone, type MilestoneKind } from "./lib/milestones";
 import {
   DEFAULT_PREORDER_STRIP_DAYS,
@@ -9114,6 +9114,9 @@ export const useStore = create<BazaarState>((set, get) => ({
     }
     if (!supabase) return;
 
+    // Shelving a pact's Player 2 copy dissolves the pact, which removes the
+    // copy server-side (issue 76409d16).
+    const removed = isRemovablePlayer2Copy(get().coOpPacts, game);
     const { data, error } = await supabase.rpc("apply_shelve", { p_game: id }).single();
     if (error) {
       set({ error: error.message });
@@ -9122,16 +9125,20 @@ export const useStore = create<BazaarState>((set, get) => ({
     const { coins: newCoins, refund } = data as { coins: number; refund: number };
     set({
       coins: newCoins,
-      games: games.map((g) =>
-        g.id === id
-          ? { ...g, status: "backlog", startedAt: undefined, pricePaid: undefined, slotId: null, inRotation: false, coOp: false }
-          : g,
-      ),
+      games: removed
+        ? games.filter((g) => g.id !== id)
+        : games.map((g) =>
+            g.id === id
+              ? { ...g, status: "backlog", startedAt: undefined, pricePaid: undefined, slotId: null, inRotation: false, coOp: false }
+              : g,
+          ),
     });
     toast(
-      refund > 0 ? `Shelved ${game.title} · +🪙 ${refund} refunded` : `Shelved ${game.title}`,
+      (refund > 0 ? `Shelved ${game.title} · +🪙 ${refund} refunded` : `Shelved ${game.title}`) +
+        (removed ? " · Player 2 copy removed with the pact" : ""),
       Undo2,
     );
+    if (removed) await get().fetchCoOpPacts();
   },
 
   // "Retire It": the terminal drop. Out of the Bazaar or a Now Playing lane and
@@ -10592,13 +10599,12 @@ export const useStore = create<BazaarState>((set, get) => ({
         supabase.from("games").select("*").eq("id", pact.myGameId).maybeSingle(),
         supabase.from("profiles").select("coins").eq("id", userId).maybeSingle(),
       ]);
-      if (row) {
-        set({
-          games: get().games.map((g) =>
-            g.id === pact.myGameId ? rowToGame(row as GameRow) : g,
-          ),
-        });
-      }
+      // A Player 2 copy leaves with the pact (issue 76409d16): gone server-side.
+      set({
+        games: row
+          ? get().games.map((g) => (g.id === pact.myGameId ? rowToGame(row as GameRow) : g))
+          : get().games.filter((g) => g.id !== pact.myGameId),
+      });
       const coins = (prof as { coins?: number } | null)?.coins;
       if (typeof coins === "number") set({ coins });
     }

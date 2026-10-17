@@ -20,20 +20,40 @@ export function isLivePact(pact: Pick<CoOpPact, "status">): boolean {
  *  through the crosswalk (resolveIdentityKey), so an invite sent for the IGDB
  *  spelling of a game still surfaces on the RAWG-keyed copy on my shelf. Live
  *  pacts win over ended ones; among ended ones the newest wins (they linger
- *  briefly server-side so a completion/dissolution doesn't just vanish). */
+ *  briefly server-side so a completion doesn't just vanish). A dissolved pact
+ *  is never surfaced — the connection is gone for both players (issue
+ *  76409d16) — and an ended pact whose card is gone matches nothing, rather
+ *  than resurfacing on another copy of the game. */
 export function pactForGame(pacts: CoOpPact[], game: Game): CoOpPact | null {
   const key = catalogKey(game);
-  const matches = pacts.filter((p) =>
-    p.myGameId != null
-      ? p.myGameId === game.id
-      : p.myCandidateGameId != null
-        ? p.myCandidateGameId === game.id
-        : key != null && resolveIdentityKey(p.gameKey) === key,
+  const matches = pacts.filter(
+    (p) =>
+      p.status !== "dissolved" &&
+      (p.myGameId != null
+        ? p.myGameId === game.id
+        : p.myCandidateGameId != null
+          ? p.myCandidateGameId === game.id
+          : isLivePact(p) && key != null && resolveIdentityKey(p.gameKey) === key),
   );
   if (matches.length === 0) return null;
   return (
     matches.find(isLivePact) ??
     matches.reduce((a, b) => (b.createdAt > a.createdAt ? b : a))
+  );
+}
+
+/** Whether this card is the Player 2 copy a live pact would remove on
+ *  dissolving (issue 76409d16): my bound copy as the invitee, unfinished, with
+ *  only Player 2 copies (one on the partner's console) — mirrors
+ *  co_op_pact_remove_player2, so the store can drop the card the server just
+ *  removed. */
+export function isRemovablePlayer2Copy(pacts: CoOpPact[], game: Game): boolean {
+  const copies = game.copies ?? [];
+  return (
+    game.status !== "finished" &&
+    copies.length > 0 &&
+    copies.every((c) => c.acquisition === "player2") &&
+    pacts.some((p) => isLivePact(p) && !p.iAmInviter && p.myGameId === game.id)
   );
 }
 

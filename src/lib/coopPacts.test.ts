@@ -4,6 +4,7 @@ import {
   canInviteToPact,
   isLivePact,
   isPlayer2Join,
+  isRemovablePlayer2Copy,
   pactForGame,
   pactJoinDraft,
   pactOwnedPlatforms,
@@ -60,12 +61,41 @@ describe("pactForGame", () => {
     expect(pactForGame([invite], game({ id: "any-copy", rawgId: 8 }))).toBeNull();
   });
 
+  it("never surfaces a dissolved pact, for either player (76409d16)", () => {
+    expect(pactForGame([pact({ status: "dissolved" })], game())).toBeNull();
+    expect(pactForGame([pact({ status: "dissolved", iAmInviter: false })], game())).toBeNull();
+  });
+
+  it("doesn't move an ended pact onto another copy once its card is gone (76409d16)", () => {
+    const ended = pact({ status: "completed", myGameId: null });
+    expect(pactForGame([ended], game({ id: "own-copy", rawgId: 7 }))).toBeNull();
+  });
+
   it("prefers the live pact over ended ones; else the newest ended", () => {
     const old = pact({ id: "old", status: "dissolved", createdAt: 1 });
     const newer = pact({ id: "new", status: "completed", createdAt: 2 });
     const live = pact({ id: "live", status: "active", createdAt: 0 });
     expect(pactForGame([old, newer, live], game())?.id).toBe("live");
     expect(pactForGame([old, newer], game())?.id).toBe("new");
+  });
+});
+
+describe("isRemovablePlayer2Copy (76409d16)", () => {
+  const p2 = [{ id: "c1", platform: "PlayStation 5", acquisition: "player2" as const }];
+  const joined = pact({ iAmInviter: false });
+
+  it("is the invitee's unfinished, Player-2-only copy bound to a live pact", () => {
+    expect(isRemovablePlayer2Copy([joined], game({ copies: p2 }))).toBe(true);
+  });
+
+  it("isn't a finished copy, a copy of my own, the inviter's copy, or an ended pact's", () => {
+    expect(isRemovablePlayer2Copy([joined], game({ copies: p2, status: "finished" }))).toBe(false);
+    const mixed = [...p2, { id: "c2", platform: "PC" }];
+    expect(isRemovablePlayer2Copy([joined], game({ copies: mixed }))).toBe(false);
+    expect(isRemovablePlayer2Copy([pact()], game({ copies: p2 }))).toBe(false);
+    expect(
+      isRemovablePlayer2Copy([pact({ iAmInviter: false, status: "completed" })], game({ copies: p2 })),
+    ).toBe(false);
   });
 });
 

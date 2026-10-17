@@ -88,6 +88,10 @@ export const RELEASES: Release[] = [
         text: "When you own a game on several platforms, its Owned On section lists the platforms once instead of repeating the game's name for each.",
         tag: "improvement",
       },
+      {
+        text: "When a Co-op Pact is dissolved, a Player 2 copy you joined on your friend's console now leaves your collection along with its playtime (a finished one stays), and the \"pact was dissolved\" note no longer lingers on either player's game.",
+        tag: "improvement",
+      },
     ],
   },
   {
