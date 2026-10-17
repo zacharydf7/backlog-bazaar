@@ -21,6 +21,12 @@ function game(over: Partial<Game> = {}): Game {
 
 const logMysteryPull = vi.fn(async () => {});
 
+/** Open the play pull and take the random roll ("Surprise me"). */
+function openSurprise() {
+  fireEvent.click(screen.getByRole("button", { name: /Mystery Pull/i }));
+  fireEvent.click(screen.getByRole("button", { name: /Surprise me/i }));
+}
+
 beforeEach(() => {
   logMysteryPull.mockClear();
   // Existing tests exercise the draw itself — skip the one-time intro by marking
@@ -58,7 +64,7 @@ describe("MysteryPull", () => {
 
   it("opens the pull with a drawn game, its price, and a disabled re-roll for a pool of one", () => {
     render(<MysteryPull />);
-    fireEvent.click(screen.getByRole("button", { name: /Mystery Pull/i }));
+    openSurprise();
     expect(screen.getByRole("heading", { name: "Hollow Knight" })).toBeTruthy();
     expect(screen.getByText(/to start/)).toBeTruthy();
     const reroll = screen.getByRole("button", { name: /Re-roll/i }) as HTMLButtonElement;
@@ -72,7 +78,7 @@ describe("MysteryPull", () => {
       }),
     );
     render(<MysteryPull />);
-    fireEvent.click(screen.getByRole("button", { name: /Mystery Pull/i }));
+    openSurprise();
     const before = screen.getByRole("heading", { level: 2 }).textContent;
     fireEvent.click(screen.getByRole("button", { name: /Re-roll/i }));
     const after = screen.getByRole("heading", { level: 2 }).textContent;
@@ -92,7 +98,7 @@ describe("MysteryPull", () => {
     act(() => useStore.setState({ buyGame }));
 
     render(<MysteryPull />);
-    fireEvent.click(screen.getByRole("button", { name: /Mystery Pull/i }));
+    openSurprise();
     fireEvent.click(screen.getByRole("button", { name: /Add to Now Playing/i }));
     // The standard ActivationModal takes over; pay the normal coin fee.
     fireEvent.click(await screen.findByRole("button", { name: /Pay with coins/i }));
@@ -108,7 +114,7 @@ describe("MysteryPull", () => {
   it("clicking the drawn card jumps to the game's page and closes the pull unconfirmed", () => {
     window.location.hash = "";
     render(<MysteryPull />);
-    fireEvent.click(screen.getByRole("button", { name: /Mystery Pull/i }));
+    openSurprise();
     fireEvent.click(screen.getByRole("button", { name: /Open Hollow Knight's page/i }));
     expect(window.location.hash).toBe("#g/g1");
     // The modal closed and nothing was charged or recorded.
@@ -120,7 +126,7 @@ describe("MysteryPull", () => {
   it("the drawn game's title also opens its page", () => {
     window.location.hash = "";
     render(<MysteryPull />);
-    fireEvent.click(screen.getByRole("button", { name: /Mystery Pull/i }));
+    openSurprise();
     // Two affordances share the handler — the cover (aria-label) and the title.
     const title = screen
       .getAllByRole("button", { name: /Hollow Knight/i })
@@ -132,7 +138,7 @@ describe("MysteryPull", () => {
 
   it("cancel closes without buying or recording anything", () => {
     render(<MysteryPull />);
-    fireEvent.click(screen.getByRole("button", { name: /Mystery Pull/i }));
+    openSurprise();
     fireEvent.click(screen.getByRole("button", { name: /Cancel/i }));
     expect(screen.queryByRole("button", { name: /Add to Now Playing/i })).toBeNull();
     expect(logMysteryPull).not.toHaveBeenCalled();
@@ -140,28 +146,29 @@ describe("MysteryPull", () => {
 });
 
 describe("MysteryPull — first-time intro", () => {
-  it("shows the explainer before the first roll, then reveals the draw on Roll", () => {
+  it("shows the explainer first, then the choice between a roll and the picker", () => {
     localStorage.clear(); // never seen the intro
     render(<MysteryPull />);
     fireEvent.click(screen.getByRole("button", { name: /Mystery Pull/i }));
-    // The intro is up: explainer copy + a Roll, but no game yet.
+    // The intro is up: explainer copy, but no game yet.
     expect(screen.getByText(/Let the Bazaar pick/i)).toBeTruthy();
     expect(screen.queryByRole("heading", { name: "Hollow Knight" })).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: /^Roll$/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Let's go/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Surprise me/i }));
     // Now the drawn game is shown.
     expect(screen.getByRole("heading", { name: "Hollow Knight" })).toBeTruthy();
   });
 
-  it("only shows the intro once — a later open goes straight to the draw", () => {
+  it("only shows the intro once — a later open goes straight to the choice", () => {
     localStorage.clear();
     const { unmount } = render(<MysteryPull />);
     fireEvent.click(screen.getByRole("button", { name: /Mystery Pull/i }));
-    fireEvent.click(screen.getByRole("button", { name: /^Roll$/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Let's go/i }));
     unmount();
-    // Re-open: the intro is remembered, so the game appears immediately.
+    // Re-open: the intro is remembered.
     render(<MysteryPull />);
     fireEvent.click(screen.getByRole("button", { name: /Mystery Pull/i }));
-    expect(screen.getByRole("heading", { name: "Hollow Knight" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Help me choose/i })).toBeTruthy();
     expect(screen.queryByText(/Let the Bazaar pick/i)).toBeNull();
   });
 
@@ -232,5 +239,50 @@ describe("MysteryPull (completion kind)", () => {
     await waitFor(() => expect(enterCompletionist).toHaveBeenCalledWith("g1"));
     await waitFor(() => expect(logMysteryPull).toHaveBeenCalledWith("g1", 0, "complete"));
     await waitFor(() => expect(screen.queryByRole("button", { name: /Go for 100%/i })).toBeNull());
+  });
+});
+
+describe("MysteryPull — Help me choose", () => {
+  it("suggests startable games that fit the answers, with why", () => {
+    act(() =>
+      useStore.setState({
+        games: [
+          game({ id: "q", title: "Quick One", hours: 5, priority: "essential" }),
+          game({ id: "l", title: "Long One", hours: 60 }),
+        ],
+      }),
+    );
+    render(<MysteryPull />);
+    fireEvent.click(screen.getByRole("button", { name: /Mystery Pull/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Help me choose/i }));
+    const picks = () => screen.getByTestId("play-next-picks");
+    expect(picks().textContent).toMatch(/Quick One.*Essential.*Long One/);
+    fireEvent.click(screen.getByRole("button", { name: "Under 10h" }));
+    expect(picks().textContent).toContain("Quick One");
+    expect(picks().textContent).not.toContain("Long One");
+  });
+
+  it("starts a pick through the normal activation and logs it with the answers", async () => {
+    const buyGame = vi.fn(async (id: string) => {
+      useStore.setState({
+        games: useStore.getState().games.map((g) => (g.id === id ? { ...g, status: "playing" as const } : g)),
+      });
+    });
+    act(() => useStore.setState({ buyGame }));
+    render(<MysteryPull />);
+    fireEvent.click(screen.getByRole("button", { name: /Mystery Pull/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Help me choose/i }));
+    const picks = screen.getByTestId("play-next-picks");
+    fireEvent.click(picks.querySelector("button")!);
+    fireEvent.click(await screen.findByRole("button", { name: /Pay with coins/i }));
+    await waitFor(() => expect(buyGame).toHaveBeenCalledWith("g1", { kind: "general" }));
+    await waitFor(() =>
+      expect(logMysteryPull).toHaveBeenCalledWith(
+        "g1",
+        0,
+        "picker",
+        expect.objectContaining({ length: "any", aim: "balanced", suggested: ["g1"], rank: 1 }),
+      ),
+    );
   });
 });

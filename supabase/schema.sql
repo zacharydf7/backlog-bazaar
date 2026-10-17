@@ -12731,23 +12731,30 @@ create policy "mystery_pull_events_select" on public.mystery_pull_events
   );
 
 -- kind: which pull this was — 'play' draws a Bazaar game to buy & start,
--- 'complete' draws a beaten Finished game to pull back for a 100% run.
+-- 'complete' draws a beaten Finished game to pull back for a 100% run,
+-- 'picker' is a game chosen from "Help me choose" (2026-10-17).
 alter table public.mystery_pull_events
   add column if not exists kind text not null default 'play';
 alter table public.mystery_pull_events drop constraint if exists mystery_pull_events_kind_check;
 alter table public.mystery_pull_events add constraint mystery_pull_events_kind_check
-  check (kind in ('play', 'complete'));
+  check (kind in ('play', 'complete', 'picker'));
+-- detail: for a picker choice, the answers given and the games suggested
+-- alongside the one chosen (empty for the random pulls).
+alter table public.mystery_pull_events
+  add column if not exists detail jsonb not null default '{}'::jsonb;
 
 -- Record a confirmed Mystery Pull. Called by the client right after the pulled
 -- game's activation (or completion re-entry) succeeds; the row is pinned to the
 -- caller (auth.uid()) and the title is snapshotted server-side from the
 -- caller's own games row — a game id that isn't theirs (or doesn't exist) is
--- refused. Dropped first: the p_kind parameter changed the signature.
+-- refused. Dropped first: p_kind, then p_detail, changed the signature.
 drop function if exists public.log_mystery_pull(uuid, integer);
+drop function if exists public.log_mystery_pull(uuid, integer, text);
 create or replace function public.log_mystery_pull(
   p_game_id uuid,
   p_rerolls integer default 0,
-  p_kind    text default 'play'
+  p_kind    text default 'play',
+  p_detail  jsonb default '{}'::jsonb
 )
 returns void
 language plpgsql
@@ -12758,8 +12765,12 @@ declare
 begin
   -- A compilation game is played through its games (issue 86fc0b4b).
   perform public.assert_not_compilation_game(p_game_id);
-  if p_kind not in ('play', 'complete') then
+  if p_kind not in ('play', 'complete', 'picker') then
     raise exception 'Unknown pull kind';
+  end if;
+  if jsonb_typeof(coalesce(p_detail, '{}'::jsonb)) <> 'object'
+     or length(coalesce(p_detail, '{}'::jsonb)::text) > 4000 then
+    raise exception 'Pull detail must be a small object';
   end if;
   select title into v_title
     from public.games
@@ -12767,8 +12778,9 @@ begin
   if v_title is null then
     raise exception 'Game not found in your library';
   end if;
-  insert into public.mystery_pull_events (user_id, game_id, game_title, rerolls, kind)
-  values (auth.uid(), p_game_id, v_title, greatest(coalesce(p_rerolls, 0), 0), p_kind);
+  insert into public.mystery_pull_events (user_id, game_id, game_title, rerolls, kind, detail)
+  values (auth.uid(), p_game_id, v_title, greatest(coalesce(p_rerolls, 0), 0), p_kind,
+          coalesce(p_detail, '{}'::jsonb));
 end;
 $$;
 
@@ -14999,7 +15011,7 @@ revoke execute on function public.player_library(uuid)          from public, ano
 revoke execute on function public.list_game_reviews(integer, uuid, integer) from public, anon;
 revoke execute on function public.community_game_stats(integer, uuid, integer) from public, anon;
 revoke execute on function public.list_game_likers(integer, uuid, integer, integer, integer) from public, anon;
-revoke execute on function public.log_mystery_pull(uuid, integer, text) from public, anon;
+revoke execute on function public.log_mystery_pull(uuid, integer, text, jsonb) from public, anon;
 revoke execute on function public.list_profile_activity(uuid, integer) from public, anon;
 revoke execute on function public.view_profile(uuid)            from public, anon;
 -- are_friends is only called by other security-definer functions; no client needs it.
@@ -15117,7 +15129,7 @@ grant execute on function public.player_library(uuid)          to authenticated;
 grant execute on function public.list_game_reviews(integer, uuid, integer) to authenticated;
 grant execute on function public.community_game_stats(integer, uuid, integer) to authenticated;
 grant execute on function public.list_game_likers(integer, uuid, integer, integer, integer) to authenticated;
-grant execute on function public.log_mystery_pull(uuid, integer, text) to authenticated;
+grant execute on function public.log_mystery_pull(uuid, integer, text, jsonb) to authenticated;
 grant execute on function public.list_profile_activity(uuid, integer) to authenticated;
 grant execute on function public.view_profile(uuid)            to authenticated;
 grant execute on function public.admin_set_coins(integer)      to authenticated;

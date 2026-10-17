@@ -127,6 +127,9 @@ export function AboutPage() {
               settings — so pick deliberately. Can&apos;t decide? Hit{" "}
               <strong className="text-ink">Mystery Pull</strong> on the Bazaar and let it draw a
               game you can afford right now — take it at its normal price, re-roll, or walk away.
+              Or choose <strong className="text-ink">Help me choose</strong>: say how long a game
+              you want, on which platform, in what mood and what you&apos;re after, and it suggests
+              three, with why each one fits.
               The same dice on your Finished shelf draw a beaten game to pull back for a free 100%
               run.
             </Section>

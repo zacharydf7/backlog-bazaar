@@ -1,7 +1,7 @@
 import { trackEvent } from "../lib/appEvents";
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { Dices, X, Clock, Target } from "lucide-react";
+import { Dices, X, Clock, Target, Compass } from "lucide-react";
 import type { Game } from "../types";
 import { useStore } from "../store";
 import { mysteryPullPool, completionPullPool, drawPull } from "../lib/mysteryPull";
@@ -13,6 +13,7 @@ import { gameHash } from "../lib/route";
 import { useScrollLock } from "../lib/useScrollLock";
 import { useHistoryDismiss } from "../lib/useHistoryDismiss";
 import { ActivationModal } from "./ActivationModal";
+import { PlayNextPicker } from "./PlayNextPicker";
 import { CoinIcon } from "./CoinIcon";
 
 /** Which pull this is: "play" draws a Bazaar game to buy & start; "complete"
@@ -25,7 +26,7 @@ export type PullKind = "play" | "complete";
 const INTRO: Record<PullKind, { title: string; body: string }> = {
   play: {
     title: "Can't decide? Let the Bazaar pick.",
-    body: "Mystery Pull draws a random game from your Bazaar that you can start right now — one you can afford with an open Now Playing slot. Take the Bazaar's pick, re-roll for another, or walk away. Nothing is charged until you actually start a game.",
+    body: "Mystery Pull finds you a game from your Bazaar that you can start right now — one you can afford with an open Now Playing slot. Roll for a random pick, or answer a few quick questions for three suggestions. Nothing is charged until you actually start a game.",
   },
   complete: {
     title: "Pick a beaten game to 100%.",
@@ -58,11 +59,13 @@ function markIntroSeen(kind: PullKind): void {
 }
 
 /** The board-toolbar Mystery Pull: cure choice paralysis by letting the Bazaar
- *  pick. Draws a random eligible game (see lib/mysteryPull.ts) and prompts the
- *  player to take it on, re-roll, or walk away. Accepting reuses the standard
- *  flows — the ActivationModal buy for "play", the free enterCompletionist
- *  re-entry for "complete" — and a confirmed pull is recorded to
- *  mystery_pull_events with its kind. */
+ *  pick. The play pull opens on a choice: "Surprise me" draws a random
+ *  eligible game (see lib/mysteryPull.ts), "Help me choose" asks four quick
+ *  questions and suggests three (lib/playNext.ts). Accepting reuses the
+ *  standard flows — the ActivationModal buy for "play", the free
+ *  enterCompletionist re-entry for "complete" — and a confirmed pull is
+ *  recorded to mystery_pull_events with its kind ('picker' for a guided
+ *  pick, with the answers and suggestions shown). */
 export function MysteryPull({ kind = "play" }: { kind?: PullKind }) {
   const games = useStore((s) => s.games);
   const coins = useStore((s) => s.coins);
@@ -145,13 +148,19 @@ function MysteryPullModal({ kind, onClose }: { kind: PullKind; onClose: () => vo
   const [rerolls, setRerolls] = useState(0);
   const [activating, setActivating] = useState(false);
   const [working, setWorking] = useState(false);
-  // First-time players see a short explainer before the first roll; everyone
-  // else drops straight onto the draw.
-  const [phase, setPhase] = useState<"intro" | "pull">(() => (hasSeenIntro(kind) ? "pull" : "intro"));
+  // First-time players see a short explainer first. The play pull then offers
+  // the random roll or the guided picker; the completion pull goes straight
+  // to its draw.
+  const afterIntro = kind === "play" ? "choose" : "pull";
+  const [phase, setPhase] = useState<"intro" | "choose" | "pull" | "picker">(() =>
+    hasSeenIntro(kind) ? afterIntro : "intro",
+  );
+  // Set when the game being activated came from the picker: logged with it.
+  const [pickerDetail, setPickerDetail] = useState<Record<string, unknown> | null>(null);
 
   function startRolling() {
     markIntroSeen(kind);
-    setPhase("pull");
+    setPhase(afterIntro);
   }
 
   const current: Game | undefined = games.find((g) => g.id === currentId);
@@ -176,7 +185,8 @@ function MysteryPullModal({ kind, onClose }: { kind: PullKind; onClose: () => vo
   function settle() {
     const after = useStore.getState().games.find((g) => g.id === currentId);
     if (after?.status === "playing" && currentId) {
-      void logMysteryPull(currentId, rerolls, kind);
+      if (pickerDetail) void logMysteryPull(currentId, 0, "picker", pickerDetail);
+      else void logMysteryPull(currentId, rerolls, kind);
       onClose();
     }
   }
@@ -238,7 +248,7 @@ function MysteryPullModal({ kind, onClose }: { kind: PullKind; onClose: () => vo
                 className="w-full rounded-xl bg-brand px-3 py-2.5 font-semibold text-brand-fg shadow-sm transition hover:brightness-105 active:brightness-95"
               >
                 <span className="inline-flex items-center gap-1.5">
-                  <Dices size={15} /> Roll
+                  <Dices size={15} /> {kind === "play" ? "Let's go" : "Roll"}
                 </span>
               </button>
               <button
@@ -256,10 +266,92 @@ function MysteryPullModal({ kind, onClose }: { kind: PullKind; onClose: () => vo
     );
   }
 
-  const fullPrice = computeFormula(current, economy.price);
-  const price = isFamilyDiscounted(games, current)
-    ? computeFamilyDiscountPrice(fullPrice, replayBonusPct)
-    : fullPrice;
+  const priceOf = (g: Game) => {
+    const full = computeFormula(g, economy.price);
+    return isFamilyDiscounted(games, g) ? computeFamilyDiscountPrice(full, replayBonusPct) : full;
+  };
+  const price = priceOf(current);
+
+  // The play pull's opening choice, and the guided picker it leads to.
+  if (phase === "choose" || phase === "picker") {
+    return createPortal(
+      <div
+        className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
+        onClick={onClose}
+      >
+        <div
+          className="flex max-h-[calc(100dvh-2rem)] w-full max-w-md flex-col overflow-hidden rounded-3xl border border-line bg-surface shadow-2xl"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="flex items-center justify-between px-5 pt-4">
+            <span className="inline-flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-subtle">
+              {phase === "picker" ? (
+                <>
+                  <Compass size={15} className="text-accent" /> Help me choose
+                </>
+              ) : (
+                <>
+                  <Dices size={15} className="text-accent" /> Mystery Pull
+                </>
+              )}
+            </span>
+            <button onClick={onClose} aria-label="Close" className="text-muted transition hover:text-ink">
+              <X size={18} />
+            </button>
+          </div>
+          <div className="overflow-y-auto p-5">
+            {phase === "choose" ? (
+              <div className="flex flex-col gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    trackEvent("feature", "mystery_pull_mode", { mode: "surprise" });
+                    setPhase("pull");
+                  }}
+                  className="flex items-center gap-3 rounded-2xl border border-line bg-panel p-4 text-left transition hover:border-brand/50"
+                >
+                  <Dices size={26} className="shrink-0 text-accent" />
+                  <span>
+                    <span className="block font-semibold text-ink">Surprise me</span>
+                    <span className="block text-sm text-muted">A random game you can start right now.</span>
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    trackEvent("feature", "mystery_pull_mode", { mode: "picker" });
+                    setPhase("picker");
+                  }}
+                  className="flex items-center gap-3 rounded-2xl border border-line bg-panel p-4 text-left transition hover:border-brand/50"
+                >
+                  <Compass size={26} className="shrink-0 text-accent" />
+                  <span>
+                    <span className="block font-semibold text-ink">Help me choose</span>
+                    <span className="block text-sm text-muted">
+                      Answer a few quick questions and get three picks.
+                    </span>
+                  </span>
+                </button>
+              </div>
+            ) : (
+              <PlayNextPicker
+                pool={pool}
+                priceOf={priceOf}
+                onBack={() => setPhase("choose")}
+                onStart={(game, detail) => {
+                  setCurrentId(game.id);
+                  setPickerDetail(detail);
+                  setActivating(true);
+                }}
+              />
+            )}
+          </div>
+        </div>
+        {activating && <ActivationModal game={current} onClose={onActivationClose} />}
+      </div>,
+      document.body,
+    );
+  }
 
   // Jump to the drawn game's page to inspect it before deciding. The pull
   // simply closes unconfirmed (nothing is charged or recorded) — the cleanup in
