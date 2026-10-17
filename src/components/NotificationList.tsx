@@ -19,6 +19,7 @@ import {
   Handshake,
   PiggyBank,
   Sparkles,
+  Target,
   type LucideIcon,
 } from "lucide-react";
 import { useStore } from "../store";
@@ -54,6 +55,7 @@ const TYPE_ICON: Record<string, LucideIcon> = {
   loan_declined: PiggyBank,
   loan_repaid: PiggyBank,
   cosmetic_granted: Sparkles,
+  challenges_reset: Target,
 };
 
 /** A fallback destination derived from a notification's type, for older

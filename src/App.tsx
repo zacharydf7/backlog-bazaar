@@ -343,6 +343,14 @@ export default function App() {
       setOpenCompilationId(null);
       setOpenListId(null);
       setView("cosmetics");
+    } else if (link === "challenges") {
+      // The monthly "your challenges are ready" notice.
+      closeUserBazaar();
+      setAlertsOpen(false);
+      setOpenGameId(null);
+      setOpenCompilationId(null);
+      setOpenListId(null);
+      setView("challenges");
     } else if (link.startsWith("list:")) {
       // Collaborative-list alerts (issue b2059a55): invite, removal request,
       // ruling — all land on the list's own page.

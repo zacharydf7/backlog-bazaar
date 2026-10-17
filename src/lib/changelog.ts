@@ -61,7 +61,7 @@ export const RELEASES: Release[] = [
     title: "Compilations are games too, and bounties follow your time",
     items: [
       {
-        text: "New Challenges page: pick three goals each month, like finishing 2 games or playing on 10 different days. Each goal you complete pays 25 coins, with 50 more for all three.",
+        text: "New Challenges page: pick three goals each month, like finishing 2 games or playing on 10 different days. Each goal you complete pays 25 coins, with 50 more for all three. A notification lets you know when a new month's goals open.",
         tag: "feature",
       },
       {

@@ -6,7 +6,9 @@
 // 25 coins a goal + 50 for all three, claimed by hand. Seasonal events: each
 // player chases the target alone; completing grants the event's badge and its
 // coins on claim. Claims pay once and wait while the economy is off; only
-// challenges.manage can save events, and every save is audited. Tables are
+// challenges.manage can save events, and every save is audited. Each player
+// gets one "challenges are ready" bell notice a month, sent the first time
+// evaluate_challenges runs that month. Tables are
 // trimmed to the columns these read; auth.uid, has_permission,
 // economy_enabled and log_coin_event are stubbed.
 import { readFileSync } from "node:fs";
@@ -53,6 +55,8 @@ beforeAll(async () => {
     create table public.user_badges (user_id uuid, badge_id uuid, source text, revoked_at timestamptz,
       primary key (user_id, badge_id));
     create table public.coin_events (user_id uuid, kind text, coin_delta integer, coin_after integer, label text);
+    create table public.notifications (user_id uuid, type text, title text, body text, link text,
+      created_at timestamptz not null default now());
     create table public.audit_events (actor_id uuid, target_user uuid, entity text, entity_id text,
       action text, field text, old_value jsonb, new_value jsonb, detail jsonb);
     create function public.economy_enabled(p_user uuid) returns boolean language sql
@@ -93,6 +97,7 @@ beforeAll(async () => {
       unique (user_id, challenge_id));
   `);
   for (const name of [
+    "challenge_month_notice",
     "pick_monthly_goal",
     "evaluate_challenges",
     "list_challenges",
@@ -113,6 +118,7 @@ beforeEach(async () => {
     delete from public.user_monthly_goals; delete from public.monthly_goal_bonuses;
     delete from public.user_seasonal_challenges; delete from public.seasonal_challenges;
     delete from public.user_badges; delete from public.coin_events; delete from public.audit_events;
+    delete from public.notifications;
     delete from public.games; delete from public.game_status_events; delete from public.playtime_events;
     delete from public.play_sessions; delete from public.review_events; delete from public.profiles;
     insert into public.profiles (id, coins) values ('${ME}', 100), ('${OTHER}', 0);
@@ -223,6 +229,42 @@ describe("evaluate_challenges + claim_challenge_rewards", () => {
     expect(doc).toMatchObject({ goal_reward: 25, set_bonus: 50, bonus: null });
     expect((doc.menu as { key: string }[]).map((g) => g.key)).not.toContain("retired-goal");
     expect(doc.picks).toEqual([expect.objectContaining({ goal_key: "log-twenty", progress: 6, completed_at: null })]);
+  });
+});
+
+describe("monthly notice", () => {
+  async function notices() {
+    return (
+      await db.query<{ title: string; body: string; link: string }>(
+        "select title, body, link from public.notifications where user_id = $1 order by created_at",
+        [ME],
+      )
+    ).rows;
+  }
+
+  it("goes out once a month, naming the rewards and anything still waiting", async () => {
+    await db.exec(`insert into public.monthly_goal_bonuses (user_id, month, reward)
+      values ('${ME}', date_trunc('month', now() - interval '40 days')::date, 50)`);
+    await evaluate();
+    await evaluate();
+    const month = new Date().toLocaleString("en-US", { month: "long", timeZone: "UTC" });
+    expect(await notices()).toEqual([
+      {
+        title: `Your ${month} challenges are ready`,
+        body: "Pick 3 goals for the month: 25 coins each, and 50 more for all three. You also have 50 coins in rewards waiting to be claimed.",
+        link: "challenges",
+      },
+    ]);
+    // Last month's notice doesn't stop this month's.
+    await db.exec("update public.notifications set created_at = now() - interval '40 days'");
+    await evaluate();
+    expect(await notices()).toHaveLength(2);
+  });
+
+  it("leaves coins out while the economy is off", async () => {
+    await db.exec(`update public.profiles set economy = false where id = '${ME}'`);
+    await evaluate();
+    expect((await notices())[0].body).toBe("Pick 3 goals for the month.");
   });
 });
 

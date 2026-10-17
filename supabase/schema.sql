@@ -19246,11 +19246,64 @@ begin
 end;
 $$;
 
+-- The monthly "your challenges are ready" bell notification (owner,
+-- 2026-10-17). There's no scheduler, so it goes out lazily: the first time a
+-- player is in the app in a new month (evaluate_challenges runs at sign-in),
+-- they get one, at most once per month. Notifications are in-app only, so
+-- that's the moment a midnight broadcast would be seen anyway. It names the
+-- coin rewards (unless the player's economy is off) and any rewards still
+-- waiting to be claimed. Internal: called only by evaluate_challenges.
+create or replace function public.challenge_month_notice(p_user uuid)
+returns void
+language plpgsql security definer set search_path = public
+as $$
+declare
+  v_m       record;
+  v_economy boolean;
+  v_waiting integer;
+  v_body    text;
+begin
+  -- The profile lock keeps two tabs signing in together from both sending it.
+  perform 1 from public.profiles where id = p_user for update;
+  select * into v_m from public.challenge_month(now());
+  if exists (select 1 from public.notifications n
+              where n.user_id = p_user and n.type = 'challenges_reset' and n.created_at >= v_m.starts) then
+    return;
+  end if;
+  v_economy := public.economy_enabled(p_user);
+  if v_economy then
+    select 'Pick 3 goals for the month: ' || c.challenge_goal_reward || ' coins each, and '
+           || c.challenge_set_bonus || ' more for all three.'
+      into v_body
+      from public.app_config c where c.id = 1;
+    select coalesce(sum(x.reward), 0) into v_waiting
+      from (select u.reward from public.user_monthly_goals u
+             where u.user_id = p_user and u.completed_at is not null and u.reward_paid_at is null
+            union all
+            select b.reward from public.monthly_goal_bonuses b
+             where b.user_id = p_user and b.reward_paid_at is null
+            union all
+            select s.reward from public.user_seasonal_challenges s
+             where s.user_id = p_user and s.reward_paid_at is null) x;
+    if v_waiting > 0 then
+      v_body := v_body || ' You also have ' || v_waiting || ' coins in rewards waiting to be claimed.';
+    end if;
+  end if;
+  insert into public.notifications (user_id, type, title, body, link)
+  values (p_user, 'challenges_reset',
+          'Your ' || to_char(v_m.month, 'FMMonth') || ' challenges are ready',
+          coalesce(v_body, 'Pick 3 goals for the month.'),
+          'challenges');
+end;
+$$;
+revoke execute on function public.challenge_month_notice(uuid) from public, anon, authenticated;
+
 -- Record the caller's newly completed goals (this month and last, so a goal
 -- finished on the last evening still lands), the all-three bonus, and seasonal
 -- events (live ones, plus any that ended in the last 35 days), granting an
 -- event's badge on completion. Returns the new completions for the toast.
--- Idempotent; safe to call at any frequency.
+-- Also sends the month's "challenges are ready" notice the first time it runs
+-- in a new month. Idempotent; safe to call at any frequency.
 create or replace function public.evaluate_challenges()
 returns table (kind text, name text, reward integer)
 language plpgsql security definer set search_path = public
@@ -19263,6 +19316,7 @@ declare
   v_val   numeric;
 begin
   if v_me is null then raise exception 'Not authenticated'; end if;
+  perform public.challenge_month_notice(v_me);
 
   for v_m in
     select * from public.challenge_month(now())
