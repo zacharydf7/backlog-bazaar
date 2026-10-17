@@ -46,7 +46,10 @@ beforeAll(async () => {
       added_at timestamptz, played_hours real, personal_hours real, hours real);
     create table public.game_status_events (user_id uuid, game_id uuid, to_status text,
       created_at timestamptz not null default now());
-    create table public.playtime_events (user_id uuid, hours real, created_at timestamptz not null default now());
+    create table public.playtime_events (user_id uuid, hours real, source text not null default 'live',
+      created_at timestamptz not null default now());
+    create table public.action_undos (user_id uuid, game_id uuid, action text, undone_at timestamptz,
+      created_at timestamptz not null default now());
     create table public.play_sessions (user_id uuid, status text, ended_at timestamptz);
     create table public.review_events (user_id uuid, game_id uuid, review text, created_at timestamptz not null default now());
     create table public.rotation_checkins (user_id uuid, created_at timestamptz not null default now());
@@ -67,6 +70,7 @@ beforeAll(async () => {
       returns void language sql as $$
         insert into public.coin_events values (p_user, p_kind, p_coin_delta, p_coin_after, p_label) $$;
   `);
+  await db.exec(fn("is_live_play"));
   await db.exec(fn("challenge_metric_keys"));
   await db.exec(fn("challenge_metric"));
   await db.exec(fn("challenge_month"));
@@ -121,6 +125,7 @@ beforeEach(async () => {
     delete from public.notifications;
     delete from public.games; delete from public.game_status_events; delete from public.playtime_events;
     delete from public.play_sessions; delete from public.review_events; delete from public.profiles;
+    delete from public.action_undos;
     insert into public.profiles (id, coins) values ('${ME}', 100), ('${OTHER}', 0);
     select set_config('test.uid', '${ME}', false);
     select set_config('test.manager', '', false);
@@ -144,16 +149,34 @@ async function claim(id: string | null = null) {
   ).rows[0];
 }
 
-/** A beaten game whose finish was logged `daysAgo` days ago. */
+/** A beaten game finished through the finish flow `daysAgo` days ago (the
+ *  status move plus apply_finish's action_undos row). */
 async function finishGame(daysAgo: number) {
   await db.exec(`
     with g as (
       insert into public.games (id, user_id, status, finish_tag, added_at, played_hours, hours)
       values (gen_random_uuid(), '${ME}', 'finished', 'beaten', now() - interval '400 days', 10, 10)
       returning id
+    ), s as (
+      insert into public.game_status_events (user_id, game_id, to_status, created_at)
+      select '${ME}', g.id, 'finished', now() - interval '${daysAgo} days' from g
     )
-    insert into public.game_status_events (user_id, game_id, to_status, created_at)
-    select '${ME}', g.id, 'finished', now() - interval '${daysAgo} days' from g;
+    insert into public.action_undos (user_id, game_id, action, created_at)
+    select '${ME}', g.id, 'finish', now() - interval '${daysAgo} days' from g;
+  `);
+}
+
+/** A beaten game moved back to Finished WITHOUT a clear (an abandoned replay,
+ *  or a past beat logged straight to Finished): only the status move. */
+async function returnToFinished() {
+  await db.exec(`
+    with g as (
+      insert into public.games (id, user_id, status, finish_tag, added_at, played_hours, hours)
+      values (gen_random_uuid(), '${ME}', 'finished', 'beaten', now() - interval '400 days', 10, 10)
+      returning id
+    )
+    insert into public.game_status_events (user_id, game_id, to_status)
+    select '${ME}', g.id, 'finished' from g;
   `);
 }
 
@@ -186,11 +209,11 @@ describe("evaluate_challenges + claim_challenge_rewards", () => {
     expect(await claim()).toEqual({ paid: 0, claimed: 0, coins: 225 });
   });
 
-  it("only counts finishes logged this month, and not one that was undone", async () => {
+  it("only counts real clears this month: not undone ones, abandoned replays or past beats", async () => {
     await finishGame(45); // last month or earlier: doesn't count
     await finishGame(0);
-    await db.exec(`update public.games set status = 'playing' where id = (
-      select game_id from public.game_status_events order by created_at desc limit 1)`);
+    await db.exec("update public.action_undos set undone_at = now() where created_at > now() - interval '1 day'");
+    await returnToFinished();
     await pick("finish-two");
     await finishGame(0);
     expect(await evaluate()).toEqual([]);
@@ -229,6 +252,16 @@ describe("evaluate_challenges + claim_challenge_rewards", () => {
     expect(doc).toMatchObject({ goal_reward: 25, set_bonus: 50, bonus: null });
     expect((doc.menu as { key: string }[]).map((g) => g.key)).not.toContain("retired-goal");
     expect(doc.picks).toEqual([expect.objectContaining({ goal_key: "log-twenty", progress: 6, completed_at: null })]);
+  });
+});
+
+describe("logged play", () => {
+  it("counts live play only: not catch-up, and never an entry over 24 hours", async () => {
+    await db.exec(`insert into public.playtime_events (user_id, hours, source) values
+      ('${ME}', 6, 'live'), ('${ME}', 300, 'backfill'), ('${ME}', 356, 'live'), ('${ME}', -40, 'live')`);
+    await pick("log-twenty");
+    const doc = (await db.query<{ d: { picks: { progress: number }[] } }>("select public.list_challenges() as d")).rows[0].d;
+    expect(doc.picks[0].progress).toBe(6);
   });
 });
 

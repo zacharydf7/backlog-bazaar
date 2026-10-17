@@ -12004,6 +12004,7 @@ declare
   v_explicit boolean;
   v_pact     uuid;
   v_session  uuid;
+  v_source   text;
 begin
   -- The instance-split migration MOVES a platform's sessions to the new
   -- instance and lowers the source's scalar to match — that reduction is a
@@ -12038,10 +12039,20 @@ begin
     -- so the event links back to its play_sessions row. NB: the mirrored co-op
     -- partner's row carries it too — the shared delta came from the same session.
     v_session := nullif(current_setting('app.play_session', true), '')::uuid;
+    -- Catch-up time is history, not this week's play (owner, 2026-10-17): the
+    -- starting time entered when a game is added or a copy attached (the
+    -- caller marks the transaction with app.play_source), and any single
+    -- change over 24 hours either way, since no day holds more play than that.
+    -- Totals still include it; time-windowed stats count only 'live'.
+    v_source := case
+      when coalesce(current_setting('app.play_source', true), '') = 'backfill'
+        or abs(new.played_hours - old.played_hours) > 24 then 'backfill'
+      else 'live'
+    end;
     insert into public.playtime_events
-      (user_id, game_id, game_title, hours, played_after, platform, format, genres, developers, game_hours, pact_id, session_id)
+      (user_id, game_id, game_title, hours, played_after, platform, format, genres, developers, game_hours, pact_id, session_id, source)
     values (new.user_id, new.id, new.title, new.played_hours - old.played_hours, new.played_hours,
-            v_platform, v_format, new.genres, new.developers, new.hours, v_pact, v_session);
+            v_platform, v_format, new.genres, new.developers, new.hours, v_pact, v_session, v_source);
   end if;
   return new;
 end;
@@ -12381,6 +12392,11 @@ begin
   perform set_config('app.play_platform_explicit', 'true', true);
   perform set_config('app.play_platform', coalesce(v_platform, ''), true);
   perform set_config('app.play_format', coalesce(v_format, ''), true);
+  -- The bonus-free call is the starting time entered when a game is added or
+  -- a copy attached: time played before, so it's logged as catch-up.
+  if not p_session_bonus then
+    perform set_config('app.play_source', 'backfill', true);
+  end if;
   update public.games
      set played_hours = greatest(0, played_hours + (p_hours - v_current))
    where id = p_game and user_id = auth.uid()
@@ -18629,6 +18645,18 @@ insert into public.achievements (slug, family, tier, name, description, icon, me
   ('speed-clear', 'speed-clear', 1, 'Speed Clear', 'Earn a Verified clear within a day of starting','zap',       'speed_clears',         1, 33, true, 25)
 on conflict (slug) do nothing;
 
+-- Whether a playtime_events row counts as play at the moment it was logged,
+-- for anything that counts play inside a time window (weekly recap,
+-- challenges, day-based achievements): live entries only, and never one over
+-- 24 hours, which also covers catch-up logged as live before 2026-10-17.
+create or replace function public.is_live_play(p_source text, p_hours real)
+returns boolean
+language sql
+immutable
+as $$
+  select p_source = 'live' and abs(p_hours) <= 24;
+$$;
+
 -- Every achievement metric for one user, computed in one place so the evaluator
 -- and the progress display can never disagree. Semantics mirror the visible
 -- profile stats: finished/completed counts exclude retired drops (like
@@ -18731,7 +18759,7 @@ as $$
   select 'play_days', count(distinct (e.created_at at time zone
            coalesce((select nullif(btrim(rotation_reset_tz), '') from public.app_config where id = 1), 'UTC'))::date)::numeric
     from public.playtime_events e
-   where e.user_id = p_user and e.hours > 0
+   where e.user_id = p_user and e.hours > 0 and public.is_live_play(e.source, e.hours)
   union all
   select 'stopwatch_sessions', count(*)::numeric
     from public.play_sessions s
@@ -18785,7 +18813,7 @@ as $$
   -- Play logged between midnight and 4am local time.
   select 'night_owl_logs', count(*)::numeric
     from public.playtime_events e
-   where e.user_id = p_user and e.hours > 0
+   where e.user_id = p_user and e.hours > 0 and public.is_live_play(e.source, e.hours)
      and extract(hour from e.created_at at time zone
            coalesce((select nullif(btrim(rotation_reset_tz), '') from public.app_config where id = 1), 'UTC')) < 4
   union all
@@ -19037,8 +19065,10 @@ as $$
 $$;
 
 -- One player's progress on one metric inside [p_from, p_to). Clears are games
--- whose finish was logged in the window and that are still beaten/completed
--- (an undone or retired finish doesn't count).
+-- finished through the finish flow in the window (apply_finish's action_undos
+-- row, not undone) and still beaten/completed: returning an abandoned replay
+-- or 100% run to Finished, or logging a past beat, isn't a clear. Play counts
+-- live entries only (is_live_play).
 create or replace function public.challenge_metric(
   p_user uuid, p_metric text, p_from timestamptz, p_to timestamptz
 )
@@ -19053,14 +19083,14 @@ as $$
       from public.app_config c where c.id = 1
   ),
   clears as (
-    select g.id, g.added_at, min(e.created_at) as finished,
+    select g.id, g.added_at, min(u.created_at) as finished,
            coalesce(g.played_hours, 0) as played,
            coalesce(g.personal_hours, g.hours, 0) as len
-      from public.game_status_events e
-      join public.games g on g.id = e.game_id
+      from public.action_undos u
+      join public.games g on g.id = u.game_id
      where p_metric in ('games_finished', 'verified_clears', 'backlog_clears')
-       and e.user_id = p_user and e.to_status = 'finished'
-       and e.created_at >= p_from and e.created_at < p_to
+       and u.user_id = p_user and u.action = 'finish' and u.undone_at is null
+       and u.created_at >= p_from and u.created_at < p_to
        and g.user_id = p_user and g.status = 'finished'
        and g.finish_tag in ('beaten', 'completed')
      group by g.id
@@ -19073,11 +19103,13 @@ as $$
       (select count(*) from clears c where c.finished - c.added_at >= interval '365 days')
     when 'hours_logged' then
       (select coalesce(sum(e.hours), 0) from public.playtime_events e
-        where e.user_id = p_user and e.created_at >= p_from and e.created_at < p_to)
+        where e.user_id = p_user and public.is_live_play(e.source, e.hours)
+          and e.created_at >= p_from and e.created_at < p_to)
     when 'play_days' then
       (select count(distinct (e.created_at at time zone cfg.tz)::date)
          from public.playtime_events e, cfg
-        where e.user_id = p_user and e.hours > 0 and e.created_at >= p_from and e.created_at < p_to)
+        where e.user_id = p_user and e.hours > 0 and public.is_live_play(e.source, e.hours)
+          and e.created_at >= p_from and e.created_at < p_to)
     when 'stopwatch_sessions' then
       (select count(*) from public.play_sessions s
         where s.user_id = p_user and s.status = 'logged' and s.ended_at >= p_from and s.ended_at < p_to)
@@ -19666,7 +19698,8 @@ begin
 
   select coalesce(sum(e.hours), 0) into v_hours
     from public.playtime_events e
-   where e.user_id = p_user and e.created_at >= p_from and e.created_at < p_to;
+   where e.user_id = p_user and public.is_live_play(e.source, e.hours)
+     and e.created_at >= p_from and e.created_at < p_to;
   select count(*) into v_moves
     from public.game_status_events e
    where e.user_id = p_user and e.created_at >= p_from and e.created_at < p_to;
@@ -19679,7 +19712,8 @@ begin
       'hours', round(v_hours, 1),
       'days', (select count(distinct (e.created_at at time zone v_tz)::date)
                  from public.playtime_events e
-                where e.user_id = p_user and e.hours > 0 and e.created_at >= p_from and e.created_at < p_to),
+                where e.user_id = p_user and e.hours > 0 and public.is_live_play(e.source, e.hours)
+                  and e.created_at >= p_from and e.created_at < p_to),
       'sessions', (select count(*) from public.play_sessions s
                     where s.user_id = p_user and s.status = 'logged'
                       and s.ended_at >= p_from and s.ended_at < p_to),
@@ -19688,6 +19722,7 @@ begin
                              from public.playtime_events e
                              left join public.games g on g.id = e.game_id
                             where e.user_id = p_user and e.game_id is not null
+                              and public.is_live_play(e.source, e.hours)
                               and e.created_at >= p_from and e.created_at < p_to
                             group by e.game_id
                            having sum(e.hours) > 0
@@ -19700,9 +19735,11 @@ begin
                coalesce(g.personal_hours, g.hours, 0) as len, coalesce(g.played_hours, 0) as played
           from public.games g
          where g.user_id = p_user and g.status = 'finished' and g.finish_tag in ('beaten', 'completed')
-           and exists (select 1 from public.game_status_events e
-                        where e.game_id = g.id and e.user_id = p_user and e.to_status = 'finished'
-                          and e.created_at >= p_from and e.created_at < p_to)
+           -- A clear is a finish through the finish flow (see challenge_metric).
+           and exists (select 1 from public.action_undos u
+                        where u.game_id = g.id and u.user_id = p_user and u.action = 'finish'
+                          and u.undone_at is null
+                          and u.created_at >= p_from and u.created_at < p_to)
       )
       select jsonb_build_object(
         'finished', (select count(*) from c),

@@ -4795,14 +4795,20 @@ export const useStore = create<BazaarState>((set, get) => ({
     }
     if (!userId || !supabase) return null;
 
-    // Any "time already played" entered at add time is applied via a follow-up
-    // update (below), not the insert. The playtime log is populated only by the
+    // Any "time already played" entered at add time is applied after the insert
+    // (below), never on it: the playtime log is populated only by the
     // played_hours trigger, which fires on UPDATE — inserting played_hours
     // directly would set the game's total with no matching playtime_events row, so
-    // the per-version editor would read zero and later double-count edits.
-    // When per-version hours were captured, they replace this path entirely and
-    // are written through set_platform_playtime after the insert instead.
-    const initialPlayed = opts?.versionHours ? 0 : Math.max(0, meta.playedHours ?? 0);
+    // the per-version editor would read zero and later double-count edits. A
+    // single total goes to the one owned copy (else the Unspecified bucket); per-
+    // version hours replace it. Either way it's written as starting time, which
+    // the server logs as catch-up rather than this week's play.
+    const single = (meta.copies ?? []).length === 1 ? meta.copies![0] : null;
+    const startingHours = opts?.versionHours
+      ? versionHours
+      : (meta.playedHours ?? 0) > 0
+        ? [{ platform: single?.platform ?? null, format: single?.format ?? null, hours: meta.playedHours! }]
+        : [];
 
     const { data, error } = await supabase
       .from("games")
@@ -4850,25 +4856,8 @@ export const useStore = create<BazaarState>((set, get) => ({
       set({ error: error.message });
       return null;
     }
-    let row = data as GameRow;
+    const row = data as GameRow;
 
-    // Record the starting playtime through an update so the trigger logs a
-    // playtime_events row (auto-attributed to the single owned copy, else the
-    // Unspecified bucket). This keeps the total in step with the event log the
-    // per-version editor reads.
-    if (initialPlayed > 0) {
-      const { data: played, error: playError } = await supabase
-        .from("games")
-        .update({ played_hours: initialPlayed })
-        .eq("id", row.id)
-        .select()
-        .single();
-      if (playError) {
-        set({ error: playError.message });
-      } else {
-        row = played as GameRow;
-      }
-    }
     // The server break-streak trigger already reset the streak for this add if it
     // landed a new game to play; mirror it locally so the flame/warning update
     // without waiting for a refresh (wishlist wants, straight-to-Finished
@@ -4880,10 +4869,10 @@ export const useStore = create<BazaarState>((set, get) => ({
         ? { clearStreak: 0 }
         : {};
     set({ games: [rowToGame(row), ...get().games], ...streakReset });
-    // Per-version starting playtime: sequential set_platform_playtime calls (the
-    // RPC needs the row to exist, and each logs an attributed playtime event and
-    // mirrors the new total into state via setPlatformPlaytime).
-    for (const vh of versionHours) {
+    // Starting playtime: sequential set_platform_playtime calls (the RPC needs
+    // the row to exist, and each logs an attributed playtime event and mirrors
+    // the new total into state via setPlatformPlaytime).
+    for (const vh of startingHours) {
       await get().setPlatformPlaytime(row.id, vh.platform, vh.format, vh.hours, { sessionBonus: false });
     }
     addedToast(meta.title, status);

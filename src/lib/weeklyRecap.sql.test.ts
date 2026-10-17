@@ -23,6 +23,7 @@ const ME = "00000000-0000-4000-8000-0000000000a1";
 const OTHER = "00000000-0000-4000-8000-0000000000a2";
 const G1 = "00000000-0000-4000-8000-0000000000b1";
 const G2 = "00000000-0000-4000-8000-0000000000b2";
+const G3 = "00000000-0000-4000-8000-0000000000b3";
 /** A moment in the middle of last week. */
 const LAST_WEEK = "(select starts + interval '2 days' from public.recap_week(now() - interval '7 days'))";
 
@@ -43,6 +44,8 @@ beforeAll(async () => {
     create table public.games (id uuid primary key, user_id uuid, title text, status text, finish_tag text,
       personal_hours real, hours real, played_hours real);
     create table public.playtime_events (user_id uuid, game_id uuid, game_title text, hours real,
+      source text not null default 'live', created_at timestamptz not null default now());
+    create table public.action_undos (user_id uuid, game_id uuid, action text, undone_at timestamptz,
       created_at timestamptz not null default now());
     create table public.game_status_events (user_id uuid, game_id uuid, to_status text,
       created_at timestamptz not null default now());
@@ -65,7 +68,7 @@ beforeAll(async () => {
       week_start date, data jsonb, created_at timestamptz not null default now(), seen_at timestamptz,
       unique (user_id, week_start));
   `);
-  for (const name of ["recap_week", "build_weekly_recap", "weekly_recap", "mark_weekly_recap_seen"]) {
+  for (const name of ["is_live_play", "recap_week", "build_weekly_recap", "weekly_recap", "mark_weekly_recap_seen"]) {
     await db.exec(fn(name));
   }
 });
@@ -79,6 +82,7 @@ beforeEach(async () => {
     delete from public.weekly_recaps; delete from public.notifications; delete from public.playtime_events;
     delete from public.game_status_events; delete from public.games; delete from public.coin_events;
     delete from public.achievements; delete from public.user_achievements; delete from public.profiles;
+    delete from public.action_undos;
     insert into public.profiles (id, clear_streak, clear_streak_best) values ('${ME}', 2, 5), ('${OTHER}', 0, 0);
     insert into public.achievements (family, tier, name, description, metric, threshold)
       values ('finisher', 2, 'Seasoned Finisher', 'Finish 10 games', 'games_finished', 10);
@@ -97,6 +101,8 @@ async function activeWeek() {
       ('${G2}', '${ME}', 'Hades', 'playing', null, null, 20, 3);
     insert into public.game_status_events (user_id, game_id, to_status, created_at)
       values ('${ME}', '${G1}', 'finished', ${LAST_WEEK});
+    insert into public.action_undos (user_id, game_id, action, created_at)
+      values ('${ME}', '${G1}', 'finish', ${LAST_WEEK});
     insert into public.playtime_events (user_id, game_id, game_title, hours, created_at) values
       ('${ME}', '${G1}', 'Celeste', 2.5, ${LAST_WEEK}),
       ('${ME}', '${G2}', 'Hades', 3, ${LAST_WEEK} + interval '1 day'),
@@ -129,6 +135,22 @@ describe("weekly_recap", () => {
     expect(notes.rows).toEqual([
       { title: "Your week in the Bazaar", body: "5.5h played · 1 finished · +300 coins", link: `recap:${first!.id}` },
     ]);
+  });
+
+  it("leaves out catch-up time and a replay put back on Finished (owner reports, 2026-10-17)", async () => {
+    await activeWeek();
+    await db.exec(`
+      insert into public.games values ('${G3}', '${ME}', 'Final Fantasy VII Remake', 'finished', 'beaten', null, 30, 40);
+      -- The abandoned replay: back to Finished with no clear recorded.
+      insert into public.game_status_events (user_id, game_id, to_status, created_at)
+        values ('${ME}', '${G3}', 'finished', ${LAST_WEEK});
+      insert into public.playtime_events (user_id, game_id, game_title, hours, source, created_at) values
+        ('${ME}', '${G3}', 'Disney Dreamlight Valley', 356, 'live', ${LAST_WEEK}),
+        ('${ME}', '${G3}', 'Diablo IV', 40, 'backfill', ${LAST_WEEK});
+    `);
+    const data = (await recap())!.data as { play: unknown; clears: unknown };
+    expect(data.play).toMatchObject({ hours: 5.5, top_game: { title: "Hades" } });
+    expect(data.clears).toMatchObject({ finished: 1, titles: ["Celeste"] });
   });
 
   it("leaves coins out while the economy is off", async () => {
