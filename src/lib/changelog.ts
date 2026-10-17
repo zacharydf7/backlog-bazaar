@@ -89,6 +89,10 @@ export const RELEASES: Release[] = [
         tag: "feature",
       },
       {
+        text: "Set a compilation game's own cover art right from the compilation's page: tap the game and use Your cover image. Until you do, it wears the compilation's cover.",
+        tag: "feature",
+      },
+      {
         text: "Your collection counts — games owned, your profile's platform bars and the Master Ledger's totals — now count a compilation once, as the one item on your shelf it is. Every game you finish still counts as a clear.",
         tag: "improvement",
       },

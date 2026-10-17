@@ -46,92 +46,9 @@ export function OverviewTab({
   /** Every instance in the game hub; defaults to just this record. */
   members?: Game[];
 }) {
-  const { cloud, setGameImage, clearGameImage, restoreGameImage, restoreOriginalImage } =
-    useStore();
-
-  // Offer "restore default" only when there's a default cover to go back to and
-  // the current one differs (custom upload, or removed).
-  const canRestore = Boolean(game.stockImage) && game.image !== game.stockImage;
-
-  // The cover this game shipped with: the stored write-once original, with a
-  // live RAWG re-fetch only as the fallback for legacy rows that predate
-  // original tracking (see originalCoverTarget for why the order matters).
-  const [rawgCover, setRawgCover] = useState<string | undefined>(undefined);
-  useEffect(() => {
-    let active = true;
-    if (cloud && game.rawgId && !game.originalImage) {
-      void fetchGameCover(game.rawgId).then((url) => active && setRawgCover(url));
-    }
-    return () => {
-      active = false;
-    };
-  }, [cloud, game.rawgId, game.originalImage]);
-  const originalTarget = originalCoverTarget(game, rawgCover);
-  // Offer "restore original" ONLY when the user is on their own uploaded cover —
-  // the current image must differ from BOTH the original art and the (possibly
-  // community-approved) default. Once art is approved it becomes the canonical
-  // cover, so a user viewing the default/approved cover shouldn't be offered a
-  // revert to the old original.
-  const canRestoreOriginal =
-    Boolean(originalTarget) &&
-    originalTarget !== game.image &&
-    game.image !== game.stockImage;
-
   return (
     <div className="flex flex-col gap-4">
-      {/* Your personal cover — the hero above shows it large; these controls
-          customize only your own cards. */}
-      {cloud && (
-        <div className="flex min-w-0 flex-col gap-1.5">
-          <span className="text-sm text-muted">
-            Your cover image{" "}
-            <span className="text-xs text-subtle">— customizes only your own cards</span>
-          </span>
-          <div className="flex flex-wrap gap-2">
-            <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-line bg-panel px-2.5 py-1.5 text-xs text-ink transition hover:border-brand/50">
-              <ImagePlus size={14} className="text-accent" /> Upload image
-              <input
-                type="file"
-                accept="image/*"
-                className="hidden"
-                onChange={(e) => {
-                  const f = e.target.files?.[0];
-                  if (f) void setGameImage(game.id, f);
-                  e.target.value = "";
-                }}
-              />
-            </label>
-            {game.image && (
-              <button
-                type="button"
-                onClick={() => void clearGameImage(game.id)}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-line px-2.5 py-1.5 text-xs text-muted transition hover:text-danger"
-              >
-                <Trash2 size={14} /> Remove
-              </button>
-            )}
-            {canRestore && (
-              <button
-                type="button"
-                onClick={() => void restoreGameImage(game.id)}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-line px-2.5 py-1.5 text-xs text-muted transition hover:text-accent"
-              >
-                <RotateCcw size={14} /> Restore default
-              </button>
-            )}
-            {canRestoreOriginal && originalTarget && (
-              <button
-                type="button"
-                onClick={() => void restoreOriginalImage(game.id, originalTarget)}
-                title="Revert to the cover this game originally shipped with"
-                className="inline-flex items-center gap-1.5 rounded-lg border border-line px-2.5 py-1.5 text-xs text-muted transition hover:text-accent"
-              >
-                <RotateCcw size={14} /> Restore original
-              </button>
-            )}
-          </div>
-        </div>
-      )}
+      <CoverControls game={game} />
 
       <FamilyCoverPicker game={game} members={members ?? [game]} />
 
@@ -448,6 +365,97 @@ export function ReadOnlyOverview({
         canSuggestEdit={canSuggestEdit}
       />
       <OwnershipRollup members={all} hideSpend={hideSpend} />
+    </div>
+  );
+}
+
+/** Your personal cover for one game: upload your own art, remove it, or go
+ *  back to the default or the original. Customizes only your own cards, never
+ *  the catalog. Shared by the game page's Overview and a bundled game's drawer
+ *  on the compilation page (issue 86fc0b4b). Cloud-only (the art lives in
+ *  storage), so it renders nothing offline. */
+export function CoverControls({ game }: { game: Game }) {
+  const { cloud, setGameImage, clearGameImage, restoreGameImage, restoreOriginalImage } =
+    useStore();
+
+  // Offer "restore default" only when there's a default cover to go back to and
+  // the current one differs (custom upload, or removed).
+  const canRestore = Boolean(game.stockImage) && game.image !== game.stockImage;
+
+  // The cover this game shipped with: the stored write-once original, with a
+  // live RAWG re-fetch only as the fallback for legacy rows that predate
+  // original tracking (see originalCoverTarget for why the order matters).
+  const [rawgCover, setRawgCover] = useState<string | undefined>(undefined);
+  useEffect(() => {
+    let active = true;
+    if (cloud && game.rawgId && !game.originalImage) {
+      void fetchGameCover(game.rawgId).then((url) => active && setRawgCover(url));
+    }
+    return () => {
+      active = false;
+    };
+  }, [cloud, game.rawgId, game.originalImage]);
+  const originalTarget = originalCoverTarget(game, rawgCover);
+  // Offer "restore original" ONLY when the user is on their own uploaded cover —
+  // the current image must differ from BOTH the original art and the (possibly
+  // community-approved) default. Once art is approved it becomes the canonical
+  // cover, so a user viewing the default/approved cover shouldn't be offered a
+  // revert to the old original.
+  const canRestoreOriginal =
+    Boolean(originalTarget) &&
+    originalTarget !== game.image &&
+    game.image !== game.stockImage;
+
+  if (!cloud) return null;
+  return (
+    <div className="flex min-w-0 flex-col gap-1.5">
+      <span className="text-sm text-muted">
+        Your cover image{" "}
+        <span className="text-xs text-subtle">— customizes only your own cards</span>
+      </span>
+      <div className="flex flex-wrap gap-2">
+        <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-line bg-panel px-2.5 py-1.5 text-xs text-ink transition hover:border-brand/50">
+          <ImagePlus size={14} className="text-accent" /> Upload image
+          <input
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) void setGameImage(game.id, f);
+              e.target.value = "";
+            }}
+          />
+        </label>
+        {game.image && (
+          <button
+            type="button"
+            onClick={() => void clearGameImage(game.id)}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-line px-2.5 py-1.5 text-xs text-muted transition hover:text-danger"
+          >
+            <Trash2 size={14} /> Remove
+          </button>
+        )}
+        {canRestore && (
+          <button
+            type="button"
+            onClick={() => void restoreGameImage(game.id)}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-line px-2.5 py-1.5 text-xs text-muted transition hover:text-accent"
+          >
+            <RotateCcw size={14} /> Restore default
+          </button>
+        )}
+        {canRestoreOriginal && originalTarget && (
+          <button
+            type="button"
+            onClick={() => void restoreOriginalImage(game.id, originalTarget)}
+            title="Revert to the cover this game originally shipped with"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-line px-2.5 py-1.5 text-xs text-muted transition hover:text-accent"
+          >
+            <RotateCcw size={14} /> Restore original
+          </button>
+        )}
+      </div>
     </div>
   );
 }

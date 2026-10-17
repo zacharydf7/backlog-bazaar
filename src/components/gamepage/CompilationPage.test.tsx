@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { act, render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { act, render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 import { CompilationPage } from "./CompilationPage";
 import { useStore } from "../../store";
 import type { Compilation, Game } from "../../types";
@@ -92,6 +92,27 @@ describe("CompilationPage", () => {
     // One drawer at a time: opening Part 1 closes Part 2.
     fireEvent.click(screen.getByTitle("Manage Part 1"));
     expect(screen.getByTitle("Manage Part 2").getAttribute("aria-expanded")).toBe("false");
+  });
+
+  it("lets a bundled game's drawer set that game's own cover (86fc0b4b)", () => {
+    const setGameImage = vi.fn(async () => {});
+    const setCompilationParentImage = vi.fn(async () => {});
+    act(() =>
+      useStore.setState({
+        cloud: true,
+        fetchGameMilestones: vi.fn(async () => []),
+        setGameImage,
+        setCompilationParentImage,
+      }),
+    );
+    render(<CompilationPage compilationId="C" onBack={() => {}} />);
+    fireEvent.click(screen.getByTitle("Manage Part 2"));
+    const coverBlock = screen.getByText(/Your cover image/).closest("div")!.parentElement!;
+    const input = within(coverBlock).getByText(/Upload image/).parentElement!.querySelector("input")!;
+    const file = new File(["x"], "box.png", { type: "image/png" });
+    fireEvent.change(input, { target: { files: [file] } });
+    expect(setGameImage).toHaveBeenCalledWith("g2", file);
+    expect(setCompilationParentImage).not.toHaveBeenCalled();
   });
 
   it("keeps one hours control per drawer: the time editor, or GameActions' logger in play", () => {

@@ -4,7 +4,7 @@ import { useStore } from "../../store";
 import { gameHash } from "../../lib/route";
 import { optionsWithCurrent, sortTerms } from "../../lib/taxonomy";
 import { GameActions } from "../GameActions";
-import { PriorityCard, YourLengthCard } from "./OverviewTab";
+import { CoverControls, PriorityCard, YourLengthCard } from "./OverviewTab";
 import { PlayedField } from "./JourneyTab";
 import { ReviewTab } from "./ReviewTab";
 
@@ -12,8 +12,8 @@ import { ReviewTab } from "./ReviewTab";
  *  the game without leaving its bundle. Every control is the game page's own,
  *  so nothing here is a second implementation — the status moves through the
  *  same economy actions as its card (Buy & Start, Finish, Shelve…, with their
- *  fees and bounties), then priority, your length, logged time (GameActions'
- *  own logger while in play), and your score and review. All immediate-write against this game's record; the bundle's
+ *  fees and bounties), then its cover art, priority, your length, logged time
+ *  (GameActions' own logger while in play), and your score and review. All immediate-write against this game's record; the bundle's
  *  totals are derived from the records, so they follow along. */
 export function BundleGameDrawer({ game }: { game: Game }) {
   return (
@@ -21,6 +21,8 @@ export function BundleGameDrawer({ game }: { game: Game }) {
       <div className="rounded-xl border border-line bg-surface p-3">
         <GameActions game={game} />
       </div>
+      {/* Its own cover art — until set, it wears the compilation's. */}
+      <CoverControls game={game} />
       <div className="grid gap-3 sm:grid-cols-2">
         <PriorityCard game={game} />
         <YourLengthCard game={game} />
