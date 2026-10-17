@@ -5666,7 +5666,12 @@ export const useStore = create<BazaarState>((set, get) => ({
       // metadata, so a separate follow-up write is fine (the import itself
       // already committed atomically).
       if (plan?.copies) {
-        void supabase.from("games").update({ copies: plan.copies }).eq("id", id);
+        // Awaited: a supabase-js call only sends once something awaits it.
+        const { error: copiesError } = await supabase
+          .from("games")
+          .update({ copies: plan.copies })
+          .eq("id", id);
+        if (copiesError) set({ error: copiesError.message });
       }
     }
     // The server break-streak trigger reset the streak for this owned import
@@ -8369,7 +8374,11 @@ export const useStore = create<BazaarState>((set, get) => ({
     const recap = get().weeklyRecap;
     if (!recap) return;
     set({ weeklyRecap: null });
-    if (recap.seenAt == null && supabase) void supabase.rpc("mark_weekly_recap_seen", { p_id: recap.id });
+    // Awaited (via then): a supabase-js call only sends once something awaits it.
+    if (recap.seenAt == null && supabase)
+      void supabase.rpc("mark_weekly_recap_seen", { p_id: recap.id }).then(({ error }) => {
+        if (error) set({ error: error.message });
+      });
   },
 
   swapQuickGoal: async (id) => {

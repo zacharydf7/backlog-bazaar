@@ -85,6 +85,14 @@ export const RELEASES: Release[] = [
         tag: "fix",
       },
       {
+        text: "Your weekly recap no longer pops up again after you've closed it.",
+        tag: "fix",
+      },
+      {
+        text: "What you paid for a game imported from your wishlist as a pre-order is now saved.",
+        tag: "fix",
+      },
+      {
         text: "Can't decide what to play? Mystery Pull now has Help me choose: say how long a game you want, on which platform, in what mood and what you're after, and get three games you can start right now, with why each one fits.",
         tag: "feature",
       },

@@ -5,10 +5,14 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 // bell keeps it for later). Closing marks it seen. The Supabase boundary is
 // mocked.
 const h = vi.hoisted(() => {
-  const state = { recap: null as unknown };
-  const rpc = vi.fn((name: string) =>
-    Promise.resolve({ data: name === "weekly_recap" ? state.recap : null, error: null }),
-  );
+  const state = { recap: null as unknown, sent: [] as string[] };
+  // Like supabase-js, a call is only SENT once something awaits it (then).
+  const rpc = vi.fn((name: string) => ({
+    then: (ok: (v: unknown) => unknown, err?: (e: unknown) => unknown) => {
+      state.sent.push(name);
+      return Promise.resolve({ data: name === "weekly_recap" ? state.recap : null, error: null }).then(ok, err);
+    },
+  }));
   return { state, rpc };
 });
 
@@ -23,6 +27,7 @@ const RECAP = { id: "r1", week_start: "2026-10-12", seen_at: null, data: { play:
 
 beforeEach(() => {
   h.rpc.mockClear();
+  h.state.sent = [];
   h.state.recap = RECAP;
   useStore.setState({
     cloud: true,
@@ -61,5 +66,8 @@ describe("closeWeeklyRecap", () => {
     useStore.getState().closeWeeklyRecap();
     expect(useStore.getState().weeklyRecap).toBeNull();
     expect(h.rpc).toHaveBeenCalledWith("mark_weekly_recap_seen", { p_id: "r1" });
+    // Actually sent, not just built (the bug: an un-awaited call never fired,
+    // so the card came back on every refresh).
+    expect(h.state.sent).toContain("mark_weekly_recap_seen");
   });
 });
