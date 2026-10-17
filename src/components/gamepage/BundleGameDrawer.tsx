@@ -7,12 +7,13 @@ import { GameActions } from "../GameActions";
 import { CoverControls, PriorityCard, YourLengthCard } from "./OverviewTab";
 import { PlayedField } from "./JourneyTab";
 import { ReviewTab } from "./ReviewTab";
+import { PersonalScreenshots } from "./PersonalScreenshots";
 
 /** One bundled game's drawer on the compilation page (issue 86fc0b4b): manage
  *  the game without leaving its bundle. Every control is the game page's own,
  *  so nothing here is a second implementation — the status moves through the
  *  same economy actions as its card (Buy & Start, Finish, Shelve…, with their
- *  fees and bounties), then its cover art, priority, your length, logged time
+ *  fees and bounties), then its cover art and screenshots, priority, your length, logged time
  *  (GameActions' own logger while in play), and your score and review. All immediate-write against this game's record; the bundle's
  *  totals are derived from the records, so they follow along. */
 export function BundleGameDrawer({ game }: { game: Game }) {
@@ -23,6 +24,7 @@ export function BundleGameDrawer({ game }: { game: Game }) {
       </div>
       {/* Its own cover art — until set, it wears the compilation's. */}
       <CoverControls game={game} />
+      <PersonalScreenshots game={game} />
       <div className="grid gap-3 sm:grid-cols-2">
         <PriorityCard game={game} />
         <YourLengthCard game={game} />

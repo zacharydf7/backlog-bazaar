@@ -436,7 +436,8 @@ export function AboutPage() {
             is, not the originals. You just type each game&apos;s name: the games take their
             cover and release date from the compilation rather than the game database, and an{" "}
             <strong className="text-ink">original platform</strong> label tells same-named versions
-            apart (a bundle with both the PlayStation and Game Boy Color Buzz Lightyear). Each game
+            apart (a bundle with both the PlayStation and Game Boy Color Buzz Lightyear). Give any
+            of them your own cover art and screenshots, right from the compilation&apos;s page. Each game
             inside is still bought, played and finished on its own; every copy&apos;s platform shows
             on every game, and each copy&apos;s price is split across them (evenly, by length, or
             however you choose). The split is just for your records — like other costs, it never

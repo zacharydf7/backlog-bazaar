@@ -47,6 +47,7 @@ import type {
   TemplateGame,
 } from "./compilationTemplates";
 import type { SlotDefinition, SlotKind, TargetedSlot } from "./slots";
+import { coercePersonalScreenshots } from "./personalScreenshots";
 import { coercePriority } from "./priority";
 import { coerceGamePriority } from "./gamePriority";
 import { coerceEffort } from "./effort";
@@ -114,6 +115,7 @@ export interface GameRow {
   stealth: boolean | null;
   priority: string | null;
   original_platform: string | null;
+  personal_screenshots?: unknown;
   resumed: boolean | null;
   prerequisite_game_id: string | null;
   preordered_at: string | null;
@@ -202,6 +204,7 @@ export function rowToGame(r: GameRow): Game {
     stealth: r.stealth ?? false,
     priority: coerceGamePriority(r.priority),
     originalPlatform: r.original_platform ?? null,
+    personalScreenshots: coercePersonalScreenshots(r.personal_screenshots),
     resumed: r.resumed ?? false,
     prerequisiteGameId: r.prerequisite_game_id ?? null,
     preorderedAt: r.preordered_at ? Date.parse(r.preordered_at) : null,

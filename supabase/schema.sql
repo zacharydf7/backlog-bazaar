@@ -1806,6 +1806,15 @@ create index if not exists games_compilation_idx on public.games (user_id, compi
 -- only — boards, filters and stats go by the bundle's own copies. Validated
 -- against the platform master list by games_validate_terms. Null = unset.
 alter table public.games add column if not exists original_platform text;
+-- A bundled game's own screenshots (issue 86fc0b4b): a bundled game is a
+-- personal entry with no catalog link, so it can't show the catalog's shared
+-- screenshots — the player uploads their own instead (public URLs in the
+-- covers bucket under their user folder, like a custom cover). Owner-only in
+-- the UI. Additive; an empty list for every existing row.
+alter table public.games add column if not exists personal_screenshots jsonb not null default '[]'::jsonb;
+alter table public.games drop constraint if exists games_personal_screenshots_check;
+alter table public.games add constraint games_personal_screenshots_check
+  check (jsonb_typeof(personal_screenshots) = 'array' and jsonb_array_length(personal_screenshots) <= 12);
 
 -- Expandable/collapsible grouping (all additive; existing rows keep today's
 -- always-expanded rendering):

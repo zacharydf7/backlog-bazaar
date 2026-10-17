@@ -76,6 +76,15 @@ describe("OverviewTab (your own game)", () => {
   it("offers Suggest edit on your own game's overview", () => {
     render(<OverviewTab game={game()} screenshots={[]} />);
     expect(screen.getByRole("button", { name: /Suggest edit/i })).toBeTruthy();
+    expect(screen.queryByText("Your screenshots")).toBeNull();
+  });
+
+  it("gives a bundled game its own screenshots instead of Suggest edit (86fc0b4b)", () => {
+    render(<OverviewTab game={game({ compilationId: "C" })} screenshots={[]} />);
+    // Nothing sent to the shared catalog can reach a bundled game.
+    expect(screen.queryByRole("button", { name: /Suggest edit/i })).toBeNull();
+    expect(screen.queryByText(/shared with everyone/i)).toBeNull();
+    expect(screen.getByText("Your screenshots")).toBeTruthy();
   });
 });
 

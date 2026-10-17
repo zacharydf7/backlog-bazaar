@@ -93,6 +93,10 @@ export const RELEASES: Release[] = [
         tag: "feature",
       },
       {
+        text: "Add your own screenshots to games inside a compilation. They show on the game's page and its compilation panel, only you see them, and each version of a game keeps its own.",
+        tag: "feature",
+      },
+      {
         text: "Your collection counts — games owned, your profile's platform bars and the Master Ledger's totals — now count a compilation once, as the one item on your shelf it is. Every game you finish still counts as a clear.",
         tag: "improvement",
       },

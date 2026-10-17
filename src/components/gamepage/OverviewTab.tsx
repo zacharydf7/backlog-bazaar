@@ -21,6 +21,7 @@ import { SuggestEditButton } from "../GameSubmissionForm";
 import { ScreenshotGallery } from "../ScreenshotGallery";
 import { PlatformBadge } from "../PlatformBadge";
 import { GamePriorityPicker } from "../GamePriorityBadge";
+import { PersonalScreenshots } from "./PersonalScreenshots";
 
 export function DetailStat({ label, value }: { label: string; value: string }) {
   return (
@@ -52,7 +53,11 @@ export function OverviewTab({
 
       <FamilyCoverPicker game={game} members={members ?? [game]} />
 
-      <CatalogCard game={game} screenshots={screenshots} />
+      {/* A bundled game is a personal entry (issue 86fc0b4b): nothing Suggest
+          edit sends to the shared catalog can reach it, so it gets its own
+          screenshots instead. */}
+      <CatalogCard game={game} screenshots={screenshots} canSuggestEdit={game.compilationId == null} />
+      {game.compilationId != null && <PersonalScreenshots game={game} />}
       <YourLengthCard game={game} />
       <PriorityCard game={game} />
       <OwnershipRollup members={members ?? [game]} hideSpend={false} />
@@ -158,9 +163,12 @@ function CatalogCard({
           <DetailStat label="Played" value={formatPlaytime(played ?? game.playedHours ?? 0)} />
         )}
       </div>
-      <p className="mt-2 text-[11px] text-subtle">
-        Title, length and screenshots are shared with everyone — use Suggest edit to change them.
-      </p>
+      {/* A bundled game's details aren't shared (issue 86fc0b4b). */}
+      {game.compilationId == null && (
+        <p className="mt-2 text-[11px] text-subtle">
+          Title, length and screenshots are shared with everyone — use Suggest edit to change them.
+        </p>
+      )}
     </div>
   );
 }

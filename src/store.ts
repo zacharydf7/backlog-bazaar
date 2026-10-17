@@ -57,6 +57,11 @@ import {
   type CompilationChildDraft,
   type CompilationContainerDraft,
 } from "./lib/compilations";
+import {
+  MAX_PERSONAL_SCREENSHOTS,
+  coversPathFromUrl,
+  personalShotPath,
+} from "./lib/personalScreenshots";
 import { templateSignature, templateGamesToChildDrafts } from "./lib/compilationTemplates";
 import type {
   CompilationTemplate,
@@ -1376,6 +1381,11 @@ interface BazaarState {
   // Set (or clear, with null) a bundled game's original-platform label (issue
   // 86fc0b4b). Display-only; the server validates it against the platform list.
   setOriginalPlatform: (id: string, value: string | null) => Promise<void>;
+  // A bundled game's own screenshots (issue 86fc0b4b): upload one into the
+  // covers bucket and append it, or remove one (best-effort file delete).
+  // Cloud-only, like custom covers.
+  addPersonalScreenshot: (id: string, file: File) => Promise<void>;
+  removePersonalScreenshot: (id: string, url: string) => Promise<void>;
   // Set (or clear, with null) the player's PERSONAL length override for a game,
   // taking precedence over the shared catalog length in the economy. For a game
   // you're already playing, this re-settles the length-driven activation fee (see
@@ -8605,6 +8615,60 @@ export const useStore = create<BazaarState>((set, get) => ({
     } catch (e) {
       set({ error: e instanceof Error ? e.message : "Couldn't update that cover." });
     }
+  },
+
+  addPersonalScreenshot: async (id, file) => {
+    const { cloud, userId, games } = get();
+    if (!cloud || !supabase || !userId) return;
+    const game = games.find((g) => g.id === id);
+    if (!game) return;
+    const current = game.personalScreenshots ?? [];
+    if (current.length >= MAX_PERSONAL_SCREENSHOTS) {
+      toast(`Up to ${MAX_PERSONAL_SCREENSHOTS} screenshots per game`, AlertTriangle);
+      return;
+    }
+    const path = personalShotPath(userId, id, Date.now());
+    let uploaded = false;
+    try {
+      const blob = await downscaleImage(file, 1600);
+      const { error: upErr } = await supabase.storage
+        .from("covers")
+        .upload(path, blob, { contentType: "image/jpeg", cacheControl: "3600" });
+      if (upErr) throw upErr;
+      uploaded = true;
+      const { data } = supabase.storage.from("covers").getPublicUrl(path);
+      // Re-read the live list so a second upload in flight isn't lost.
+      const latest = get().games.find((g) => g.id === id)?.personalScreenshots ?? [];
+      const next = [...latest, data.publicUrl];
+      const { error: dbErr } = await supabase
+        .from("games")
+        .update({ personal_screenshots: next })
+        .eq("id", id);
+      if (dbErr) throw dbErr;
+      set({ games: get().games.map((g) => (g.id === id ? { ...g, personalScreenshots: next } : g)) });
+      toast("Screenshot added", ImagePlus);
+    } catch (e) {
+      // Don't leave a file behind that no game points at.
+      if (uploaded) await supabase.storage.from("covers").remove([path]);
+      set({ error: e instanceof Error ? e.message : "Couldn't add that screenshot." });
+    }
+  },
+
+  removePersonalScreenshot: async (id, url) => {
+    const { cloud, games } = get();
+    if (!cloud || !supabase) return;
+    const game = games.find((g) => g.id === id);
+    if (!game) return;
+    const next = (game.personalScreenshots ?? []).filter((u) => u !== url);
+    const { error } = await supabase.from("games").update({ personal_screenshots: next }).eq("id", id);
+    if (error) {
+      set({ error: error.message });
+      return;
+    }
+    set({ games: get().games.map((g) => (g.id === id ? { ...g, personalScreenshots: next } : g)) });
+    const path = coversPathFromUrl(url);
+    if (path) await supabase.storage.from("covers").remove([path]);
+    toast("Screenshot removed", Trash2);
   },
 
   // Remove a game's custom cover (best-effort storage delete) and clear the image.
