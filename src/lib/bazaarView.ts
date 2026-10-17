@@ -14,6 +14,7 @@ import { accessLost, isModifierOnly, ownedPlatformSummary } from "./copies";
 import { isFamilyDiscounted } from "./families";
 import { computeFamilyDiscountPrice, REPLAY } from "./pricing";
 import { GAME_PRIORITIES, gamePriorityRank, type GamePriority } from "./gamePriority";
+import { clearVerification, DEFAULT_BOUNTY_GATE_PCT } from "./bountyHold";
 
 /** Extra state the coin-value sorts need to price a game the way the buy
  *  button will: the FULL library (Family Discount sibling checks — the board
@@ -86,6 +87,11 @@ export interface Filters {
   priorities: (GamePriority | "none")[];
   access: AccessFacet[];
   liked: boolean;
+  /** Finished board: only Verified or only Unverified clears (null = all). */
+  verification: "verified" | "unverified" | null;
+  /** The share of a game's length that verifies a clear (app_config's
+   *  bounty_gate_pct) — the board fills it in from the live setting. */
+  verifyPct: number;
 }
 
 /** The "how you hold it" slicer: the three modifier acquisitions (any copy of
@@ -102,11 +108,18 @@ export const EMPTY_FILTERS: Filters = {
   priorities: [],
   access: [],
   liked: false,
+  verification: null,
+  verifyPct: DEFAULT_BOUNTY_GATE_PCT,
 };
 
 export function activeFilterCount(f: Filters): number {
   return (
-    f.platforms.length + f.formats.length + f.priorities.length + f.access.length + (f.liked ? 1 : 0)
+    f.platforms.length +
+    f.formats.length +
+    f.priorities.length +
+    f.access.length +
+    (f.liked ? 1 : 0) +
+    (f.verification ? 1 : 0)
   );
 }
 
@@ -196,6 +209,7 @@ export function collectFacets(games: Game[]): Facets {
 /** Does a game pass the active slicers? Empty categories don't constrain. */
 export function gameMatches(game: Game, f: Filters): boolean {
   if (f.liked && game.likedAt == null) return false;
+  if (f.verification && clearVerification(game, f.verifyPct) !== f.verification) return false;
   if (f.priorities.length && !f.priorities.includes(game.priority ?? "none")) return false;
   if (f.access.length && !f.access.some((a) => gameHasAccess(game, a))) return false;
   if (f.platforms.length) {

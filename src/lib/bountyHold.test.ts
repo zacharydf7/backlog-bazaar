@@ -1,5 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { bountyGateHours, bountyRelease, heldAtFinish, isVerifiedClear } from "./bountyHold";
+import {
+  bountyGateHours,
+  bountyRelease,
+  clearVerification,
+  heldAtFinish,
+  isVerifiedClear,
+} from "./bountyHold";
 
 describe("bountyGateHours", () => {
   it("is the gate share of the length", () => {
@@ -42,6 +48,18 @@ describe("bountyRelease", () => {
   });
   it("never releases more than is held", () => {
     expect(bountyRelease({ total: 300, held: 20, gateHours: 10, played: 40 })).toBe(20);
+  });
+});
+
+describe("clearVerification", () => {
+  it("marks clears verified or unverified by logged time", () => {
+    expect(clearVerification({ finishTag: "beaten", hours: 40, playedHours: 10 }, 25)).toBe("verified");
+    expect(clearVerification({ finishTag: "completed", hours: 40, playedHours: 2 }, 25)).toBe("unverified");
+  });
+  it("gives no mark to a retired or endless game, or one with no length", () => {
+    expect(clearVerification({ finishTag: "retired", hours: 40, playedHours: 40 }, 25)).toBeNull();
+    expect(clearVerification({ finishTag: "endless", hours: 40, playedHours: 40 }, 25)).toBeNull();
+    expect(clearVerification({ finishTag: "beaten", playedHours: 40 }, 25)).toBeNull();
   });
 });
 

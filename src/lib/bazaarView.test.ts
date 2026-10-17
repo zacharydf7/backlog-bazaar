@@ -85,6 +85,26 @@ describe("collectFacets", () => {
   });
 });
 
+describe("gameMatches — Verified clears", () => {
+  const verified = game({ id: "v", title: "Doom", status: "finished", finishTag: "beaten", hours: 27, playedHours: 26 });
+  const unverified = game({ id: "u", title: "Granblue", status: "finished", finishTag: "beaten", hours: 130, playedHours: 1 });
+  const retired = game({ id: "r", title: "Dropped", status: "finished", finishTag: "retired", hours: 10, playedHours: 0 });
+  const all = [verified, unverified, retired];
+  const ids = (f: Partial<Filters>) =>
+    all.filter((g) => gameMatches(g, { ...EMPTY_FILTERS, ...f })).map((g) => g.id);
+
+  it("keeps only the chosen mark, leaving out games that carry none", () => {
+    expect(ids({ verification: "verified" })).toEqual(["v"]);
+    expect(ids({ verification: "unverified" })).toEqual(["u"]);
+    expect(ids({})).toEqual(["v", "u", "r"]);
+  });
+
+  it("measures against the given share of the length", () => {
+    // 26h of 27h is short of a 100% bar.
+    expect(ids({ verification: "verified", verifyPct: 100 })).toEqual([]);
+  });
+});
+
 describe("gameMatches", () => {
   const g = game({
     id: "a",

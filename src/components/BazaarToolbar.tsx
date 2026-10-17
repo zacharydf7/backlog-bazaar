@@ -34,6 +34,7 @@ export function BazaarToolbar({
   action,
   stacking,
   retired,
+  verification,
 }: {
   sortKey: SortKey;
   onSortChange: (k: SortKey) => void;
@@ -55,6 +56,9 @@ export function BazaarToolbar({
   /** Optional "Hide retired" toggle (the Finished board): leaves out games
    *  dropped with Retire It, so the shelf shows only real clears. */
   retired?: { hidden: boolean; onToggle: () => void };
+  /** Offer the Verified / Unverified picker (the Finished board, once it has
+   *  clears that carry the mark). */
+  verification?: boolean;
 }) {
   const count = activeFilterCount(filters);
   const active = hasActiveFilters(filters);
@@ -155,6 +159,24 @@ export function BazaarToolbar({
           >
             <FlagOff size={15} /> Hide retired
           </button>
+        )}
+
+        {verification && (
+          <select
+            value={filters.verification ?? ""}
+            onChange={(e) =>
+              onFiltersChange({
+                ...filters,
+                verification: (e.target.value || null) as Filters["verification"],
+              })
+            }
+            aria-label="Verified clears"
+            className={selectClass}
+          >
+            <option value="">All clears</option>
+            <option value="verified">Verified</option>
+            <option value="unverified">Unverified</option>
+          </select>
         )}
 
         {active && (

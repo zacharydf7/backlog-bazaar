@@ -89,6 +89,10 @@ export const RELEASES: Release[] = [
         tag: "feature",
       },
       {
+        text: "Show just your Verified or Unverified clears with the new picker on the Finished board.",
+        tag: "feature",
+      },
+      {
         text: "A Family's cover picker names each edition's platform, so editions with the same name are easy to tell apart.",
         tag: "fix",
       },

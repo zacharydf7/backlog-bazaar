@@ -119,6 +119,7 @@ import {
   type SortKey,
 } from "./lib/bazaarView";
 import { isRetired } from "./lib/finishTags";
+import { clearVerification } from "./lib/bountyHold";
 import {
   EMPTY_LEDGER_FILTERS,
   orderedLedgerGames,
@@ -174,6 +175,7 @@ export default function App() {
     defaultCoin,
     economy,
     replayBonusPct,
+    bountyGatePct,
     viewing,
     openUserBazaar,
     closeUserBazaar,
@@ -428,6 +430,14 @@ export default function App() {
   );
   const hasRetired = view === "finished" && boardGamesForView.some(isRetired);
   const hidingRetired = hideRetired && hasRetired;
+  // The slicers as matched: the Verified filter measures against the live
+  // admin-set share of a game's length.
+  const boardFilters = useMemo(
+    () => ({ ...filters, verifyPct: bountyGatePct }),
+    [filters, bountyGatePct],
+  );
+  const hasVerifiable =
+    view === "finished" && boardGamesForView.some((g) => clearVerification(g, bountyGatePct) != null);
 
   // Bundle cards for the current board, honouring the live search and the
   // slicers the same way family cards do: the bundle matches when ANY of its
@@ -439,10 +449,10 @@ export default function App() {
         (c) =>
           c.board === view &&
           compilationMatchesQuery(c, searchQuery) &&
-          compilationMatchesFilters(c, filters) &&
+          compilationMatchesFilters(c, boardFilters) &&
           !(hidingRetired && c.boardChildren.every(isRetired)),
       ),
-    [grouping, view, searchQuery, filters, hidingRetired],
+    [grouping, view, searchQuery, boardFilters, hidingRetired],
   );
 
   // Focused family cards for the current board. A family matches the search or
@@ -454,10 +464,10 @@ export default function App() {
         (f) =>
           f.board === view &&
           familyMatchesQuery(f, searchQuery) &&
-          familyMatchesFilters(f, filters) &&
+          familyMatchesFilters(f, boardFilters) &&
           !(hidingRetired && isRetired(f.primary)),
       ),
-    [famGrouping, view, searchQuery, filters, hidingRetired],
+    [famGrouping, view, searchQuery, boardFilters, hidingRetired],
   );
   const facets = useMemo(() => collectFacets(boardGamesForView), [boardGamesForView]);
   // The slicers/sort, then the live header search query, narrow the board so the
@@ -470,13 +480,13 @@ export default function App() {
         applyView(
           hidingRetired ? boardGamesForView.filter((g) => !isRetired(g)) : boardGamesForView,
           sortKey,
-          filters,
+          boardFilters,
           economy,
           viewing ? {} : { allGames: boardGames, replayBonusPct },
         ),
         searchQuery,
       ),
-    [boardGamesForView, sortKey, filters, economy, searchQuery, viewing, boardGames, replayBonusPct, hidingRetired],
+    [boardGamesForView, sortKey, boardFilters, economy, searchQuery, viewing, boardGames, replayBonusPct, hidingRetired],
   );
 
   // The ONE ordered list the grid renders: plain cards, collapsed bundles, and
@@ -1304,6 +1314,7 @@ export default function App() {
                 retired={
                   hasRetired ? { hidden: hideRetired, onToggle: toggleHideRetired } : undefined
                 }
+                verification={hasVerifiable}
               />
             )}
 

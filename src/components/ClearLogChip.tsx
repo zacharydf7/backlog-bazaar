@@ -3,7 +3,7 @@ import type { Game } from "../types";
 import { useStore } from "../store";
 import { formatPlaytime } from "../lib/playtime";
 import { effectiveLength } from "../lib/personalLength";
-import { isVerifiedClear } from "../lib/bountyHold";
+import { clearVerification } from "../lib/bountyHold";
 import { CoinIcon } from "./CoinIcon";
 
 /** A clear's Verified / Unverified mark (coin outliers, 2026-10-17): verified
@@ -14,10 +14,9 @@ import { CoinIcon } from "./CoinIcon";
 export function ClearLogChip({ game }: { game: Game }) {
   const gatePct = useStore((s) => s.bountyGatePct);
   const length = effectiveLength(game);
-  const verified = isVerifiedClear(game, gatePct);
-  if (game.finishTag === "retired" || game.finishTag === "endless" || !length || verified == null) {
-    return null;
-  }
+  const mark = clearVerification(game, gatePct);
+  if (mark == null || !length) return null;
+  const verified = mark === "verified";
   const Icon = verified ? BadgeCheck : Clock;
   const logged = `${formatPlaytime(game.playedHours ?? 0)} of ${formatPlaytime(length)} logged`;
   return (

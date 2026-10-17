@@ -51,6 +51,19 @@ export function bountyRelease(opts: {
   return Math.min(held, target - paid);
 }
 
+/** A finished game's mark: "verified" once its logged time reaches the gate
+ *  share of its length, else "unverified". Null when it carries no mark — a
+ *  retired or endless game isn't a clear, and a game with no length (or the
+ *  gate turned off) has nothing to measure against. */
+export function clearVerification(
+  game: Pick<Game, "finishTag" | "playedHours" | "personalHours" | "hours">,
+  gatePct: number,
+): "verified" | "unverified" | null {
+  if (game.finishTag === "retired" || game.finishTag === "endless") return null;
+  const verified = isVerifiedClear(game, gatePct);
+  return verified == null ? null : verified ? "verified" : "unverified";
+}
+
 /** A clear whose logged time reaches the gate share of its length — the
  *  "verified" mark on finished games. Unknown when the game has no length. */
 export function isVerifiedClear(

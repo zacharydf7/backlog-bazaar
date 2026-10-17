@@ -490,6 +490,26 @@ describe("App", () => {
     localStorage.removeItem("bb-hide-retired");
   });
 
+  it("narrows the Finished board to Verified or Unverified clears", async () => {
+    localStorage.removeItem("bb-hide-retired");
+    render(<App />);
+    await screen.findAllByRole("heading", { name: /Backlog Bazaar/i });
+    const solid = libGame({ id: "gv", title: "Logged It", status: "finished", finishedAt: 2, finishTag: "beaten", hours: 20, playedHours: 18 });
+    const thin = libGame({ id: "gu", title: "Barely Logged", status: "finished", finishedAt: 1, finishTag: "beaten", hours: 40, playedHours: 1 });
+    act(() => useStore.setState({ viewing: null, games: [solid, thin], bountyGatePct: 25 }));
+    fireEvent.click(screen.getAllByRole("button", { name: /Finished/i })[0]);
+    expect(await screen.findByText("Barely Logged")).toBeTruthy();
+
+    const picker = screen.getByRole("combobox", { name: "Verified clears" });
+    fireEvent.change(picker, { target: { value: "verified" } });
+    await waitFor(() => expect(screen.queryByText("Barely Logged")).toBeNull());
+    expect(screen.getByText("Logged It")).toBeTruthy();
+
+    fireEvent.change(picker, { target: { value: "unverified" } });
+    expect(await screen.findByText("Barely Logged")).toBeTruthy();
+    await waitFor(() => expect(screen.queryByText("Logged It")).toBeNull());
+  });
+
   it("offers Show retired when hiding them empties the board", async () => {
     localStorage.setItem("bb-hide-retired", "1");
     render(<App />);
