@@ -926,6 +926,64 @@ function PreordersCard() {
   );
 }
 
+/** Admin editor for the logged-time gate on finish bounties (coin outliers,
+ *  2026-10-17): the share of a game's length a finish must have logged to pay
+ *  its whole bounty at once. Below it the activation refund pays now and the
+ *  rest unlocks as time is logged. */
+function BountyGateCard() {
+  const { bountyGatePct, setBountyGatePct } = useStore();
+  const [pct, setPct] = useState(String(bountyGatePct));
+  const [saving, setSaving] = useState(false);
+
+  const clamp = (s: string) => Math.max(0, Math.min(100, Math.round(num(s))));
+  const dirty = clamp(pct) !== bountyGatePct;
+
+  async function save() {
+    setSaving(true);
+    await setBountyGatePct(clamp(pct));
+    setSaving(false);
+  }
+
+  return (
+    <div className="rounded-2xl border border-line bg-surface p-4">
+      <div className="mb-3">
+        <h3 className="inline-flex items-center gap-2 font-display text-lg text-ink">
+          <SlidersHorizontal size={16} className="text-accent" /> Logged-time gate
+        </h3>
+        <p className="text-xs text-muted">
+          A finish with less than this share of the game&apos;s length logged pays back its
+          activation cost now; the rest of the bounty unlocks as the player logs their time. Nothing
+          is ever taken away.
+        </p>
+      </div>
+      <RateField
+        label="Logged time for the full bounty (% of length)"
+        hint="0 pays every bounty in full at finish."
+        min={0}
+        max={100}
+        value={pct}
+        onChange={setPct}
+      />
+      <div className="mt-3 flex justify-end gap-2">
+        <button
+          onClick={() => setPct(String(bountyGatePct))}
+          disabled={!dirty || saving}
+          className="rounded-xl border border-line px-3 py-2 text-sm font-medium text-ink transition hover:bg-panel disabled:opacity-50"
+        >
+          Revert
+        </button>
+        <button
+          onClick={() => void save()}
+          disabled={!dirty || saving}
+          className="inline-flex items-center gap-1.5 rounded-xl bg-brand px-4 py-2 text-sm font-semibold text-brand-fg shadow-sm transition hover:brightness-105 disabled:opacity-50"
+        >
+          {saving ? "Saving…" : "Save"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 /** Admin editor for the standalone economy levers that sit alongside the buy/
  *  finish formulas: the Replay, Completion and Co-op bonuses, and the catalog
  *  Contribution reward. Self-contained (its own Save), like the Onboarding card. */
@@ -1339,6 +1397,7 @@ export function EconomyAdmin() {
       <TastemakerCard />
 
       <PreordersCard />
+      <BountyGateCard />
       <OnboardingCard />
       <LaneDefaultsCard />
       <RotationCard />

@@ -1828,6 +1828,18 @@ alter table public.games add column if not exists length_tiers jsonb;
 alter table public.games drop constraint if exists games_length_tiers_check;
 alter table public.games add constraint games_length_tiers_check
   check (length_tiers is null or jsonb_typeof(length_tiers) = 'object');
+-- A bounty held back for logged time (coin outliers, 2026-10-17): a finish
+-- with less than app_config.bounty_gate_pct of the game's length logged pays
+-- the activation refund (or the logged share, if more) now and holds the rest;
+-- logging more time releases it in proportion, all of it at the gate.
+-- bounty_held = coins still waiting, bounty_held_total = the clear's whole net
+-- bounty, bounty_gate_hours = the logged hours that release it all. Written
+-- only by apply_finish, the release trigger and undo_action. Additive.
+alter table public.games add column if not exists bounty_held integer not null default 0;
+alter table public.games add column if not exists bounty_held_total integer;
+alter table public.games add column if not exists bounty_gate_hours real;
+alter table public.games drop constraint if exists games_bounty_held_check;
+alter table public.games add constraint games_bounty_held_check check (bounty_held >= 0);
 
 -- Compilation games (issue 86fc0b4b): a compilation's OWN game row — the
 -- compilation as a game in the library, linked to the shared catalog like any
@@ -6184,6 +6196,13 @@ alter table public.app_config add column if not exists review_bonus integer not 
 alter table public.app_config add column if not exists review_bonus_min_chars integer not null default 100;
 alter table public.app_config add column if not exists session_bonus integer not null default 3;
 alter table public.app_config add column if not exists session_bonus_min_minutes integer not null default 20;
+-- The share of a game's length (percent) that must be logged for a finish to
+-- pay its whole bounty at once; below it the rest waits for logged time (see
+-- games.bounty_held). 0 turns the gate off.
+alter table public.app_config add column if not exists bounty_gate_pct integer not null default 25;
+alter table public.app_config drop constraint if exists app_config_bounty_gate_pct_range;
+alter table public.app_config add constraint app_config_bounty_gate_pct_range
+  check (bounty_gate_pct between 0 and 100);
 alter table public.app_config drop constraint if exists app_config_feature_bonus_range;
 alter table public.app_config add constraint app_config_feature_bonus_range
   check (story_order_bonus between 0 and 100000
@@ -7354,7 +7373,7 @@ create or replace function public.apply_finish(
 returns table (
   coins integer, reward integer, replay boolean, undo_id uuid,
   streak integer, streak_bonus integer, new_record boolean,
-  story_bonus integer, collector_bonus integer
+  story_bonus integer, collector_bonus integer, held integer
 )
 language plpgsql
 security definer set search_path = public
@@ -7398,16 +7417,24 @@ declare
   v_copies          jsonb;
   v_story_bonus     integer := 0;
   v_collector_bonus integer := 0;
+  -- Logged-time gate (coin outliers, 2026-10-17).
+  v_played       real;
+  v_length       real;
+  v_gate_pct     integer;
+  v_gate         real;     -- logged hours that release the whole bounty
+  v_held         integer := 0;
 begin
   -- Snapshot the pre-action reversible state (slot/lane flags + tag) so undo_action
   -- can restore the game exactly; the update below destroys these.
   select family_id, slot_id, title, resumed, completionist,
          in_rotation, ongoing, finish_tag, started_at, price_paid,
          coalesce(started_economy_off, false), coalesce(length_premium_owed, 0),
-         coalesce(stealth, false), coalesce(started_story_locked, false), copies
+         coalesce(stealth, false), coalesce(started_story_locked, false), copies,
+         coalesce(played_hours, 0), coalesce(personal_hours, hours)
     into v_family, v_slot_id, v_title, v_resumed, v_completion,
          v_in_rotation, v_ongoing, v_finish_tag, v_started_at, v_price_paid,
-         v_free_start, v_owed, v_stealth, v_story_locked, v_copies
+         v_free_start, v_owed, v_stealth, v_story_locked, v_copies,
+         v_played, v_length
     from public.games
    where id = p_game and user_id = auth.uid() and status = 'playing';
   if not found then
@@ -7456,19 +7483,38 @@ begin
   end if;
   v_net := v_award - v_offset;
 
+  -- Logged-time gate (coin outliers, 2026-10-17): with less than the gate share
+  -- of the game's length logged, pay the activation refund — or the logged
+  -- share of the bounty, if that's more — and hold the rest for logged time
+  -- (games_release_bounty pays it out as hours come in). Nothing is ever taken:
+  -- the finish still returns at least what activating it cost.
+  if v_net > 0 and coalesce(v_length, 0) > 0 then
+    select bounty_gate_pct into v_gate_pct from public.app_config where id = 1;
+    v_gate := coalesce(v_gate_pct, 25) / 100.0 * v_length;
+    if v_gate > 0 and v_played < v_gate then
+      v_held := v_net - greatest(least(coalesce(v_price_paid, 0), v_net),
+                                 round(v_net * v_played / v_gate)::integer);
+    end if;
+  end if;
+
   -- Finish tag for the Finished board: a completion run earns 'completed'; any other
   -- finish defaults to 'beaten' but preserves a tag the game already carried (so a
   -- replayed game keeps its prior narrative tag). A stale 'retired' tag never
   -- survives a REAL finish — beating a formerly-retired game is a fresh clear.
   -- The deferred length fee is settled here, so the run's owed clears to 0.
+  perform set_config('app.bounty_write', '1', true);
   update public.games
      set status = 'finished', finished_at = now(), reward = v_net, slot_id = null,
          resumed = false, in_rotation = false, completionist = false,
          length_premium_owed = 0,
+         bounty_held = v_held,
+         bounty_held_total = case when v_held > 0 then v_net end,
+         bounty_gate_hours = case when v_held > 0 then v_gate end,
          finish_tag = case when v_completion then 'completed'
                            when finish_tag = 'retired' then 'beaten'
                            else coalesce(finish_tag, 'beaten') end
    where id = p_game and user_id = auth.uid() and status = 'playing';
+  perform set_config('app.bounty_write', '', true);
 
   if v_econ and not v_free_start then
     update public.profiles
@@ -7501,6 +7547,18 @@ begin
        returning coins into v_coins;
       perform public.log_coin_event(
         auth.uid(), 'length_debt', -v_offset, 0, v_coins, null, p_game, v_title, null
+      );
+    end if;
+    -- The held-back part of the bounty, as its own deduction row (released
+    -- later as 'bounty_release' rows), so the ledger nets to the balance.
+    if v_held > 0 then
+      update public.profiles
+         set coins = coins - v_held
+       where id = auth.uid()
+       returning coins into v_coins;
+      perform public.log_coin_event(
+        auth.uid(), 'bounty_held', -v_held, 0, v_coins, null, p_game, v_title, null,
+        jsonb_build_object('gate_hours', v_gate, 'played_hours', v_played)
       );
     end if;
     -- Repay any Friend Loan on this game from the just-landed bounty (issue
@@ -7598,22 +7656,109 @@ begin
   -- (see undo_action).
   insert into public.action_undos (user_id, game_id, game_title, action, coins_delta, prev)
   values (
-    auth.uid(), p_game, v_title, 'finish', v_net + v_streak_bonus + v_story_bonus + v_collector_bonus,
+    auth.uid(), p_game, v_title, 'finish', v_net - v_held + v_streak_bonus + v_story_bonus + v_collector_bonus,
     jsonb_build_object(
       'status', 'playing', 'slot_id', v_slot_id, 'resumed', coalesce(v_resumed, false),
       'completionist', coalesce(v_completion, false), 'in_rotation', coalesce(v_in_rotation, false),
       'ongoing', coalesce(v_ongoing, false), 'finish_tag', v_finish_tag,
       'started_at', v_started_at, 'price_paid', v_price_paid,
       'finished_at', null, 'reward', null, 'length_premium_owed', coalesce(v_owed, 0),
-      'clear_streak', v_streak_prev, 'clear_streak_best', v_streak_best
+      'clear_streak', v_streak_prev, 'clear_streak_best', v_streak_best,
+      'bounty_held_at_finish', v_held
     )
   )
   returning id into v_undo;
 
   return query select v_coins, v_net, v_replay, v_undo, v_streak, v_streak_bonus, v_new_record,
-                      v_story_bonus, v_collector_bonus;
+                      v_story_bonus, v_collector_bonus, v_held;
 end;
 $$;
+
+-- Release a held bounty as time is logged (coin outliers, 2026-10-17): every
+-- rise in a finished game's played_hours pays out the share of its held
+-- bounty that the new total earns — in proportion up to bounty_gate_hours,
+-- where the last of it lands. Any path that raises the hours releases (the
+-- Played editor's set_platform_playtime, a stopwatch session); lowering them
+-- never claws anything back. Frozen while the player's economy is off, then
+-- released by the next logged time once it's back on.
+create or replace function public.games_release_bounty()
+returns trigger
+language plpgsql security definer set search_path = public
+as $$
+declare
+  v_paid    integer;
+  v_target  integer;
+  v_release integer;
+  v_coins   integer;
+begin
+  if coalesce(old.bounty_held, 0) <= 0 or new.status <> 'finished'
+     or coalesce(new.played_hours, 0) <= coalesce(old.played_hours, 0)
+     or coalesce(new.bounty_gate_hours, 0) <= 0 or new.bounty_held_total is null
+     or not public.economy_enabled(new.user_id) then
+    return new;
+  end if;
+  v_paid := new.bounty_held_total - old.bounty_held;
+  v_target := least(new.bounty_held_total,
+                    greatest(v_paid, round(new.bounty_held_total
+                                           * least(1.0, new.played_hours / new.bounty_gate_hours))::integer));
+  v_release := least(old.bounty_held, v_target - v_paid);
+  if v_release <= 0 then return new; end if;
+
+  update public.profiles
+     set coins = coins + v_release
+   where id = new.user_id
+   returning coins into v_coins;
+  perform public.log_coin_event(
+    new.user_id, 'bounty_release', v_release, 0, v_coins, null, new.id, new.title, null,
+    jsonb_build_object('played_hours', new.played_hours, 'gate_hours', new.bounty_gate_hours)
+  );
+  new.bounty_held := old.bounty_held - v_release;
+  if new.bounty_held = 0 then
+    new.bounty_held_total := null;
+    new.bounty_gate_hours := null;
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists games_release_bounty on public.games;
+create trigger games_release_bounty
+  before update of played_hours on public.games
+  for each row execute function public.games_release_bounty();
+
+-- The held-bounty columns are server-maintained: only apply_finish and
+-- undo_action write them (under app.bounty_write), and the release trigger
+-- above adjusts NEW after this guard has run (triggers fire in name order). A
+-- client write — raising its own hold, then logging time — could otherwise
+-- mint coins, so any other change is refused, inserts included.
+create or replace function public.games_guard_bounty_hold()
+returns trigger
+language plpgsql set search_path = public
+as $$
+begin
+  if current_setting('app.bounty_write', true) = '1' then
+    return new;
+  end if;
+  if tg_op = 'INSERT' then
+    if coalesce(new.bounty_held, 0) <> 0 or new.bounty_held_total is not null
+       or new.bounty_gate_hours is not null then
+      raise exception 'BOUNTY_HOLD: the held bounty is kept by the server';
+    end if;
+  elsif new.bounty_held is distinct from old.bounty_held
+     or new.bounty_held_total is distinct from old.bounty_held_total
+     or new.bounty_gate_hours is distinct from old.bounty_gate_hours then
+    raise exception 'BOUNTY_HOLD: the held bounty is kept by the server';
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists games_bounty_guard on public.games;
+create trigger games_bounty_guard
+  before insert or update of bounty_held, bounty_held_total, bounty_gate_hours on public.games
+  for each row execute function public.games_guard_bounty_hold();
+revoke execute on function public.games_release_bounty() from public, anon, authenticated;
+revoke execute on function public.games_guard_bounty_hold() from public, anon, authenticated;
 
 -- ---------------------------------------------------------------------------
 -- Set the caller's PERSONAL length for a game (or clear it back to the shared
@@ -8395,6 +8540,7 @@ declare
   v_rotation  boolean;
   v_ok        boolean;
   v_coins     integer;
+  v_held_now  integer;
 begin
   if auth.uid() is null then raise exception 'Not authenticated'; end if;
 
@@ -8414,7 +8560,7 @@ begin
 
   -- Conflict guard: the game must still be in the exact state the action left it in;
   -- if the user has touched it since, refuse rather than clobber the new state.
-  select status, in_rotation into v_status, v_rotation
+  select status, in_rotation, bounty_held into v_status, v_rotation, v_held_now
     from public.games where id = v_game and user_id = auth.uid();
   if not found then
     raise exception 'Can''t undo — the game has changed since';
@@ -8435,6 +8581,7 @@ begin
   -- Restore the game from the snapshot. length_premium_owed is restored too (a
   -- finish reclaims and clears the deferred length fee — undoing must put it back
   -- so a re-finish reclaims it again). Absent on pre-feature snapshots → 0.
+  perform set_config('app.bounty_write', '1', true);
   update public.games
      set status        = v_prev->>'status',
          slot_id       = (v_prev->>'slot_id')::uuid,
@@ -8447,8 +8594,15 @@ begin
          price_paid    = (v_prev->>'price_paid')::integer,
          finished_at   = (v_prev->>'finished_at')::timestamptz,
          reward        = (v_prev->>'reward')::integer,
-         length_premium_owed = coalesce((v_prev->>'length_premium_owed')::integer, 0)
+         length_premium_owed = coalesce((v_prev->>'length_premium_owed')::integer, 0),
+         bounty_held = 0, bounty_held_total = null, bounty_gate_hours = null
    where id = v_game and user_id = auth.uid();
+  perform set_config('app.bounty_write', '', true);
+  -- A held bounty released since the finish (time logged inside the undo
+  -- window) was paid too, so it rolls back with the rest.
+  v_delta := coalesce(v_delta, 0)
+           + greatest(0, coalesce((v_prev->>'bounty_held_at_finish')::integer, 0)
+                         - coalesce(v_held_now, 0));
 
   -- Milestones are user-curated display data, so the auto rows the undone
   -- action itself just spawned go with it (the finish that never was). Tightly

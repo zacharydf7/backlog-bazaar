@@ -371,7 +371,7 @@ describe("local-mode store", () => {
 
   it("replays a finished game into the Replay lane for free, paying the reduced bonus on re-finish", async () => {
     useStore.setState({ coins: 1000, generalSlots: 1, replaySlots: 2 });
-    await store().addGame(sampleMeta({ rawgId: 1, hours: 5 }));
+    await store().addGame(sampleMeta({ rawgId: 1, hours: 5, playedHours: 5 })); // logged past the bounty gate
     const id = store().games[0].id;
     await store().buyGame(id); // Focus slot
     await store().finishGame(id);
@@ -510,7 +510,7 @@ describe("local-mode store", () => {
 
   it("pulls a finished game back into the Completionist lane; completing pays the bonus only", async () => {
     useStore.setState({ coins: 1000, generalSlots: 1, completionistSlots: 2, completionBonusPct: 50 });
-    await store().addGame(sampleMeta({ rawgId: 1, hours: 5 }));
+    await store().addGame(sampleMeta({ rawgId: 1, hours: 5, playedHours: 5 })); // logged past the bounty gate
     const id = store().games[0].id;
     await store().buyGame(id);
     await store().finishGame(id); // first finish pays the full bounty

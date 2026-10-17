@@ -119,6 +119,9 @@ export interface GameRow {
   compilation_game_for?: string | null;
   personal_screenshots?: unknown;
   length_tiers?: unknown;
+  bounty_held?: number | null;
+  bounty_held_total?: number | null;
+  bounty_gate_hours?: number | null;
   resumed: boolean | null;
   prerequisite_game_id: string | null;
   preordered_at: string | null;
@@ -180,6 +183,9 @@ export function rowToGame(r: GameRow): Game {
     playedHours: r.played_hours ?? 0,
     personalHours: r.personal_hours ?? undefined,
     lengthPremiumOwed: r.length_premium_owed ?? 0,
+    bountyHeld: r.bounty_held ?? 0,
+    bountyHeldTotal: r.bounty_held_total ?? undefined,
+    bountyGateHours: r.bounty_gate_hours ?? undefined,
     copies: normalizeCopies(r.copies),
     progressNote: r.progress_note ?? undefined,
     review: r.review ?? undefined,

@@ -166,7 +166,7 @@ describe("feature bonuses — the server-side anti-farm rules", () => {
     expect(fn).toContain("coalesce(started_story_locked, false)");
     expect(fn).toContain("if v_econ and not v_free_start and not v_replay then");
     // The undo snapshot rolls the bonuses back with the bounty.
-    expect(fn).toContain("v_net + v_streak_bonus + v_story_bonus + v_collector_bonus");
+    expect(fn).toContain("v_net - v_held + v_streak_bonus + v_story_bonus + v_collector_bonus");
   });
 
   it("the start stamp is derived on backlog → playing and sheds client writes", () => {

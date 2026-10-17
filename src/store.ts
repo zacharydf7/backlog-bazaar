@@ -51,9 +51,16 @@ import { formatPlaytime, snapToMinute } from "./lib/playtime";
 import {
   beatenFinishLength,
   coerceLengthTiers,
+  effectiveLength,
   lengthChangeSettlement,
   finishBountyOffset,
 } from "./lib/personalLength";
+import {
+  DEFAULT_BOUNTY_GATE_PCT,
+  bountyGateHours,
+  bountyRelease,
+  heldAtFinish,
+} from "./lib/bountyHold";
 import {
   splitEvenly,
   toCents,
@@ -683,6 +690,47 @@ function loadLocal(): {
   };
 }
 
+/** Offline mirror of games_release_bounty: when a finished game's logged hours
+ *  rise to `played`, pay out the share of its held bounty the new total earns
+ *  (coins + a ledger row, set on the store) and return the game's new held
+ *  fields plus the ledger to persist. No-op without a hold. */
+function withLocalRelease(
+  game: Game,
+  played: number,
+): { fields: Partial<Game>; ledger: LedgerEntry[] } {
+  const s = useStore.getState();
+  const held = game.bountyHeld ?? 0;
+  if (
+    held <= 0 ||
+    game.status !== "finished" ||
+    !s.economyEnabled ||
+    game.bountyHeldTotal == null ||
+    game.bountyGateHours == null ||
+    played <= (game.playedHours ?? 0)
+  ) {
+    return { fields: {}, ledger: s.ledger };
+  }
+  const release = bountyRelease({
+    total: game.bountyHeldTotal,
+    held,
+    gateHours: game.bountyGateHours,
+    played,
+  });
+  if (release <= 0) return { fields: {}, ledger: s.ledger };
+  const coins = s.coins + release;
+  const ledger = [localEvent("bounty_release", release, coins, game.title), ...s.ledger];
+  useStore.setState({ coins, ledger });
+  toast(`+${release} bounty unlocked for ${game.title}`, Coins);
+  const left = held - release;
+  return {
+    fields:
+      left > 0
+        ? { bountyHeld: left }
+        : { bountyHeld: 0, bountyHeldTotal: undefined, bountyGateHours: undefined },
+    ledger,
+  };
+}
+
 /** The game with this id from either collection: a playable game, or a
  *  compilation's own game row (issue 86fc0b4b), whose review, like, priority
  *  and cover are edited the same way. */
@@ -990,6 +1038,9 @@ interface BazaarState {
   preorderImportPromptId: string | null;
   // Admin-tunable "Coming up" strip horizon in days (app_config mirror).
   preorderStripDays: number;
+  // The share of a game's length (percent) a finish must have logged to pay its
+  // whole bounty at once (app_config.bounty_gate_pct); 0 = off.
+  bountyGatePct: number;
   notifications: AppNotification[];
   notificationsHasMore: boolean; // a full page came back, so older ones may remain
   notificationsLoadingMore: boolean; // a "load older" page is in flight (scroll guard)
@@ -1753,6 +1804,11 @@ interface BazaarState {
   // Admin: how close (days) a dated pre-order must be for the "Coming up"
   // strip. 0 disables the strip.
   setPreorderStripDays: (days: number) => Promise<void>;
+  // Admin: the logged-time gate on finish bounties (economy.edit).
+  setBountyGatePct: (pct: number) => Promise<void>;
+  // Re-read a finished game's held bounty and the balance after its logged
+  // hours changed server-side, announcing any coins the time released.
+  refreshHeldBounty: (id: string) => Promise<void>;
   cheerActivity: (eventId: string) => Promise<void>;
   uncheerActivity: (eventId: string) => Promise<void>;
 
@@ -1954,6 +2010,7 @@ export const useStore = create<BazaarState>((set, get) => ({
   celebration: null,
   preorderImportPromptId: null,
   preorderStripDays: DEFAULT_PREORDER_STRIP_DAYS,
+  bountyGatePct: DEFAULT_BOUNTY_GATE_PCT,
   notifications: [],
   notificationsHasMore: false,
   notificationsLoadingMore: false,
@@ -2026,7 +2083,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     const { data: cfg } = await supabase
       .from("app_config")
       .select(
-        "maintenance, message, replay_bonus_pct, completion_bonus_pct, co_op_bonus_pct, clear_streak_threshold, clear_streak_bonus_base, clear_streak_bonus_step, clear_streak_bonus_cap, submission_reward, onboarding_vouchers, default_general_slots, default_rotation_slots, default_replay_slots, default_completionist_slots, rotation_checkin_reward, rotation_reset_dow, rotation_reset_hour, rotation_reset_tz, default_coin, price_formula, bounty_formula, sponsor_max_stake, sponsor_monthly_pair_cap, sponsor_expiry_days, preorder_strip_days, shop_open, loan_interest_pct, rec_discount_pct, rec_bounty_pct, rec_bounty_cap, story_order_bonus, collectors_record_bonus, review_bonus, review_bonus_min_chars, session_bonus, session_bonus_min_minutes",
+        "maintenance, message, replay_bonus_pct, completion_bonus_pct, co_op_bonus_pct, clear_streak_threshold, clear_streak_bonus_base, clear_streak_bonus_step, clear_streak_bonus_cap, submission_reward, onboarding_vouchers, default_general_slots, default_rotation_slots, default_replay_slots, default_completionist_slots, rotation_checkin_reward, rotation_reset_dow, rotation_reset_hour, rotation_reset_tz, default_coin, price_formula, bounty_formula, sponsor_max_stake, sponsor_monthly_pair_cap, sponsor_expiry_days, preorder_strip_days, shop_open, loan_interest_pct, rec_discount_pct, rec_bounty_pct, rec_bounty_cap, story_order_bonus, collectors_record_bonus, review_bonus, review_bonus_min_chars, session_bonus, session_bonus_min_minutes, bounty_gate_pct",
       )
       .eq("id", 1)
       .single();
@@ -2098,6 +2155,8 @@ export const useStore = create<BazaarState>((set, get) => ({
         typeof cfg?.preorder_strip_days === "number"
           ? cfg.preorder_strip_days
           : DEFAULT_PREORDER_STRIP_DAYS,
+      bountyGatePct:
+        typeof cfg?.bounty_gate_pct === "number" ? cfg.bounty_gate_pct : DEFAULT_BOUNTY_GATE_PCT,
       submissionReward:
         typeof cfg?.submission_reward === "number" ? cfg.submission_reward : 15,
       onboardingVouchers:
@@ -3901,6 +3960,64 @@ export const useStore = create<BazaarState>((set, get) => ({
     }
     set({ recBountyCap: next });
     toast(`Tastemaker Bounty cap set to ${next} coins`, HandCoins);
+  },
+
+  setBountyGatePct: async (pct) => {
+    const next = Math.max(0, Math.min(100, Math.round(pct)));
+    const { cloud, can } = get();
+    const done = () =>
+      toast(
+        next === 0
+          ? "Bounties pay in full at finish"
+          : `Full bounties need ${next}% of a game's length logged`,
+        Clock,
+      );
+    if (!cloud) {
+      set({ bountyGatePct: next });
+      done();
+      return;
+    }
+    if (!supabase || !can("economy.edit")) return;
+    const { error } = await supabase.from("app_config").update({ bounty_gate_pct: next }).eq("id", 1);
+    if (error) {
+      set({ error: error.message });
+      return;
+    }
+    set({ bountyGatePct: next });
+    done();
+  },
+
+  refreshHeldBounty: async (id) => {
+    const { userId } = get();
+    const before = get().games.find((g) => g.id === id);
+    if (!supabase || !userId || !before?.bountyHeld) return;
+    const [{ data: row }, { data: prof }] = await Promise.all([
+      supabase
+        .from("games")
+        .select("bounty_held, bounty_held_total, bounty_gate_hours")
+        .eq("id", id)
+        .maybeSingle(),
+      supabase.from("profiles").select("coins").eq("id", userId).maybeSingle(),
+    ]);
+    if (!row) return;
+    const r = row as { bounty_held: number | null; bounty_held_total: number | null; bounty_gate_hours: number | null };
+    const held = r.bounty_held ?? 0;
+    const coins = (prof as { coins?: number } | null)?.coins;
+    set({
+      ...(typeof coins === "number" ? { coins } : {}),
+      games: get().games.map((g) =>
+        g.id === id
+          ? {
+              ...g,
+              bountyHeld: held,
+              bountyHeldTotal: r.bounty_held_total ?? undefined,
+              bountyGateHours: r.bounty_gate_hours ?? undefined,
+            }
+          : g,
+      ),
+    });
+    const released = (before.bountyHeld ?? 0) - held;
+    if (released > 0) toast(`+${released} bounty unlocked for ${before.title}`, Coins);
   },
 
   setPreorderStripDays: async (days) => {
@@ -6605,9 +6722,12 @@ export const useStore = create<BazaarState>((set, get) => ({
     const played = Math.max(0, Math.round(hours * 60) / 60); // clamp ≥0, snap to the minute
 
     if (!cloud) {
-      const next = games.map((g) => (g.id === id ? { ...g, playedHours: played } : g));
+      const released = withLocalRelease(game, played);
+      const next = get().games.map((g) =>
+        g.id === id ? { ...g, playedHours: played, ...released.fields } : g,
+      );
       set({ games: next });
-      saveLocal(coins, next);
+      saveLocal(get().coins, next, released.ledger);
       toast(`Playtime set to ${played}h`, Clock);
       return;
     }
@@ -6618,8 +6738,9 @@ export const useStore = create<BazaarState>((set, get) => ({
       set({ error: error.message });
       return;
     }
-    set({ games: games.map((g) => (g.id === id ? { ...g, playedHours: played } : g)) });
+    set({ games: get().games.map((g) => (g.id === id ? { ...g, playedHours: played } : g)) });
     toast(`Playtime set to ${played}h`, Clock);
+    await get().refreshHeldBounty(id);
   },
 
   // The caller's own logged play sessions for one game (newest first), read from
@@ -6863,6 +6984,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     if (Number.isFinite(total)) {
       set({ games: get().games.map((g) => (g.id === id ? { ...g, playedHours: total } : g)) });
     }
+    await get().refreshHeldBounty(id);
   },
 
   // Replace a game's list of copies (the platforms you own it on + what each
@@ -7732,7 +7854,14 @@ export const useStore = create<BazaarState>((set, get) => ({
     set({ games: next });
 
     if (!cloud) {
-      saveLocal(coins, next);
+      if (editsPlayed) {
+        const released = withLocalRelease(game, playedHours);
+        const withRelease = get().games.map((g) => (g.id === id ? { ...g, ...released.fields } : g));
+        set({ games: withRelease });
+        saveLocal(get().coins, withRelease, released.ledger);
+      } else {
+        saveLocal(coins, next);
+      }
       toast(`Saved ${title}`, Pencil);
       return;
     }
@@ -8856,6 +8985,21 @@ export const useStore = create<BazaarState>((set, get) => ({
     // net never goes below 0. The server does the same in apply_finish.
     const bountyOffset = economyOn && !freeStart ? finishBountyOffset(game.lengthPremiumOwed, reward) : 0;
     const netReward = reward - bountyOffset;
+    // The logged-time gate (coin outliers, 2026-10-17): with too little of the
+    // game logged, part of the bounty waits for logged time. The offline mirror
+    // of apply_finish; the cloud path reads the server's amount.
+    const gateHours = bountyGateHours(effectiveLength(game), get().bountyGatePct);
+    const localHeld =
+      economyOn && !freeStart
+        ? heldAtFinish({ net: netReward, pricePaid: game.pricePaid, played: game.playedHours ?? 0, gateHours })
+        : 0;
+    const heldFields = (held: number, total: number): Partial<Game> =>
+      held > 0
+        ? { bountyHeld: held, bountyHeldTotal: total, bountyGateHours: gateHours ?? undefined }
+        : { bountyHeld: 0, bountyHeldTotal: undefined, bountyGateHours: undefined };
+    const heldToast = (held: number) => {
+      if (held > 0) toast(`${held} more coins unlock as you log your time on ${game.title}`, Clock);
+    };
     // Feature bonuses (Story Order / Collector's Record) on a paying first clear —
     // the offline mirror of apply_finish; the cloud path reads the server's amounts.
     const localBonuses = finishBonuses(
@@ -8915,11 +9059,11 @@ export const useStore = create<BazaarState>((set, get) => ({
       // reclaimed and the run's owed clears to 0 (consumed by the finish).
       const next = games.map((g) =>
         g.id === id
-          ? { ...g, status: "finished" as const, finishedAt: Date.now(), reward: netReward, lengthPremiumOwed: 0, slotId: null, resumed: false, inRotation: false, completionist: false, coOp: false, finishTag }
+          ? { ...g, status: "finished" as const, finishedAt: Date.now(), reward: netReward, lengthPremiumOwed: 0, slotId: null, resumed: false, inRotation: false, completionist: false, coOp: false, finishTag, ...heldFields(localHeld, netReward) }
           : g,
       );
       const afterBounty = coins + reward;
-      const nc = afterBounty - bountyOffset;
+      const nc = afterBounty - bountyOffset - localHeld;
       let led = get().ledger;
       // Bounty/completion row at its true GROSS, then the deferred-fee reclaim as
       // its own row — so the ledger nets to what actually hit the balance.
@@ -8930,7 +9074,10 @@ export const useStore = create<BazaarState>((set, get) => ({
         ];
       }
       if (bountyOffset > 0) {
-        led = [localEvent("length_debt", -bountyOffset, nc, game.title), ...led];
+        led = [localEvent("length_debt", -bountyOffset, afterBounty - bountyOffset, game.title), ...led];
+      }
+      if (localHeld > 0) {
+        led = [localEvent("bounty_held", -localHeld, nc, game.title), ...led];
       }
       // Clear Streak (offline mirror of apply_finish): a genuinely new clear extends
       // the streak; a resumed re-finish of an already-finished game does not, and
@@ -8974,7 +9121,8 @@ export const useStore = create<BazaarState>((set, get) => ({
       });
       saveLocal(coinsFinal, next, led);
       saveLocalStreak(nextStreak, nextBest);
-      finishToast(netReward, netReward + streakBonus + finishBonusTotal(localBonuses), null);
+      finishToast(netReward - localHeld, netReward - localHeld + streakBonus + finishBonusTotal(localBonuses), null);
+      heldToast(localHeld);
       if (!inertFinish) streakToast({ streak: nextStreak, bonus: streakBonus, newRecord });
       bonusToast(localBonuses);
       return;
@@ -9004,6 +9152,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       new_record: newRecord,
       story_bonus: storyBonus,
       collector_bonus: collectorBonus,
+      held: heldRaw,
     } = data as {
       coins: number;
       reward: number;
@@ -9014,7 +9163,9 @@ export const useStore = create<BazaarState>((set, get) => ({
       new_record: boolean;
       story_bonus: number | null;
       collector_bonus: number | null;
+      held: number | null;
     };
+    const held = heldRaw ?? 0;
     const paidBonuses = { storyOrder: storyBonus ?? 0, collectorsRecord: collectorBonus ?? 0 };
     // The server is authoritative for the Clear Streak: it decides whether this
     // finish extended it (a resumed re-finish doesn't, nor does a stealth game —
@@ -9030,11 +9181,12 @@ export const useStore = create<BazaarState>((set, get) => ({
       lastFinishStreak: inertFinish ? get().lastFinishStreak : streakInfo,
       games: games.map((g) =>
         g.id === id
-          ? { ...g, status: "finished", finishedAt: Date.now(), reward: awarded, lengthPremiumOwed: 0, slotId: null, resumed: false, inRotation: false, completionist: false, coOp: false, finishTag }
+          ? { ...g, status: "finished", finishedAt: Date.now(), reward: awarded, lengthPremiumOwed: 0, slotId: null, resumed: false, inRotation: false, completionist: false, coOp: false, finishTag, ...heldFields(held, awarded) }
           : g,
       ),
     });
-    finishToast(awarded, awarded + (streakBonus ?? 0) + finishBonusTotal(paidBonuses), undoId);
+    finishToast(awarded - held, awarded - held + (streakBonus ?? 0) + finishBonusTotal(paidBonuses), undoId);
+    heldToast(held);
     if (!inertFinish) streakToast(streakInfo);
     bonusToast(paidBonuses);
     // Finishing moves several metrics at once (clears, completions, coins).

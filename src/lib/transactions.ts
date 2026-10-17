@@ -22,6 +22,8 @@ export const LEDGER_LABELS: Record<string, string> = {
   length_topup: "Length Change — Activation Top-up",
   length_refund: "Length Change — Refund",
   length_debt: "Deferred Activation Fee",
+  bounty_held: "Bounty Waiting on Logged Time",
+  bounty_release: "Bounty Unlocked by Logged Time",
   shelve_refund: "Shelve Refund",
   salvage_refund: "Dropped Game Salvage",
   expand_refund: "Bundle Expansion Refund",
