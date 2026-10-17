@@ -117,7 +117,7 @@ export const RELEASES: Release[] = [
         tag: "feature",
       },
       {
-        text: "Seasonal challenges: time-limited goals for coins, and sometimes a badge. You'll find them on the Challenges page when one is running.",
+        text: "Seasonal challenges: time-limited goals for coins, and sometimes a badge. You'll get a notification when one starts, and find it on the Challenges page.",
         tag: "feature",
       },
       {

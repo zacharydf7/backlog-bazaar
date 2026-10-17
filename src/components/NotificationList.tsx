@@ -57,6 +57,7 @@ const TYPE_ICON: Record<string, LucideIcon> = {
   loan_repaid: PiggyBank,
   cosmetic_granted: Sparkles,
   challenges_reset: Target,
+  seasonal_challenge: Target,
   weekly_recap: CalendarRange,
 };
 

@@ -147,6 +147,7 @@ beforeAll(async () => {
   }
   for (const name of [
     "challenge_month_notice",
+    "seasonal_event_notices",
     "pick_monthly_goal",
     "evaluate_challenges",
     "list_challenges",
@@ -423,6 +424,32 @@ describe("when goals start counting (owner, 2026-10-17)", () => {
     expect(await start("weekly", "2026-10-12", "2026-10-17T12:00:00Z")).toBe("2026-10-12T00:00:00.000Z");
     expect(await start("weekly", "2026-10-19", since)).toBe(since);
     expect(await start("daily", "2026-10-17", since)).toBe(since);
+  });
+});
+
+describe("seasonal event notices", () => {
+  it("announces each running event once, skipping ended and completed ones", async () => {
+    await db.exec(`insert into public.seasonal_challenges (id, name, description, metric, target, starts_at, ends_at, reward, badge_id) values
+      ('00000000-0000-4000-8000-0000000000c5', 'Autumn Push', 'Log time this fall.', 'hours_logged', 50,
+        now() - interval '1 day', '2026-12-01T12:00:00Z', 40, '${BADGE}'),
+      ('00000000-0000-4000-8000-0000000000c6', 'Summer Sweep', '', 'hours_logged', 1,
+        now() - interval '60 days', now() - interval '30 days', 10, null),
+      ('00000000-0000-4000-8000-0000000000c7', 'Done Already', '', 'hours_logged', 1,
+        now() - interval '1 day', now() + interval '5 days', 10, null)`);
+    await db.exec(`insert into public.user_seasonal_challenges (user_id, challenge_id, challenge_name, reward)
+      values ('${ME}', '00000000-0000-4000-8000-0000000000c7', 'Done Already', 10)`);
+    await evaluate();
+    await evaluate();
+    const notes = await db.query<{ title: string; body: string; link: string }>(
+      "select title, body, link from public.notifications where type = 'seasonal_challenge'",
+    );
+    expect(notes.rows).toEqual([
+      {
+        title: "New seasonal challenge: Autumn Push",
+        body: "Log time this fall. Worth 40 coins and the Autumn Champion badge. Ends December 1.",
+        link: "seasonal:00000000-0000-4000-8000-0000000000c5",
+      },
+    ]);
   });
 });
 

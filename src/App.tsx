@@ -346,8 +346,8 @@ export default function App() {
       setOpenCompilationId(null);
       setOpenListId(null);
       setView("cosmetics");
-    } else if (link === "challenges") {
-      // The monthly "your challenges are ready" notice.
+    } else if (link === "challenges" || link.startsWith("seasonal:")) {
+      // The monthly "your challenges are ready" notice, and a seasonal event's.
       closeUserBazaar();
       setAlertsOpen(false);
       setOpenGameId(null);

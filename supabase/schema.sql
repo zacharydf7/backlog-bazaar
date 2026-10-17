@@ -19755,12 +19755,54 @@ end;
 $$;
 revoke execute on function public.challenge_month_notice(uuid) from public, anon, authenticated;
 
+-- A bell notification for each seasonal event that's running, sent once per
+-- player per event the first time they're in the app while it runs (lazy,
+-- like the monthly notice; there's no scheduler). Skips events the player has
+-- already completed. Names the coins (unless their economy is off), any badge,
+-- and the end date. Internal: called by evaluate_challenges.
+create or replace function public.seasonal_event_notices(p_user uuid)
+returns void
+language plpgsql security definer set search_path = public
+as $$
+declare
+  v_economy boolean := public.economy_enabled(p_user);
+  v_tz      text;
+  e         record;
+begin
+  select coalesce(nullif(btrim(c.rotation_reset_tz), ''), 'UTC') into v_tz
+    from public.app_config c where c.id = 1;
+  for e in
+    select c.id, c.name, c.description, c.reward, c.ends_at, b.name as badge
+      from public.seasonal_challenges c
+      left join public.badges b on b.id = c.badge_id
+     where c.archived_at is null and c.starts_at <= now() and c.ends_at > now()
+       and not exists (select 1 from public.user_seasonal_challenges u
+                        where u.user_id = p_user and u.challenge_id = c.id)
+       and not exists (select 1 from public.notifications n
+                        where n.user_id = p_user and n.link = 'seasonal:' || c.id)
+  loop
+    insert into public.notifications (user_id, type, title, body, link)
+    values (p_user, 'seasonal_challenge', 'New seasonal challenge: ' || e.name,
+            concat_ws(' ',
+              nullif(btrim(e.description), ''),
+              case when e.reward > 0 and v_economy then
+                'Worth ' || e.reward || ' coins' ||
+                case when e.badge is not null then ' and the ' || e.badge || ' badge' else '' end || '.'
+              when e.badge is not null then 'Earns the ' || e.badge || ' badge.' end,
+              'Ends ' || to_char(e.ends_at at time zone v_tz, 'FMMonth FMDD') || '.'),
+            'seasonal:' || e.id);
+  end loop;
+end;
+$$;
+revoke execute on function public.seasonal_event_notices(uuid) from public, anon, authenticated;
+
 -- Record the caller's newly completed goals (this month and last, so a goal
 -- finished on the last evening still lands), the all-three bonus, and seasonal
 -- events (live ones, plus any that ended in the last 35 days), granting an
 -- event's badge on completion. Returns the new completions for the toast.
 -- Also sends the month's "challenges are ready" notice the first time it runs
--- in a new month. Idempotent; safe to call at any frequency.
+-- in a new month, and a notice for each seasonal event running. Idempotent;
+-- safe to call at any frequency.
 create or replace function public.evaluate_challenges()
 returns table (kind text, name text, reward integer)
 language plpgsql security definer set search_path = public
@@ -19774,6 +19816,7 @@ declare
 begin
   if v_me is null then raise exception 'Not authenticated'; end if;
   perform public.challenge_month_notice(v_me);
+  perform public.seasonal_event_notices(v_me);
   perform public.deal_quick_goals(v_me);
 
   -- Daily and weekly goals: today and yesterday, this week and last (so a
