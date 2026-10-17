@@ -13469,7 +13469,9 @@ declare
     'preorder_strip_days', 'shop_open', 'loan_interest_pct',
     'rec_discount_pct', 'rec_bounty_pct', 'rec_bounty_cap',
     'story_order_bonus', 'collectors_record_bonus', 'review_bonus',
-    'review_bonus_min_chars', 'session_bonus', 'session_bonus_min_minutes'
+    'review_bonus_min_chars', 'session_bonus', 'session_bonus_min_minutes',
+    'session_bonus_daily_cap', 'bounty_gate_pct', 'challenge_goal_reward', 'challenge_set_bonus',
+    'challenge_daily_reward', 'challenge_weekly_reward', 'challenge_weekly_sweep'
   ];
 begin
   foreach v_key in array v_cols loop
@@ -18522,15 +18524,14 @@ create index if not exists user_achievements_achievement_idx
 alter table public.achievements      enable row level security;
 alter table public.user_achievements enable row level security;
 
--- Public prestige, like badges: catalog and earns are readable by anyone signed
--- in; deliberately NO write policies (the evaluator is the only writer).
-drop policy if exists "achievements_select" on public.achievements;
-create policy "achievements_select" on public.achievements
-  for select to authenticated using (true);
-
+-- Read access: the catalog minus hidden medals you haven't earned, and your
+-- own earns. Everything the app shows (other players' trophy cases, holder
+-- counts, rarity) comes through the definer RPCs, which apply the profile-
+-- privacy gate and mask unearned hidden medals. Deliberately NO write
+-- policies (the evaluator is the only writer).
 drop policy if exists "user_achievements_select" on public.user_achievements;
 create policy "user_achievements_select" on public.user_achievements
-  for select to authenticated using (true);
+  for select to authenticated using (auth.uid() = user_id);
 
 -- Launch catalog: 8 families × 3 tiers. Thresholds are on cumulative metrics,
 -- so nothing is ever revoked when a metric later dips (a deleted game, an
@@ -18588,6 +18589,12 @@ on conflict (slug) do nothing;
 -- hidden one). `reward` is also each medal's achievement-score points; a
 -- hidden medal's name stays secret until earned (list_achievements masks it).
 alter table public.achievements add column if not exists hidden boolean not null default false;
+drop policy if exists "achievements_select" on public.achievements;
+create policy "achievements_select" on public.achievements
+  for select to authenticated using (
+    not hidden
+    or exists (select 1 from public.user_achievements ua
+                where ua.achievement_id = achievements.id and ua.user_id = auth.uid()));
 alter table public.achievements add column if not exists reward integer not null default 0;
 alter table public.achievements drop constraint if exists achievements_reward_check;
 alter table public.achievements add constraint achievements_reward_check check (reward between 0 and 10000);
@@ -18596,10 +18603,11 @@ alter table public.achievements add constraint achievements_reward_check check (
 -- earned before rewards existed is claimable too.
 alter table public.user_achievements add column if not exists reward_paid_at timestamptz;
 
--- Tier rewards on the existing medals (only rows still at the 0 default, so a
--- reward tuned later is never overwritten).
+-- Tier rewards on the existing medals, once: only while no medal has a reward
+-- yet, so a reward tuned later (even to 0) is never overwritten.
 update public.achievements set reward = case tier when 1 then 10 when 2 then 25 else 50 end
- where reward = 0 and not hidden;
+ where reward = 0 and not hidden
+   and not exists (select 1 from public.achievements a2 where a2.reward > 0);
 
 insert into public.achievements (slug, family, tier, name, description, icon, metric, threshold, sort, reward) values
   ('first-verified',      'verified',        1, 'Honest Ink',          'Earn a Verified clear',                              'badge-check', 'verified_clears',      1,   11, 10),
@@ -19117,11 +19125,19 @@ as $$
   ]::text[];
 $$;
 
--- One player's progress on one metric inside [p_from, p_to). Clears are games
--- finished through the finish flow in the window (apply_finish's action_undos
--- row, not undone) and still beaten/completed: returning an abandoned replay
--- or 100% run to Finished, or logging a past beat, isn't a clear. Play counts
--- live entries only (is_live_play).
+-- One player's progress on one metric inside [p_from, p_to).
+--   Clears: finishes through the finish flow in the window (apply_finish's
+--     action_undos row, not undone, and past its 30-second undo window), one
+--     per game: returning an abandoned replay or 100% run to Finished, or
+--     logging a past beat, isn't a clear, and a later replay doesn't erase one.
+--   Play: live entries only (is_live_play); hours never go below zero (a
+--     correction to catch-up time can't hide real play).
+--   Games: counted by catalog identity, so two platform copies of one game
+--     are one game.
+--   Reviews: games whose first written review falls in the window (editing an
+--     old review or its score doesn't count).
+--   backlog_clears uses the game's Added date, which players may backdate to
+--   when they really bought it (a supported feature, like entering hours).
 create or replace function public.challenge_metric(
   p_user uuid, p_metric text, p_from timestamptz, p_to timestamptz
 )
@@ -19136,17 +19152,27 @@ as $$
       from public.app_config c where c.id = 1
   ),
   clears as (
-    select g.id, g.added_at, min(u.created_at) as finished,
-           coalesce(g.played_hours, 0) as played,
-           coalesce(g.personal_hours, g.hours, 0) as len
+    select coalesce(public.game_identity_key(g.rawg_id, g.igdb_id, g.catalog_id), 'g:' || g.id::text) as key,
+           min(g.added_at) as added_at, min(u.created_at) as finished,
+           max(coalesce(g.played_hours, 0)) as played,
+           max(coalesce(g.personal_hours, g.hours, 0)) as len
       from public.action_undos u
       join public.games g on g.id = u.game_id
      where p_metric in ('games_finished', 'verified_clears', 'backlog_clears')
        and u.user_id = p_user and u.action = 'finish' and u.undone_at is null
        and u.created_at >= p_from and u.created_at < p_to
-       and g.user_id = p_user and g.status = 'finished'
-       and g.finish_tag in ('beaten', 'completed')
-     group by g.id
+       and u.created_at <= now() - interval '30 seconds'
+       and g.user_id = p_user
+     group by 1
+  ),
+  plays as (
+    select coalesce(public.game_identity_key(g.rawg_id, g.igdb_id, g.catalog_id), 'g:' || g.id::text) as key,
+           e.created_at
+      from public.playtime_events e
+      join public.games g on g.id = e.game_id
+     where p_metric in ('games_played', 'revisits')
+       and e.user_id = p_user and e.hours > 0 and public.is_live_play(e.source, e.hours)
+       and e.created_at >= p_from - interval '30 days' and e.created_at < p_to
   )
   select (case p_metric
     when 'games_finished' then (select count(*) from clears)
@@ -19155,7 +19181,7 @@ as $$
     when 'backlog_clears' then
       (select count(*) from clears c where c.finished - c.added_at >= interval '365 days')
     when 'hours_logged' then
-      (select coalesce(sum(e.hours), 0) from public.playtime_events e
+      (select greatest(coalesce(sum(e.hours), 0), 0) from public.playtime_events e
         where e.user_id = p_user and public.is_live_play(e.source, e.hours)
           and e.created_at >= p_from and e.created_at < p_to)
     when 'play_days' then
@@ -19167,27 +19193,23 @@ as $$
       (select count(*) from public.play_sessions s
         where s.user_id = p_user and s.status = 'logged' and s.ended_at >= p_from and s.ended_at < p_to)
     when 'reviews_written' then
-      (select count(distinct r.game_id) from public.review_events r
-        where r.user_id = p_user and r.review is not null and r.created_at >= p_from and r.created_at < p_to)
+      (select count(*) from (
+         select r.game_id, min(r.created_at) as first_written
+           from public.review_events r
+          where r.user_id = p_user and r.game_id is not null and coalesce(btrim(r.review), '') <> ''
+          group by r.game_id) f
+        where f.first_written >= p_from and f.first_written < p_to)
     when 'rotation_checkins' then
       (select count(*) from public.rotation_checkins r
         where r.user_id = p_user and r.created_at >= p_from and r.created_at < p_to)
     -- Different games with play logged.
     when 'games_played' then
-      (select count(distinct e.game_id) from public.playtime_events e
-        where e.user_id = p_user and e.game_id is not null and e.hours > 0
-          and public.is_live_play(e.source, e.hours)
-          and e.created_at >= p_from and e.created_at < p_to)
+      (select count(distinct p.key) from plays p where p.created_at >= p_from)
     -- Games played that had no play logged in the 30 days before the window.
     when 'revisits' then
-      (select count(distinct e.game_id) from public.playtime_events e
-        where e.user_id = p_user and e.game_id is not null and e.hours > 0
-          and public.is_live_play(e.source, e.hours)
-          and e.created_at >= p_from and e.created_at < p_to
-          and not exists (select 1 from public.playtime_events b
-                           where b.game_id = e.game_id and b.user_id = p_user and b.hours > 0
-                             and public.is_live_play(b.source, b.hours)
-                             and b.created_at >= p_from - interval '30 days' and b.created_at < p_from))
+      (select count(distinct p.key) from plays p
+        where p.created_at >= p_from
+          and not exists (select 1 from plays b where b.key = p.key and b.created_at < p_from))
     else 0
   end)::numeric;
 $$;
@@ -19544,6 +19566,12 @@ begin
     select w.week_start into v_now from public.recap_week(now()) w;
   end if;
   if v_row.period <> v_now then raise exception 'That goal has ended'; end if;
+  if public.challenge_metric(v_me, v_row.metric, v_row.dealt_at,
+       (v_row.period + case when v_row.cadence = 'daily' then 1 else 7 end)::timestamp
+         at time zone coalesce((select nullif(btrim(c.rotation_reset_tz), '') from public.app_config c where c.id = 1), 'UTC'))
+     >= v_row.target then
+    raise exception 'That goal is already done. Refresh to claim it';
+  end if;
   if exists (select 1 from public.user_quick_goals
               where user_id = v_me and cadence = v_row.cadence and period = v_row.period
                 and swapped_at is not null) then
@@ -19671,11 +19699,13 @@ begin
   for v_m in
     select 'daily'::text as cadence, d.day as period, d.ends from public.challenge_day(now()) d
     union all
-    select 'daily', d.day, d.ends from public.challenge_day(now() - interval '1 day') d
+    select 'daily', d.day, d.ends
+      from public.challenge_day((select starts from public.challenge_day(now())) - interval '1 second') d
     union all
     select 'weekly', w.week_start, w.ends from public.recap_week(now()) w
     union all
-    select 'weekly', w.week_start, w.ends from public.recap_week(now() - interval '7 days') w
+    select 'weekly', w.week_start, w.ends
+      from public.recap_week((select starts from public.recap_week(now())) - interval '1 second') w
   loop
     return query
     with done as (
@@ -19865,7 +19895,8 @@ begin
         left join public.user_seasonal_challenges u on u.challenge_id = c.id and u.user_id = v_me
        where c.archived_at is null
          and c.starts_at <= now() + interval '14 days'
-         and (c.ends_at > now() - interval '35 days' or (u.id is not null and u.reward_paid_at is null))),
+         and (c.ends_at > now() - interval '35 days'
+              or (u.id is not null and u.reward_paid_at is null and u.reward > 0))),
       '[]'::jsonb)
   );
 end;
@@ -19886,12 +19917,38 @@ declare
   v_paid  integer := 0;
   v_n     integer := 0;
   r       record;
+  v_tz    text;
 begin
   if v_me is null then raise exception 'Not authenticated'; end if;
   select pr.coins into v_coins from public.profiles pr where pr.id = v_me for update;
   if not public.economy_enabled(v_me) then
     raise exception 'Challenge rewards are paused while your coin economy is off';
   end if;
+  -- A goal whose progress has since been taken back (time added then
+  -- removed, a finish undone) is no longer complete: it reopens instead of
+  -- paying, and a sweep or set bonus that rested on it goes with it.
+  select coalesce(nullif(btrim(c.rotation_reset_tz), ''), 'UTC') into v_tz
+    from public.app_config c where c.id = 1;
+  update public.user_monthly_goals u
+     set completed_at = null, value = null
+   where u.user_id = v_me and u.completed_at is not null and u.reward_paid_at is null
+     and public.challenge_metric(v_me, u.metric, u.month::timestamp at time zone v_tz,
+           (u.month + interval '1 month')::timestamp at time zone v_tz) < u.target;
+  delete from public.monthly_goal_bonuses b
+   where b.user_id = v_me and b.reward_paid_at is null
+     and (select count(*) from public.user_monthly_goals u
+           where u.user_id = v_me and u.month = b.month and u.completed_at is not null) < 3;
+  update public.user_quick_goals q
+     set completed_at = null, value = null
+   where q.user_id = v_me and q.completed_at is not null and q.reward_paid_at is null
+     and public.challenge_metric(v_me, q.metric, q.dealt_at,
+           (q.period + case when q.cadence = 'daily' then 1 else 7 end)::timestamp at time zone v_tz) < q.target;
+  delete from public.weekly_sweep_bonuses b
+   where b.user_id = v_me and b.reward_paid_at is null
+     and (select count(*) from public.user_quick_goals q
+           where q.user_id = v_me and q.cadence = 'weekly' and q.period = b.period
+             and q.swapped_at is null and q.completed_at is not null) < 3;
+
   for r in
     select 'monthly_goal' as kind, u.id, u.goal_name as label, u.reward, u.completed_at,
            jsonb_build_object('goal', u.goal_key, 'month', u.month) as detail
@@ -19958,6 +20015,16 @@ declare
   v_new public.seasonal_challenges%rowtype;
 begin
   if not public.has_permission('challenges.manage') then raise exception 'Not authorized'; end if;
+  -- A badge prize is a badge grant: it needs badges.grant too, and only a
+  -- granted-kind badge (never a shop title or competitive badge).
+  if p_badge is not null then
+    if not public.has_permission('badges.grant') then
+      raise exception 'Awarding a badge needs the badge-granting permission';
+    end if;
+    if not exists (select 1 from public.badges b where b.id = p_badge and b.kind = 'granted') then
+      raise exception 'Only granted badges can be a challenge prize';
+    end if;
+  end if;
   if p_id is null then
     insert into public.seasonal_challenges
       (name, description, metric, target, starts_at, ends_at, reward, badge_id, created_by)
@@ -20043,9 +20110,9 @@ grant execute on function public.admin_list_seasonal_challenges() to authenticat
 -- the recap for the week just ended is built lazily by weekly_recap() at
 -- sign-in and stored once (append-only history; seen_at is the only thing
 -- that changes). A week with no logged play and no library moves is quiet:
--- no recap and no notification. The figures come from the event logs, so
--- they're the same whenever the recap is built; "close to" achievements use
--- the progress at build time.
+-- no recap and no notification. Play, coins and clears come from the event
+-- logs, so they're the same whenever the recap is built; Verified, the streak
+-- and "close to" medals use the game and profile as they stand at build time.
 -- ---------------------------------------------------------------------------
 create table if not exists public.weekly_recaps (
   id         uuid primary key default gen_random_uuid(),
@@ -20099,14 +20166,18 @@ begin
     into v_tz, v_gate
     from public.app_config c where c.id = 1;
 
-  select coalesce(sum(e.hours), 0) into v_hours
+  select greatest(coalesce(sum(e.hours), 0), 0) into v_hours
     from public.playtime_events e
    where e.user_id = p_user and public.is_live_play(e.source, e.hours)
      and e.created_at >= p_from and e.created_at < p_to;
   select count(*) into v_moves
     from public.game_status_events e
    where e.user_id = p_user and e.created_at >= p_from and e.created_at < p_to;
-  if v_hours <= 0 and v_moves = 0 then
+  -- Quiet = no live play logged and no library moves.
+  if v_moves = 0 and not exists (
+       select 1 from public.playtime_events e
+        where e.user_id = p_user and e.hours > 0 and public.is_live_play(e.source, e.hours)
+          and e.created_at >= p_from and e.created_at < p_to) then
     return null;
   end if;
 
@@ -20137,8 +20208,9 @@ begin
         select g.id, g.title,
                coalesce(g.personal_hours, g.hours, 0) as len, coalesce(g.played_hours, 0) as played
           from public.games g
-         where g.user_id = p_user and g.status = 'finished' and g.finish_tag in ('beaten', 'completed')
-           -- A clear is a finish through the finish flow (see challenge_metric).
+         where g.user_id = p_user
+           -- A clear is a finish through the finish flow (see challenge_metric),
+           -- whatever the game has done since (a replay doesn't erase it).
            and exists (select 1 from public.action_undos u
                         where u.game_id = g.id and u.user_id = p_user and u.action = 'finish'
                           and u.undone_at is null

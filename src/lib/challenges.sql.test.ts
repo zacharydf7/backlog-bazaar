@@ -30,6 +30,7 @@ function fn(name: string): string {
 const ME = "00000000-0000-4000-8000-0000000000a1";
 const OTHER = "00000000-0000-4000-8000-0000000000a2";
 const BADGE = "00000000-0000-4000-8000-0000000000b1";
+const SHOP_TITLE = "00000000-0000-4000-8000-0000000000b2";
 
 let db: PGlite;
 
@@ -40,7 +41,9 @@ beforeAll(async () => {
     create function auth.uid() returns uuid language sql
       as $$ select nullif(current_setting('test.uid', true), '')::uuid $$;
     create function public.has_permission(p text) returns boolean language sql
-      as $$ select coalesce(current_setting('test.manager', true), '') = 'yes' $$;
+      as $$ select case when p = 'badges.grant'
+                        then coalesce(current_setting('test.badges', true), '') = 'yes'
+                        else coalesce(current_setting('test.manager', true), '') = 'yes' end $$;
     create table public.app_config (id integer primary key, rotation_reset_tz text, bounty_gate_pct integer,
       challenge_goal_reward integer, challenge_set_bonus integer, rotation_reset_dow integer,
       rotation_reset_hour integer, challenge_daily_reward integer, challenge_weekly_reward integer,
@@ -50,7 +53,9 @@ beforeAll(async () => {
       economy boolean not null default true);
     create table public.games (id uuid primary key, user_id uuid, status text, finish_tag text,
       added_at timestamptz, played_hours real, personal_hours real, hours real,
-      preordered_at timestamptz, in_rotation boolean not null default false, review text);
+      preordered_at timestamptz, in_rotation boolean not null default false, review text,
+      rawg_id integer, igdb_id integer, catalog_id uuid);
+    create table public.game_identity_links (igdb_id integer, rawg_id integer, status text);
     create table public.game_status_events (user_id uuid, game_id uuid, to_status text,
       created_at timestamptz not null default now());
     create table public.playtime_events (user_id uuid, game_id uuid, hours real, source text not null default 'live',
@@ -60,8 +65,9 @@ beforeAll(async () => {
     create table public.play_sessions (user_id uuid, status text, ended_at timestamptz);
     create table public.review_events (user_id uuid, game_id uuid, review text, created_at timestamptz not null default now());
     create table public.rotation_checkins (user_id uuid, game_id uuid, created_at timestamptz not null default now());
-    create table public.badges (id uuid primary key, name text, icon text);
-    insert into public.badges values ('${BADGE}', 'Autumn Champion', 'leaf');
+    create table public.badges (id uuid primary key, name text, icon text, kind text not null default 'granted');
+    insert into public.badges values ('${BADGE}', 'Autumn Champion', 'leaf', 'granted'),
+      ('${SHOP_TITLE}', 'Bought Title', 'star', 'shop');
     create table public.user_badges (user_id uuid, badge_id uuid, source text, revoked_at timestamptz,
       primary key (user_id, badge_id));
     create table public.coin_events (user_id uuid, kind text, coin_delta integer, coin_after integer, label text);
@@ -78,6 +84,7 @@ beforeAll(async () => {
         insert into public.coin_events values (p_user, p_kind, p_coin_delta, p_coin_after, p_label) $$;
   `);
   await db.exec(fn("is_live_play"));
+  await db.exec(fn("game_identity_key"));
   await db.exec(fn("challenge_metric_keys"));
   await db.exec(fn("challenge_metric"));
   await db.exec(fn("challenge_month"));
@@ -165,6 +172,7 @@ beforeEach(async () => {
     insert into public.profiles (id, coins) values ('${ME}', 100), ('${OTHER}', 0);
     select set_config('test.uid', '${ME}', false);
     select set_config('test.manager', '', false);
+    select set_config('test.badges', '', false);
   `);
 });
 
@@ -204,7 +212,7 @@ async function finishGame(daysAgo: number) {
       select '${ME}', g.id, 'finished', now() - interval '${daysAgo} days' from g
     )
     insert into public.action_undos (user_id, game_id, action, created_at)
-    select '${ME}', g.id, 'finish', now() - interval '${daysAgo} days' from g;
+    select '${ME}', g.id, 'finish', now() - interval '${daysAgo} days' - interval '1 minute' from g;
   `);
 }
 
@@ -300,12 +308,89 @@ describe("evaluate_challenges + claim_challenge_rewards", () => {
 });
 
 describe("logged play", () => {
+  it("never counts below zero, even after a correction to catch-up time", async () => {
+    await db.exec(`insert into public.playtime_events (user_id, hours, source) values
+      ('${ME}', 12, 'backfill'), ('${ME}', 1.5, 'live'), ('${ME}', -2, 'live')`);
+    const r = await db.query<{ v: number }>(
+      "select public.challenge_metric($1, 'hours_logged', now() - interval '1 day', now() + interval '1 day') as v",
+      [ME],
+    );
+    expect(Number(r.rows[0].v)).toBe(0);
+  });
+
   it("counts live play only: not catch-up, and never an entry over 24 hours", async () => {
     await db.exec(`insert into public.playtime_events (user_id, hours, source) values
       ('${ME}', 6, 'live'), ('${ME}', 300, 'backfill'), ('${ME}', 356, 'live'), ('${ME}', -40, 'live')`);
     await pick("log-twenty");
     const doc = (await db.query<{ d: { picks: { progress: number }[] } }>("select public.list_challenges() as d")).rows[0].d;
     expect(doc.picks[0].progress).toBe(6);
+  });
+});
+
+describe("review fixes (2026-10-17)", () => {
+  const metric = async (m: string) =>
+    Number(
+      (await db.query<{ v: number }>(
+        "select public.challenge_metric($1, $2, now() - interval '1 day', now() + interval '1 day') as v",
+        [ME, m],
+      )).rows[0].v,
+    );
+
+  it("waits out the undo window before counting a finish", async () => {
+    await db.exec(`
+      with g as (insert into public.games (id, user_id, status, finish_tag, added_at, played_hours, hours)
+                 values (gen_random_uuid(), '${ME}', 'finished', 'beaten', now(), 10, 10) returning id)
+      insert into public.action_undos (user_id, game_id, action) select '${ME}', g.id, 'finish' from g`);
+    expect(await metric("games_finished")).toBe(0);
+    await db.exec("update public.action_undos set created_at = now() - interval '1 minute'");
+    expect(await metric("games_finished")).toBe(1);
+  });
+
+  it("keeps a clear after the game goes back into play for a replay", async () => {
+    await finishGame(0);
+    await db.exec("update public.games set status = 'playing'");
+    expect(await metric("games_finished")).toBe(1);
+  });
+
+  it("counts two platform copies of one game as one game", async () => {
+    await db.exec(`
+      insert into public.games (id, user_id, status, rawg_id) values
+        ('00000000-0000-4000-8000-0000000000f1', '${ME}', 'playing', 42),
+        ('00000000-0000-4000-8000-0000000000f2', '${ME}', 'playing', 42),
+        ('00000000-0000-4000-8000-0000000000f3', '${ME}', 'playing', 7);
+      insert into public.playtime_events (user_id, game_id, hours) values
+        ('${ME}', '00000000-0000-4000-8000-0000000000f1', 1),
+        ('${ME}', '00000000-0000-4000-8000-0000000000f2', 1),
+        ('${ME}', '00000000-0000-4000-8000-0000000000f3', 1)`);
+    expect(await metric("games_played")).toBe(2);
+  });
+
+  it("counts a game's first written review, not edits to an old one", async () => {
+    const OLD = "00000000-0000-4000-8000-0000000000f4";
+    await db.exec(`insert into public.review_events (user_id, game_id, review, created_at) values
+      ('${ME}', '${OLD}', 'Loved it', now() - interval '90 days'),
+      ('${ME}', '${OLD}', 'Loved it', now())`); // a score-only edit re-logs the text
+    expect(await metric("reviews_written")).toBe(0);
+    await db.exec(`insert into public.review_events (user_id, game_id, review) values ('${ME}', gen_random_uuid(), 'New one')`);
+    expect(await metric("reviews_written")).toBe(1);
+  });
+
+  it("reopens a goal at claim time when its progress was taken back, instead of paying", async () => {
+    await pick("log-twenty");
+    await db.exec(`insert into public.playtime_events (user_id, hours) values ('${ME}', 20)`);
+    await evaluate();
+    await db.exec(`insert into public.playtime_events (user_id, hours) values ('${ME}', -20)`);
+    expect((await claim()).paid).toBe(0);
+    const goal = await db.query("select completed_at from public.user_monthly_goals");
+    expect(goal.rows).toEqual([{ completed_at: null }]);
+  });
+
+  it("refuses to swap away a goal that's already met", async () => {
+    await evaluate();
+    const [daily] = (await db.query<{ id: string }>(
+      "select id from public.user_quick_goals where user_id = $1 and cadence = 'daily' and swapped_at is null", [ME])).rows;
+    await db.exec(`insert into public.playtime_events (user_id, hours, created_at) values ('${ME}', 1, now() + interval '1 second')`);
+    await expect(db.query("select public.swap_quick_goal($1)", [daily.id])).rejects.toThrow(/already done/);
   });
 });
 
@@ -402,7 +487,19 @@ describe("daily & weekly goals", () => {
 
   it("pays the weekly sweep for all three, and every reward once", async () => {
     await evaluate();
-    await db.exec(`update public.user_quick_goals set completed_at = now() where user_id = '${ME}'`);
+    // Do the work after the goals were dealt: 6h across three games and a
+    // Verified finish (past its undo window).
+    await db.exec(`
+      update public.user_quick_goals set dealt_at = now() - interval '1 hour' where user_id = '${ME}';
+      insert into public.games (id, user_id, status, rawg_id) values
+        ('00000000-0000-4000-8000-0000000000a7', '${ME}', 'playing', 101),
+        ('00000000-0000-4000-8000-0000000000a8', '${ME}', 'playing', 102),
+        ('00000000-0000-4000-8000-0000000000a9', '${ME}', 'playing', 103);
+      insert into public.playtime_events (user_id, game_id, hours, created_at) values
+        ('${ME}', '00000000-0000-4000-8000-0000000000a7', 2, now() - interval '5 minutes'),
+        ('${ME}', '00000000-0000-4000-8000-0000000000a8', 2, now() - interval '5 minutes'),
+        ('${ME}', '00000000-0000-4000-8000-0000000000a9', 2, now() - interval '5 minutes');`);
+    await finishGame(0);
     const sweep = await evaluate();
     expect(sweep).toContainEqual({ kind: "sweep", name: "All three weekly goals", reward: 25 });
     expect(await claim()).toEqual({ paid: 10 + 3 * 25 + 25, claimed: 5, coins: 100 + 110 });
@@ -422,6 +519,16 @@ describe("admin seasonal challenges", () => {
 
   it("needs challenges.manage", async () => {
     await expect(save(null)).rejects.toThrow(/Not authorized/);
+  });
+
+  it("needs badge-granting rights, and a granted badge, to award a badge", async () => {
+    await db.exec("select set_config('test.manager', 'yes', false)");
+    const withBadge = (badge: string) =>
+      db.query("select public.admin_save_seasonal_challenge(null, 'X', '', 'games_finished', 1, now(), now() + interval '1 day', 0, $1)", [badge]);
+    await expect(withBadge(BADGE)).rejects.toThrow(/badge-granting permission/);
+    await db.exec("select set_config('test.badges', 'yes', false)");
+    await expect(withBadge(SHOP_TITLE)).rejects.toThrow(/Only granted badges/);
+    await withBadge(BADGE);
   });
 
   it("audits creating, editing and archiving", async () => {

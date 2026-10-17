@@ -93,6 +93,14 @@ export const RELEASES: Release[] = [
         tag: "fix",
       },
       {
+        text: "Challenges count more fairly: replaying a game no longer erases its clear, two platform copies of one game count once, and only a new review completes a review goal (editing an old one doesn't).",
+        tag: "fix",
+      },
+      {
+        text: "Secret medals stay secret until you earn them.",
+        tag: "fix",
+      },
+      {
         text: "Can't decide what to play? Mystery Pull now has Help me choose: say how long a game you want, on which platform, in what mood and what you're after, and get three games you can start right now, with why each one fits.",
         tag: "feature",
       },
