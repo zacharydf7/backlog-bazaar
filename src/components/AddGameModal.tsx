@@ -699,6 +699,8 @@ export function AddGameModal({
         // A game arriving only on subscription/borrowed/Player 2 copies isn't
         // a purchase — it never breaks the streak, so don't warn about one.
         modifierOnly: isModifierOnly(copies),
+        // A live-service game is never backlog to clear, so it never breaks it.
+        ongoing,
       })
     ) {
       setStreakPending(decision);

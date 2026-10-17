@@ -4851,9 +4851,10 @@ export const useStore = create<BazaarState>((set, get) => ({
       // owned yet; logging an already-beaten game straight to Finished is
       // cataloging the past, not new backlog pressure; a stealth add is
       // streak-inert by design; a game held only through subscription/borrowed/
-      // Player 2 copies wasn't bought). Mirrors the server break-streak trigger.
+      // Player 2 copies wasn't bought; a live-service game is never backlog).
+      // Mirrors the server break-streak trigger.
       const breaksStreak =
-        addBreaksClearStreak(status, isModifierOnly(meta.copies)) &&
+        addBreaksClearStreak(status, isModifierOnly(meta.copies), meta.ongoing === true) &&
         !opts?.stealth &&
         get().clearStreak !== 0;
       set({ games: next, ...(breaksStreak ? { clearStreak: 0 } : {}) });
@@ -4932,7 +4933,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     // without waiting for a refresh (wishlist wants, straight-to-Finished
     // logs, stealth adds, and modifier-only adds don't break the streak).
     const streakReset =
-      addBreaksClearStreak(status, isModifierOnly(meta.copies)) &&
+      addBreaksClearStreak(status, isModifierOnly(meta.copies), meta.ongoing === true) &&
       !opts?.stealth &&
       get().clearStreak !== 0
         ? { clearStreak: 0 }

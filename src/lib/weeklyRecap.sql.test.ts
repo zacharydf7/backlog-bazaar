@@ -42,7 +42,9 @@ beforeAll(async () => {
     create function public.economy_enabled(p_user uuid) returns boolean language sql
       as $$ select economy from public.profiles where id = p_user $$;
     create table public.games (id uuid primary key, user_id uuid, title text, status text, finish_tag text,
-      personal_hours real, hours real, played_hours real);
+      personal_hours real, hours real, played_hours real,
+      in_rotation boolean not null default false, ongoing boolean not null default false);
+    create table public.rotation_checkins (user_id uuid, game_id uuid, created_at timestamptz not null default now());
     create table public.playtime_events (user_id uuid, game_id uuid, game_title text, hours real,
       source text not null default 'live', created_at timestamptz not null default now());
     create table public.action_undos (user_id uuid, game_id uuid, action text, undone_at timestamptz,
@@ -85,7 +87,7 @@ beforeEach(async () => {
     delete from public.weekly_recaps; delete from public.notifications; delete from public.playtime_events;
     delete from public.game_status_events; delete from public.games; delete from public.coin_events;
     delete from public.achievements; delete from public.user_achievements; delete from public.profiles;
-    delete from public.action_undos; delete from public.user_quick_goals;
+    delete from public.action_undos; delete from public.user_quick_goals; delete from public.rotation_checkins;
     insert into public.profiles (id, clear_streak, clear_streak_best) values ('${ME}', 2, 5), ('${OTHER}', 0, 0);
     insert into public.achievements (family, tier, name, description, metric, threshold)
       values ('finisher', 2, 'Seasoned Finisher', 'Finish 10 games', 'games_finished', 10);
@@ -122,6 +124,20 @@ describe("weekly_recap", () => {
     expect(await recap()).toBeNull();
     const n = await db.query("select count(*)::int as n from public.notifications");
     expect(n.rows).toEqual([{ n: 0 }]);
+  });
+
+  it("recaps a Rotation week of check-ins and live-service play (Rotation players, 2026-10-17)", async () => {
+    await db.exec(`
+      insert into public.games (id, user_id, title, status, in_rotation, ongoing)
+        values ('${G2}', '${ME}', 'Hearthstone', 'playing', true, true);
+      insert into public.rotation_checkins (user_id, game_id, created_at)
+        values ('${ME}', '${G2}', ${LAST_WEEK}), ('${ME}', '${G2}', ${LAST_WEEK} + interval '1 hour');
+    `);
+    expect((await recap())!.data).toMatchObject({ play: { rotation: { hours: 0, games: 0, checkins: 2 } } });
+    await db.exec(`delete from public.weekly_recaps;
+      insert into public.playtime_events (user_id, game_id, game_title, hours, created_at)
+        values ('${ME}', '${G2}', 'Hearthstone', 1.5, ${LAST_WEEK});`);
+    expect((await recap())!.data).toMatchObject({ play: { rotation: { hours: 1.5, games: 1, checkins: 2 } } });
   });
 
   it("builds last week's recap once, with one notification", async () => {

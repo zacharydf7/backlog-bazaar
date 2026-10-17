@@ -153,6 +153,9 @@ describe("addBreaksClearStreak", () => {
 
   it("a modifier-only add (subscription/borrowed/Player 2 copies) never breaks it", () => {
     expect(addBreaksClearStreak("backlog", true)).toBe(false);
+    // A live-service game is never backlog to clear (Rotation players, 2026-10-17).
+    expect(addBreaksClearStreak("backlog", false, true)).toBe(false);
+    expect(addBreaksClearStreak("playing", false, true)).toBe(false);
     expect(addBreaksClearStreak("playing", true)).toBe(false);
     // Still no break for the never-breaking destinations, of course.
     expect(addBreaksClearStreak("finished", true)).toBe(false);

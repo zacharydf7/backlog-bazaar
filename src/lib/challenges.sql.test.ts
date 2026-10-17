@@ -53,7 +53,7 @@ beforeAll(async () => {
       economy boolean not null default true);
     create table public.games (id uuid primary key, user_id uuid, status text, finish_tag text,
       added_at timestamptz, played_hours real, personal_hours real, hours real,
-      preordered_at timestamptz, in_rotation boolean not null default false, review text,
+      preordered_at timestamptz, in_rotation boolean not null default false, ongoing boolean not null default false, review text,
       rawg_id integer, igdb_id integer, catalog_id uuid);
     create table public.game_identity_links (igdb_id integer, rawg_id integer, status text);
     create table public.user_time_zones (user_id uuid primary key, time_zone text not null,
@@ -563,6 +563,37 @@ describe("daily & weekly goals", () => {
     expect((await db.query<{ ok: boolean }>("select public.quick_goal_applies($1, 'rotation_unchecked') as ok", [ME])).rows[0].ok).toBe(true);
     await db.exec(`insert into public.rotation_checkins (user_id, game_id) values ('${ME}', '${R}')`);
     expect((await db.query<{ ok: boolean }>("select public.quick_goal_applies($1, 'rotation_unchecked') as ok", [ME])).rows[0].ok).toBe(false);
+  });
+
+  it("knows who has a Rotation game and who has a game to finish (Rotation players, 2026-10-17)", async () => {
+    const applies = async (rule: string) =>
+      (await db.query<{ ok: boolean }>("select public.quick_goal_applies($1, $2) as ok", [ME, rule])).rows[0].ok;
+    expect(await applies("has_rotation")).toBe(false);
+    expect(await applies("has_finishable")).toBe(false);
+    await db.exec(`insert into public.games (id, user_id, status, in_rotation, ongoing)
+                   values ('00000000-0000-4000-8000-0000000000e3', '${ME}', 'playing', true, true)`);
+    // A Rotation game alone gives nothing to finish, so no finish goal is fair.
+    expect(await applies("has_rotation")).toBe(true);
+    expect(await applies("has_finishable")).toBe(false);
+    await db.exec(`insert into public.games (id, user_id, status) values ('00000000-0000-4000-8000-0000000000e4', '${ME}', 'playing')`);
+    expect(await applies("has_finishable")).toBe(true);
+  });
+
+  it("counts Rotation hours only on Rotation games, and only live play", async () => {
+    const R = "00000000-0000-4000-8000-0000000000e5";
+    const N = "00000000-0000-4000-8000-0000000000e6";
+    await db.exec(`
+      insert into public.games (id, user_id, status, in_rotation, ongoing) values
+        ('${R}', '${ME}', 'playing', true, true), ('${N}', '${ME}', 'playing', false, false);
+      insert into public.playtime_events (user_id, game_id, hours, source) values
+        ('${ME}', '${R}', 2, 'live'), ('${ME}', '${R}', 30, 'live'), ('${ME}', '${N}', 3, 'live');
+    `);
+    const r = await db.query<{ v: string }>(
+      "select public.challenge_metric($1, 'rotation_hours', now() - interval '1 hour', now() + interval '1 hour') as v",
+      [ME],
+    );
+    // The 30-hour entry is over the 24-hour live-play limit, so it's catch-up.
+    expect(Number(r.rows[0].v)).toBe(2);
   });
 
   it("counts progress only from when a goal was dealt", async () => {

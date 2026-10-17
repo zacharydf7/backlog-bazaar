@@ -12610,6 +12610,11 @@ create trigger games_log_status
 -- acquisition values read as owned so junk can never widen the exemption; DLC
 -- rows are owned CONTENT and don't count as base copies. Mirrors
 -- isModifierOnly / addBreaksClearStreak in src/lib/{copies,pricing}.ts.
+--
+-- Fifth carve-out (2026-10-17, Rotation players): a live-service / ongoing game
+-- is never backlog to clear (it has no price, no finish and no bounty), so
+-- adding one doesn't break the chain. Rotation play shouldn't cost a finisher
+-- their streak.
 create or replace function public.break_clear_streak()
 returns trigger
 language plpgsql
@@ -12621,6 +12626,7 @@ begin
   if coalesce(current_setting('app.split_in_progress', true), '') = '1'
      or coalesce(current_setting('app.co_op_join', true), '') = '1'
      or coalesce(new.stealth, false)
+     or coalesce(new.ongoing, false)
      or new.compilation_game_for is not null then
     return coalesce(new, old);
   end if;
@@ -19292,7 +19298,7 @@ as $$
   select array[
     'games_finished', 'verified_clears', 'backlog_clears', 'hours_logged',
     'play_days', 'stopwatch_sessions', 'reviews_written', 'rotation_checkins',
-    'games_played', 'revisits'
+    'games_played', 'revisits', 'rotation_hours'
   ]::text[];
 $$;
 
@@ -19373,6 +19379,14 @@ as $$
     when 'rotation_checkins' then
       (select count(*) from public.rotation_checkins r
         where r.user_id = p_user and r.created_at >= p_from and r.created_at < p_to)
+    -- Live play on Rotation (live-service / ongoing) games (2026-10-17).
+    when 'rotation_hours' then
+      (select greatest(coalesce(sum(e.hours), 0), 0)
+         from public.playtime_events e
+         join public.games g on g.id = e.game_id
+        where e.user_id = p_user and public.is_live_play(e.source, e.hours)
+          and (coalesce(g.ongoing, false) or coalesce(g.in_rotation, false))
+          and e.created_at >= p_from and e.created_at < p_to)
     -- Different games with play logged.
     when 'games_played' then
       (select count(distinct p.key) from plays p where p.created_at >= p_from)
@@ -19455,6 +19469,11 @@ insert into public.challenge_goals (key, name, description, icon, metric, target
   ('dust-off',       'Dust It Off',      'Clear a game that waited a year or more',  'shovel',      'backlog_clears',     1,  5),
   ('stopwatch-eight','On the Clock',     'Log 8 stopwatch sessions',                 'timer',       'stopwatch_sessions', 8,  6),
   ('review-one',     'Say a Few Words',  'Review a game',                            'star',        'reviews_written',    1,  7)
+on conflict (key) do nothing;
+-- Rotation players' options (2026-10-17): goals a live-service month can meet.
+insert into public.challenge_goals (key, name, description, icon, metric, target, sort) values
+  ('rotation-fifteen', 'Regular Customer',  'Log 15 hours on Rotation games',        'refresh-cw', 'rotation_hours',    15, 8),
+  ('check-in-eight',   'Making the Rounds', 'Check in on Rotation games 8 times',    'refresh-cw', 'rotation_checkins', 8,  9)
 on conflict (key) do nothing;
 
 -- A player's picks, one row per goal per month. The goal's name, metric,
@@ -19566,13 +19585,19 @@ create table if not exists public.quick_goals (
   metric          text not null check (metric = any (public.challenge_metric_keys())),
   target          numeric not null check (target > 0),
   -- Only dealt to players this applies to (quick_goal_applies).
-  eligibility     text check (eligibility in ('idle_game', 'rotation_unchecked', 'unreviewed_clear')),
+  eligibility     text check (eligibility in ('idle_game', 'rotation_unchecked', 'unreviewed_clear',
+                                               'has_rotation', 'has_finishable')),
   -- At most one goal from a group in a week (e.g. finish vs Verified clear).
   exclusive_group text,
   sort            integer not null default 0,
   active          boolean not null default true,
   created_at      timestamptz not null default now()
 );
+-- has_rotation / has_finishable (2026-10-17): the column check above only
+-- takes effect on a fresh database, so widen it on an existing one too.
+alter table public.quick_goals drop constraint if exists quick_goals_eligibility_check;
+alter table public.quick_goals add constraint quick_goals_eligibility_check
+  check (eligibility in ('idle_game', 'rotation_unchecked', 'unreviewed_clear', 'has_rotation', 'has_finishable'));
 alter table public.quick_goals enable row level security;
 revoke insert, update, delete on public.quick_goals from anon, authenticated;
 drop policy if exists "quick_goals_select" on public.quick_goals;
@@ -19593,6 +19618,14 @@ insert into public.quick_goals (key, cadence, name, description, icon, metric, t
   ('w-revisit',     'weekly', 'Old Friend',     'Revisit a game you haven''t touched in 30+ days','shovel',     'revisits',           1,   'idle_game',          null,    7),
   ('w-review',      'weekly', 'Critic''s Week', 'Review a game you''ve finished',                'star',        'reviews_written',    1,   'unreviewed_clear',   null,    8)
 on conflict (key) do nothing;
+-- Rotation players (2026-10-17): goals for live-service play, and finish goals
+-- dealt only to players with a game in play to finish.
+insert into public.quick_goals (key, cadence, name, description, icon, metric, target, eligibility, exclusive_group, sort) values
+  ('d-rotation-play',  'daily',  'Regular',        'Play a Rotation game for 30 minutes', 'refresh-cw', 'rotation_hours', 0.5, 'has_rotation', null, 6),
+  ('w-rotation-hours', 'weekly', 'Regular Rounds', 'Log 3 hours on Rotation games',       'refresh-cw', 'rotation_hours', 3,   'has_rotation', null, 9)
+on conflict (key) do nothing;
+update public.quick_goals set eligibility = 'has_finishable'
+ where key in ('w-finish', 'w-verified') and eligibility is null;
 
 -- The bonus for completing all three of a week's goals.
 create table if not exists public.weekly_sweep_bonuses (
@@ -19631,6 +19664,9 @@ revoke execute on function public.challenge_day(timestamptz) from public, anon, 
 --                        logged in 30 days
 --   rotation_unchecked — a Rotation game not yet checked in this week
 --   unreviewed_clear   — a cleared game with no review
+--   has_rotation       — a game in the Rotation lane
+--   has_finishable     — a game in Now Playing that can be finished (not a
+--                        Rotation game), so a finish goal is fair to deal
 create or replace function public.quick_goal_applies(p_user uuid, p_rule text)
 returns boolean
 language plpgsql
@@ -19662,6 +19698,13 @@ begin
       select 1 from public.games g
        where g.user_id = p_user and g.status = 'finished' and g.finish_tag in ('beaten', 'completed')
          and coalesce(btrim(g.review), '') = '');
+  elsif p_rule = 'has_rotation' then
+    return exists (select 1 from public.games g
+                    where g.user_id = p_user and g.status = 'playing' and g.in_rotation);
+  elsif p_rule = 'has_finishable' then
+    return exists (select 1 from public.games g
+                    where g.user_id = p_user and g.status = 'playing'
+                      and not coalesce(g.in_rotation, false) and not coalesce(g.ongoing, false));
   end if;
   return false;
 end;
@@ -20429,11 +20472,14 @@ begin
   select count(*) into v_moves
     from public.game_status_events e
    where e.user_id = p_user and e.created_at >= p_from and e.created_at < p_to;
-  -- Quiet = no live play logged and no library moves.
+  -- Quiet = no live play logged, no library moves and no Rotation check-ins.
   if v_moves = 0 and not exists (
        select 1 from public.playtime_events e
         where e.user_id = p_user and e.hours > 0 and public.is_live_play(e.source, e.hours)
-          and e.created_at >= p_from and e.created_at < p_to) then
+          and e.created_at >= p_from and e.created_at < p_to)
+     and not exists (
+       select 1 from public.rotation_checkins r
+        where r.user_id = p_user and r.created_at >= p_from and r.created_at < p_to) then
     return null;
   end if;
 
@@ -20457,7 +20503,18 @@ begin
                             group by e.game_id
                            having sum(e.hours) > 0
                             order by sum(e.hours) desc
-                            limit 1) t)
+                            limit 1) t),
+      -- Rotation (live-service) play and check-ins (2026-10-17).
+      'rotation', (select jsonb_build_object(
+                     'hours', round(greatest(coalesce(sum(e.hours), 0), 0)::numeric, 1),
+                     'games', count(distinct e.game_id) filter (where e.hours > 0),
+                     'checkins', (select count(*) from public.rotation_checkins r
+                                   where r.user_id = p_user and r.created_at >= p_from and r.created_at < p_to))
+                     from public.playtime_events e
+                     join public.games g on g.id = e.game_id
+                    where e.user_id = p_user and public.is_live_play(e.source, e.hours)
+                      and (coalesce(g.ongoing, false) or coalesce(g.in_rotation, false))
+                      and e.created_at >= p_from and e.created_at < p_to)
     ),
     'clears', (
       with c as (

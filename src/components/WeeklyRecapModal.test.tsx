@@ -8,7 +8,13 @@ const RECAP: WeeklyRecap = {
   id: "r1",
   weekStart: "2026-10-12",
   seenAt: null,
-  play: { hours: 5.5, days: 2, sessions: 1, topGame: { id: "g", title: "Hades", hours: 3 } },
+  play: {
+    hours: 5.5,
+    days: 2,
+    sessions: 1,
+    topGame: { id: "g", title: "Hades", hours: 3 },
+    rotation: { hours: 0, games: 0, checkins: 0 },
+  },
   clears: { finished: 1, verified: 1, titles: ["Celeste"], streak: 2, bestStreak: 5 },
   coins: { earned: 300, spent: 120, topSources: [{ kind: "bounty", coins: 300 }] },
   progress: {
@@ -42,6 +48,18 @@ describe("WeeklyRecapModal", () => {
     expect(card.textContent).toContain("Seasoned Finisher");
     expect(card.textContent).toContain("8 / 10");
     expect(card.textContent).toContain("25 coins in rewards are waiting");
+  });
+
+  it("leads a Rotation week with its live-service play instead of zero clears", () => {
+    const rotationWeek: WeeklyRecap = {
+      ...RECAP,
+      play: { ...RECAP.play, rotation: { hours: 4.5, games: 2, checkins: 3 } },
+      clears: { ...RECAP.clears, finished: 0, verified: 0, titles: [], streak: 0 },
+    };
+    render(<WeeklyRecapModal recap={rotationWeek} onNavigate={() => {}} />);
+    const card = screen.getByRole("dialog", { name: "Your week" });
+    expect(card.textContent).not.toContain("Finished0");
+    expect(card.textContent).toContain("4.5h across 2 games · 3 check-ins");
   });
 
   it("hides coins when the recap has none (economy off)", () => {

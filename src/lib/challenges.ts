@@ -18,6 +18,7 @@ export const CHALLENGE_METRICS = {
   rotation_checkins: { label: "Rotation check-ins", unit: "check-ins" },
   games_played: { label: "Different games played", unit: "games" },
   revisits: { label: "Games revisited after 30+ days", unit: "games" },
+  rotation_hours: { label: "Hours on Rotation games", unit: "hours" },
 } as const;
 
 export type ChallengeMetric = keyof typeof CHALLENGE_METRICS;

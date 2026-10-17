@@ -1,11 +1,11 @@
 import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { CalendarRange, Clock, Trophy, Coins, Medal, Target, X, Flame, type LucideIcon } from "lucide-react";
+import { CalendarRange, Clock, Trophy, Coins, Medal, Target, X, Flame, RefreshCw, type LucideIcon } from "lucide-react";
 import { useStore } from "../store";
 import { useScrollLock } from "../lib/useScrollLock";
 import { ledgerLabel } from "../lib/transactions";
 import { progressFraction } from "../lib/challenges";
-import { hoursLabel, medalLabel, weekRangeLabel, type WeeklyRecap } from "../lib/weeklyRecap";
+import { checkinsLabel, hoursLabel, medalLabel, weekRangeLabel, type WeeklyRecap } from "../lib/weeklyRecap";
 import type { View } from "./Sidebar";
 
 function Stat({ label, value, sub }: { label: string; value: string; sub?: string }) {
@@ -36,6 +36,7 @@ export function WeeklyRecapModal({ recap, onNavigate }: { recap: WeeklyRecap; on
   const close = useStore((s) => s.closeWeeklyRecap);
   useScrollLock(true);
   const { play, clears, coins, progress } = recap;
+  const rotationActive = play.rotation.hours > 0 || play.rotation.checkins > 0;
   const go = (view: View) => {
     close();
     onNavigate(view);
@@ -71,11 +72,21 @@ export function WeeklyRecapModal({ recap, onNavigate }: { recap: WeeklyRecap; on
               value={hoursLabel(play.hours)}
               sub={`on ${play.days} ${play.days === 1 ? "day" : "days"}`}
             />
-            <Stat
-              label="Finished"
-              value={String(clears.finished)}
-              sub={clears.finished > 0 ? `${clears.verified} Verified` : undefined}
-            />
+            {/* A Rotation week (no clears, live-service play) leads with that
+                instead of a zero. */}
+            {clears.finished === 0 && rotationActive ? (
+              <Stat
+                label="Rotation"
+                value={hoursLabel(play.rotation.hours)}
+                sub={play.rotation.checkins > 0 ? checkinsLabel(play.rotation.checkins) : undefined}
+              />
+            ) : (
+              <Stat
+                label="Finished"
+                value={String(clears.finished)}
+                sub={clears.finished > 0 ? `${clears.verified} Verified` : undefined}
+              />
+            )}
             {coins && <Stat label="Coins earned" value={`+${coins.earned.toLocaleString()}`} />}
             {coins && <Stat label="Coins spent" value={coins.spent.toLocaleString()} />}
           </div>
@@ -92,6 +103,16 @@ export function WeeklyRecapModal({ recap, onNavigate }: { recap: WeeklyRecap; on
                   {play.sessions} stopwatch {play.sessions === 1 ? "session" : "sessions"}
                 </p>
               )}
+            </Section>
+          )}
+
+          {rotationActive && (
+            <Section icon={RefreshCw} title="Rotation">
+              <p>
+                {hoursLabel(play.rotation.hours)} across {play.rotation.games}{" "}
+                {play.rotation.games === 1 ? "game" : "games"}
+                {play.rotation.checkins > 0 && ` · ${checkinsLabel(play.rotation.checkins)}`}
+              </p>
             </Section>
           )}
 

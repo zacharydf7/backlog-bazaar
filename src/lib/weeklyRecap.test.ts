@@ -6,7 +6,7 @@ const ROW = {
   week_start: "2026-10-12",
   seen_at: null,
   data: {
-    play: { hours: "5.5", days: 2, sessions: 1, top_game: { id: "g", title: "Hades", hours: 3 } },
+    play: { hours: "5.5", days: 2, sessions: 1, top_game: { id: "g", title: "Hades", hours: 3 }, rotation: { hours: 2, games: 1, checkins: 3 } },
     clears: { finished: 1, verified: 1, titles: ["Celeste"], streak: 2, best_streak: 5 },
     coins: { earned: 300, spent: 120, top_sources: [{ kind: "bounty", coins: 300 }] },
     progress: {
@@ -21,7 +21,13 @@ const ROW = {
 describe("coerceWeeklyRecap", () => {
   it("reads the stored recap", () => {
     const r = coerceWeeklyRecap(ROW)!;
-    expect(r.play).toEqual({ hours: 5.5, days: 2, sessions: 1, topGame: { id: "g", title: "Hades", hours: 3 } });
+    expect(r.play).toEqual({
+      hours: 5.5,
+      days: 2,
+      sessions: 1,
+      topGame: { id: "g", title: "Hades", hours: 3 },
+      rotation: { hours: 2, games: 1, checkins: 3 },
+    });
     expect(r.clears.bestStreak).toBe(5);
     expect(r.coins!.topSources).toEqual([{ kind: "bounty", coins: 300 }]);
     expect(r.progress.achievements).toEqual([{ name: "Sworn Record", tier: 3 }]);

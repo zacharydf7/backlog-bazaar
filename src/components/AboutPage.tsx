@@ -373,6 +373,14 @@ export function AboutPage() {
               shows the countdown).
             </p>
             <p>
+              Rotation play counts like any other: logging time earns{" "}
+              <strong className="text-ink">Daily Session</strong> coins, there are daily, weekly
+              and monthly <strong className="text-ink">goals</strong> for time on Rotation games
+              and check-ins, and your weekly recap shows your Rotation week. Adding a live-service
+              game never breaks your <strong className="text-ink">Clear Streak</strong>, since
+              it isn&apos;t backlog to clear.
+            </p>
+            <p>
               Not every ongoing game starts life flagged live-service: any{" "}
               <strong className="text-ink">Finished</strong> game with a big post-game loop can be{" "}
               <strong className="text-ink">converted to Endless</strong> from its card, which moves

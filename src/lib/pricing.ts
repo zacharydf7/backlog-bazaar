@@ -93,13 +93,16 @@ export function clearStreakAtRisk(streak: number): boolean {
  *  acquisitions (`modifierOnly`, see isModifierOnly in src/lib/copies.ts) —
  *  trying a subscription/borrowed/Player 2 game isn't buying one, which is the
  *  behavior the streak discourages. (Unlike a Stealth Add, finishing such a
- *  game still EXTENDS the streak — the exemption covers only the add.)
- *  Mirrors the server break_clear_streak trigger. */
+ *  game still EXTENDS the streak — the exemption covers only the add.) A
+ *  live-service / `ongoing` game never breaks it either: it has no price and
+ *  no finish, so it isn't backlog to clear. Mirrors the server
+ *  break_clear_streak trigger. */
 export function addBreaksClearStreak(
   status: "backlog" | "playing" | "finished" | "wishlist",
   modifierOnly = false,
+  ongoing = false,
 ): boolean {
-  return (status === "backlog" || status === "playing") && !modifierOnly;
+  return (status === "backlog" || status === "playing") && !modifierOnly && !ongoing;
 }
 
 /** Whether the Add flow should interrupt with the Clear Streak break warning:
@@ -116,12 +119,14 @@ export function addTriggersStreakWarning(args: {
   stealth: boolean;
   /** Every base copy in the add is a modifier acquisition (isModifierOnly). */
   modifierOnly: boolean;
+  /** A live-service / ongoing game. */
+  ongoing?: boolean;
 }): boolean {
   return (
     !args.stealth &&
     args.hasNewCards &&
     clearStreakAtRisk(args.streak) &&
-    addBreaksClearStreak(args.destination, args.modifierOnly)
+    addBreaksClearStreak(args.destination, args.modifierOnly, args.ongoing === true)
   );
 }
 

@@ -41,6 +41,19 @@ export interface Release {
 export const RELEASES: Release[] = [
   // ── October 2026 ──────────────────────────────────────────────────────────
   {
+    id: "2026-10-17-rotation-players",
+    date: "2026-10-17",
+    title: "Rotation play counts",
+    summary: "Live-service games like Hearthstone now earn goals and recaps, and never cost you a streak.",
+    tag: "improvement",
+    items: [
+      "Adding a live-service game no longer breaks your Clear Streak.",
+      "New daily, weekly and monthly goals for time on Rotation games.",
+      "You're only dealt a weekly finish goal when you have a game to finish.",
+      "Your weekly recap shows your Rotation hours and check-ins.",
+    ],
+  },
+  {
     id: "2026-10-17-event-calendar",
     date: "2026-10-17",
     title: "An event calendar and a monthly rhythm",
