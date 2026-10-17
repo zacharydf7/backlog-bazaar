@@ -41,6 +41,7 @@ beforeEach(() => {
 describe("CalendarPage", () => {
   it("lists what's on now and what's coming, with how to get ready", async () => {
     render(<CalendarPage />);
+    fireEvent.click(screen.getByRole("button", { name: /List/ }));
     const now = await screen.findByRole("heading", { name: "Happening now" });
     expect(within(now.parentElement!).getByText("Bounty Weekend")).toBeTruthy();
     const soon = screen.getByRole("heading", { name: "Next 7 days" });
@@ -51,6 +52,7 @@ describe("CalendarPage", () => {
   it("adds goal resets, and leaves coin boosts out with the economy off", async () => {
     act(() => useStore.setState({ economyEnabled: false }));
     render(<CalendarPage />);
+    fireEvent.click(screen.getByRole("button", { name: /List/ }));
     await screen.findAllByText("Halloween Week");
     expect(screen.queryByText("Bounty Weekend")).toBeNull();
     expect(screen.getAllByText("New weekly goals").length).toBeGreaterThan(0);
@@ -69,6 +71,22 @@ describe("CalendarPage", () => {
       name: today.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" }),
     });
     expect(within(heading.parentElement!).getByText("Bounty Weekend")).toBeTruthy();
+  });
+
+  it("opens on a month grid with each event drawn as a bar", async () => {
+    const { container } = render(<CalendarPage />);
+    await screen.findAllByText("Bounty Weekend");
+    expect(screen.getByRole("button", { name: /Month/ }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getAllByRole("columnheader").map((h) => h.textContent)).toEqual([
+      "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat",
+    ]);
+    // A two-day event is one bar spanning both days (or two halves if it
+    // crosses a week boundary), never one chip per day.
+    const bars = [...container.querySelectorAll('[aria-hidden="true"] > div')].filter(
+      (b) => b.textContent === "Halloween Week",
+    );
+    expect(bars.length).toBeGreaterThanOrEqual(1);
+    expect(bars.length).toBeLessThanOrEqual(2);
   });
 
   it("says so when the calendar can't load", async () => {

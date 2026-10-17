@@ -6,6 +6,7 @@ import {
   monthGrid,
   personalItems,
   resetItems,
+  weekBars,
   type CalendarItem,
 } from "./calendar";
 import type { Subscription } from "./subscriptions";
@@ -159,5 +160,36 @@ describe("itemWhenLabel", () => {
     const weekend = { start: new Date(2026, 10, 21).getTime(), end: new Date(2026, 10, 23).getTime() };
     expect(itemWhenLabel(weekend, "en-US")).toBe("Sat, Nov 21 to Sun, Nov 22");
     expect(itemWhenLabel({ start: weekend.start, end: null }, "en-US")).toBe("Sat, Nov 21");
+  });
+});
+
+describe("weekBars", () => {
+  const nov = (d: number) => new Date(2026, 10, d).getTime();
+
+  it("draws a multi-day item as one bar, stacking overlaps into lanes, longest first", () => {
+    const weeks = monthGrid(2026, 10, [
+      item({ key: "long", title: "Fresh Start Week", start: nov(1), end: nov(8) }),
+      item({ key: "short", title: "Weekend", start: nov(7), end: nov(9) }),
+      item({ key: "reset", kind: "reset", title: "New weekly goals", start: nov(2), end: null }),
+    ]);
+    const { bars } = weekBars(weeks[0]);
+    expect(bars.map((b) => [b.item.key, b.startCol, b.endCol, b.lane, b.continuesBefore, b.continuesAfter])).toEqual([
+      ["long", 0, 6, 0, false, false],
+      ["reset", 1, 1, 1, false, false],
+      ["short", 6, 6, 1, false, true],
+    ]);
+  });
+
+  it("marks an item carried over from the week before", () => {
+    const weeks = monthGrid(2026, 10, [item({ key: "w", start: nov(7), end: nov(9) })]);
+    const second = weekBars(weeks[1]).bars[0];
+    expect([second.startCol, second.endCol, second.continuesBefore, second.continuesAfter]).toEqual([0, 0, true, false]);
+  });
+
+  it("counts what doesn't fit per day", () => {
+    const many = [1, 2, 3, 4].map((n) => item({ key: `m${n}`, title: `M${n}`, start: nov(3), end: null }));
+    const { bars, hidden } = weekBars(monthGrid(2026, 10, many)[0], 3);
+    expect(bars).toHaveLength(3);
+    expect(hidden).toEqual([0, 0, 1, 0, 0, 0, 0]);
   });
 });

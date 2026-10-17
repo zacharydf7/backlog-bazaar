@@ -286,3 +286,61 @@ export function itemWhenLabel(i: Pick<CalendarItem, "start" | "end">, locale?: s
   const sameDay = new Date(i.start).toDateString() === new Date(lastDay).toDateString();
   return sameDay ? fmt(i.start) : `${fmt(i.start)} to ${fmt(lastDay)}`;
 }
+
+export interface WeekBar {
+  item: CalendarItem;
+  /** First and last column (0 = Sunday) the bar covers in this week. */
+  startCol: number;
+  endCol: number;
+  /** Row under the day numbers, from 0. */
+  lane: number;
+  /** The item began in an earlier week / runs on into a later one. */
+  continuesBefore: boolean;
+  continuesAfter: boolean;
+}
+
+/** One week of the month grid as bars, the way a wall calendar draws them: a
+ *  multi-day item is one bar across the days it covers, stacked into lanes so
+ *  bars never overlap (longer ones first). Items past `maxLanes` aren't drawn;
+ *  `hidden` counts them per day for a "+N more". */
+export function weekBars(
+  week: CalendarDay[],
+  maxLanes = 3,
+): { bars: WeekBar[]; hidden: number[] } {
+  const spans = new Map<string, { item: CalendarItem; startCol: number; endCol: number }>();
+  week.forEach((day, col) => {
+    for (const item of day.items) {
+      const s = spans.get(item.key);
+      if (s) s.endCol = col;
+      else spans.set(item.key, { item, startCol: col, endCol: col });
+    }
+  });
+  const ordered = [...spans.values()].sort(
+    (a, b) =>
+      a.startCol - b.startCol ||
+      b.endCol - b.startCol - (a.endCol - a.startCol) ||
+      a.item.start - b.item.start ||
+      a.item.title.localeCompare(b.item.title),
+  );
+  const laneEnds: number[] = [];
+  const bars: WeekBar[] = [];
+  const hidden = week.map(() => 0);
+  const weekStart = week[0].date;
+  const weekEnd = week[week.length - 1].date + DAY;
+  for (const s of ordered) {
+    let lane = laneEnds.findIndex((end) => end < s.startCol);
+    if (lane === -1) lane = laneEnds.length;
+    if (lane >= maxLanes) {
+      for (let c = s.startCol; c <= s.endCol; c++) hidden[c]++;
+      continue;
+    }
+    laneEnds[lane] = s.endCol;
+    bars.push({
+      ...s,
+      lane,
+      continuesBefore: s.item.start < weekStart,
+      continuesAfter: s.item.end != null && s.item.end > weekEnd,
+    });
+  }
+  return { bars, hidden };
+}
