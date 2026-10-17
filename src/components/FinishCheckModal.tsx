@@ -1,3 +1,4 @@
+import { trackEvent } from "../lib/appEvents";
 import { useState } from "react";
 import { Check, Clock, History } from "lucide-react";
 import type { Game } from "../types";
@@ -90,6 +91,7 @@ export function FinishCheckModal({
               disabled={busy || parsed == null || parsed <= 0}
               onClick={() =>
                 void run(async () => {
+                  trackEvent("feature", "finish_check", { choice: "log_and_finish" });
                   await logPlaytime(game.id, parsed as number);
                   onFinish();
                 })
@@ -107,6 +109,7 @@ export function FinishCheckModal({
             disabled={busy}
             onClick={() =>
               void run(async () => {
+                trackEvent("feature", "finish_check", { choice: "beat_before_joining" });
                 await abandonGame(game.id);
                 await bazaarToFinished(game.id, "beaten");
               })
@@ -125,6 +128,7 @@ export function FinishCheckModal({
             type="button"
             disabled={busy}
             onClick={() => {
+              trackEvent("feature", "finish_check", { choice: "finish_anyway" });
               onClose();
               onFinish();
             }}

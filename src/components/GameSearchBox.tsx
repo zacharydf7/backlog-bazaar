@@ -1,3 +1,4 @@
+import { trackEvent } from "../lib/appEvents";
 import { useEffect, useRef, useState } from "react";
 import type { GameMeta } from "../types";
 import { useStore } from "../store";
@@ -67,6 +68,9 @@ export function GameSearchBox({
           fetchCatalogOverrides,
         });
         if (id !== reqId.current) return;
+        if (found.results.length === 0) {
+          trackEvent("search", "database_no_results", { query: value.trim(), where: ariaLabel ?? null });
+        }
         setResults(found.results.slice(0, 8));
         setHighlight(0);
         setOpen(true);
@@ -87,6 +91,7 @@ export function GameSearchBox({
   }, [open]);
 
   function pick(meta: GameMeta) {
+    trackEvent("search", "database_pick", { query: value.trim(), title: meta.title, where: ariaLabel ?? null });
     skipSearch.current = true;
     onChange(meta.title);
     onPick(meta);

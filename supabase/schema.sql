@@ -12318,51 +12318,10 @@ create policy "profile_events_select" on public.profile_events
     or exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin)
   );
 
-create or replace function public.log_profile_event()
-returns trigger
-language plpgsql
-security definer set search_path = public
-as $$
-begin
-  if new.display_name is distinct from old.display_name then
-    insert into public.profile_events (user_id, field, old_value, new_value)
-      values (new.id, 'display_name', old.display_name, new.display_name);
-  end if;
-  if new.about_me is distinct from old.about_me then
-    insert into public.profile_events (user_id, field, old_value, new_value)
-      values (new.id, 'about_me', old.about_me, new.about_me);
-  end if;
-  if new.accent is distinct from old.accent then
-    insert into public.profile_events (user_id, field, old_value, new_value)
-      values (new.id, 'accent', old.accent, new.accent);
-  end if;
-  if new.banner_url is distinct from old.banner_url then
-    insert into public.profile_events (user_id, field, old_value, new_value)
-      values (new.id, 'banner_url', old.banner_url, new.banner_url);
-  end if;
-  if new.avatar_url is distinct from old.avatar_url then
-    insert into public.profile_events (user_id, field, old_value, new_value)
-      values (new.id, 'avatar_url', old.avatar_url, new.avatar_url);
-  end if;
-  if new.theme is distinct from old.theme then
-    insert into public.profile_events (user_id, field, old_value, new_value)
-      values (new.id, 'theme', old.theme, new.theme);
-  end if;
-  -- The "Money Well Spent" target rate (issue 6c60c213): a personal economy
-  -- preference whose history is worth keeping (old→new, like config changes).
-  if new.target_cost_per_hour is distinct from old.target_cost_per_hour then
-    insert into public.profile_events (user_id, field, old_value, new_value)
-      values (new.id, 'target_cost_per_hour',
-              old.target_cost_per_hour::text, new.target_cost_per_hour::text);
-  end if;
-  return new;
-end;
-$$;
-
-drop trigger if exists profiles_log_event on public.profiles;
-create trigger profiles_log_event
-  after update on public.profiles
-  for each row execute function public.log_profile_event();
+-- RETIRED (2026-10-17): the logger that wrote profile_events was replaced
+-- by the audit_events version further down (same function and trigger name,
+-- so this one never ran and profile_events stayed empty). The table is kept;
+-- profile changes are recorded in audit_events (entity 'profile').
 
 -- Set the total logged hours attributed to one version (platform) of a game — or
 -- the Unspecified bucket when p_platform is null/blank — to p_hours. Used by the
@@ -13515,7 +13474,10 @@ declare
     'display_name', 'avatar_url', 'theme', 'platforms', 'custom_platforms',
     'hidden_market', 'privacy', 'is_admin', 'blocked', 'blocked_reason',
     'hidden', 'general_slots', 'replay_slots', 'completionist_slots',
-    'selected_badge_id', 'accent', 'bg', 'economy_enabled'
+    'selected_badge_id', 'accent', 'bg', 'economy_enabled',
+    -- Added 2026-10-17: these changed silently before.
+    'about_me', 'banner_url', 'target_cost_per_hour', 'track_editions',
+    'rotation_slots', 'onboarding_completed_at'
   ];
 begin
   foreach v_key in array v_cols loop
@@ -13535,7 +13497,8 @@ create trigger profiles_log_event
     display_name, avatar_url, theme, platforms, custom_platforms, hidden_market,
     privacy, is_admin, blocked, blocked_reason, hidden, general_slots,
     replay_slots, completionist_slots, selected_badge_id, accent, bg,
-    economy_enabled
+    economy_enabled, about_me, banner_url, target_cost_per_hour, track_editions,
+    rotation_slots, onboarding_completed_at
   on public.profiles
   for each row execute function public.log_profile_event();
 
@@ -13605,6 +13568,72 @@ drop trigger if exists user_slots_log_event on public.user_slots;
 create trigger user_slots_log_event
   after insert or delete on public.user_slots
   for each row execute function public.log_user_slot_event();
+
+-- ---------------------------------------------------------------------------
+-- App usage log (owner, 2026-10-17: "more data than we need"): how people use
+-- the app, as opposed to what they do to their games (which the *_events
+-- tables already capture). One append-only row per event:
+--   visit         a page load: device class, screen size, app version
+--   screen        a board/page shown (Bazaar, a game page, Market Square…)
+--   feature       a feature used (a game-page tab, Mystery Pull, a filter…)
+--   search        a library or game-database search: query, result count,
+--                 what was picked — and searches that found nothing
+--   notification  the bell opened, a notification clicked
+--   onboarding    a Getting Started / tutorial step reached
+--   error         an app error the player hit (message, where)
+-- First-party and admin-read only, like the other logs. The browser can't
+-- write it directly: it batches events through log_app_events, which checks
+-- the kind, caps sizes and rate-limits each player.
+-- ---------------------------------------------------------------------------
+create table if not exists public.app_events (
+  id         uuid primary key default gen_random_uuid(),
+  user_id    uuid not null references auth.users (id) on delete cascade,
+  session_id text,
+  kind       text not null check (kind in
+               ('visit', 'screen', 'feature', 'search', 'notification', 'onboarding', 'error')),
+  name       text not null,
+  detail     jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+create index if not exists app_events_user_idx on public.app_events (user_id, created_at desc);
+create index if not exists app_events_kind_idx on public.app_events (kind, created_at desc);
+alter table public.app_events enable row level security;
+revoke all on public.app_events from anon, authenticated;
+drop policy if exists "app_events_admin_read" on public.app_events;
+create policy "app_events_admin_read" on public.app_events
+  for select to authenticated using (public.has_permission('stats.view'));
+grant select on public.app_events to authenticated;
+
+create or replace function public.log_app_events(p_events jsonb)
+returns integer
+language plpgsql security definer set search_path = public
+as $$
+declare
+  v_me    uuid := auth.uid();
+  v_count integer;
+begin
+  if v_me is null or jsonb_typeof(p_events) <> 'array' then return 0; end if;
+  -- A runaway client can't flood the log: 2,000 events an hour per player.
+  if (select count(*) from public.app_events
+       where user_id = v_me and created_at > now() - interval '1 hour') > 2000 then
+    return 0;
+  end if;
+  insert into public.app_events (user_id, session_id, kind, name, detail)
+  select v_me,
+         left(e->>'session', 64),
+         e->>'kind',
+         left(coalesce(nullif(btrim(e->>'name'), ''), '?'), 120),
+         case when jsonb_typeof(e->'detail') = 'object' and length((e->'detail')::text) <= 4000
+              then e->'detail' else '{}'::jsonb end
+    from jsonb_array_elements(p_events) with ordinality as x(e, n)
+   where x.n <= 50
+     and e->>'kind' in ('visit', 'screen', 'feature', 'search', 'notification', 'onboarding', 'error');
+  get diagnostics v_count = row_count;
+  return v_count;
+end;
+$$;
+revoke execute on function public.log_app_events(jsonb) from public, anon;
+grant execute on function public.log_app_events(jsonb) to authenticated;
 
 -- ---------------------------------------------------------------------------
 -- Active days (audit/event logging — streaks & retention). last_seen_at is a

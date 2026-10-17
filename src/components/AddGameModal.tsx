@@ -1,3 +1,4 @@
+import { trackEvent } from "../lib/appEvents";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { X, Store, Heart, Trophy, Plus, Lightbulb, Flag, FlagOff, Package, Lock, CalendarClock, EyeOff, Infinity as InfinityIcon, type LucideIcon } from "lucide-react";
@@ -285,6 +286,9 @@ export function AddGameModal({
           fetchCatalogOverrides,
         });
         if (id !== reqId.current) return;
+        if (found.results.length === 0) {
+          trackEvent("search", "add_game_no_results", { query: title.trim() });
+        }
         setResults(found.results);
         setHighlight(0);
         setOpen(true);
@@ -316,6 +320,7 @@ export function AddGameModal({
   }, [open]);
 
   function pick(meta: GameMeta) {
+    trackEvent("search", "add_game_pick", { query: title.trim(), title: meta.title });
     skipSearch.current = true; // the title change below shouldn't trigger a search
     hoursEdited.current = false;
     setTitle(meta.title);

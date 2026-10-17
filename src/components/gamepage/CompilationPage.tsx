@@ -1,3 +1,4 @@
+import { trackEvent } from "../../lib/appEvents";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Reorder, useDragControls } from "motion/react";
@@ -332,7 +333,10 @@ function CompilationPageBody({
               key={t.id}
               role="tab"
               aria-selected={isActive}
-              onClick={() => setTab(t.id)}
+              onClick={() => {
+                setTab(t.id);
+                trackEvent("feature", "compilation_tab", { tab: t.id });
+              }}
               className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-medium transition ${
                 isActive
                   ? "border-brand bg-brand text-brand-fg shadow-sm"

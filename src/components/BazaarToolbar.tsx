@@ -1,3 +1,4 @@
+import { trackEvent } from "../lib/appEvents";
 import { ArrowDownUp, FlagOff, Layers, SlidersHorizontal, ThumbsUp, X } from "lucide-react";
 import type { CopyFormat, ModifierAcquisition } from "../types";
 import { acquisitionLabel, formatLabel } from "../lib/copies";
@@ -114,7 +115,10 @@ export function BazaarToolbar({
         {/* Favorites-only: a first-class one-tap slice (not buried in the
             facet panel), so curating down to liked games is instant. */}
         <button
-          onClick={() => onFiltersChange({ ...filters, liked: !filters.liked })}
+          onClick={() => {
+            trackEvent("feature", "board_liked", { on: !filters.liked });
+            onFiltersChange({ ...filters, liked: !filters.liked });
+          }}
           aria-pressed={filters.liked}
           title="Show only games you've liked"
           className={
@@ -131,7 +135,10 @@ export function BazaarToolbar({
             fan-out deck. A view preference, not a filter — counts unchanged. */}
         {stacking && (
           <button
-            onClick={stacking.onToggle}
+            onClick={() => {
+              trackEvent("feature", "board_stack", { on: !stacking.on });
+              stacking.onToggle();
+            }}
             aria-pressed={stacking.on}
             title="Stack copies of the same game into one deck"
             className={
@@ -147,7 +154,10 @@ export function BazaarToolbar({
 
         {retired && (
           <button
-            onClick={retired.onToggle}
+            onClick={() => {
+              trackEvent("feature", "board_hide_retired", { on: !retired.hidden });
+              retired.onToggle();
+            }}
             aria-pressed={retired.hidden}
             title="Leave out games you retired, so only the ones you played through show"
             className={
@@ -164,12 +174,13 @@ export function BazaarToolbar({
         {verification && (
           <select
             value={filters.verification ?? ""}
-            onChange={(e) =>
+            onChange={(e) => {
+              trackEvent("feature", "board_verification", { value: e.target.value || "all" });
               onFiltersChange({
                 ...filters,
                 verification: (e.target.value || null) as Filters["verification"],
-              })
-            }
+              });
+            }}
             aria-label="Verified clears"
             className={selectClass}
           >

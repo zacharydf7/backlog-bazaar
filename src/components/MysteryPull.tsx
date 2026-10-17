@@ -1,3 +1,4 @@
+import { trackEvent } from "../lib/appEvents";
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { Dices, X, Clock, Target } from "lucide-react";
@@ -89,7 +90,10 @@ export function MysteryPull({ kind = "play" }: { kind?: PullKind }) {
     <>
       <button
         type="button"
-        onClick={() => setOpen(true)}
+        onClick={() => {
+          setOpen(true);
+          trackEvent("feature", "mystery_pull_open");
+        }}
         disabled={pool.length === 0}
         title={
           reason ??

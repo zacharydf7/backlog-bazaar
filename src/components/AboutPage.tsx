@@ -674,6 +674,13 @@ export function AboutPage() {
             Have an idea or hit a snag? Post it on the board and upvote others. Check{" "}
             <strong className="text-ink">What&apos;s new</strong> for the latest updates.
           </Section>
+
+          <Section icon={Lightbulb} title="Your data">
+            To keep improving the site, we record how it&apos;s used — which pages and features
+            you open, what you search for, and any errors you run into — alongside your game
+            history. It stays with us: only the site&apos;s admins can see it, and it&apos;s never
+            shared or sold.
+          </Section>
         </div>
       </div>
     </div>

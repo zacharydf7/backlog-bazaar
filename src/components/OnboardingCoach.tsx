@@ -1,3 +1,4 @@
+import { trackEvent } from "../lib/appEvents";
 import { useEffect, useState } from "react";
 import {
   Ticket,
@@ -93,6 +94,20 @@ export function OnboardingCoach({
 
   const inChecklist = mode === "fresh" && claimed;
   const activeQuest = progress.activeQuest;
+
+  // The usage log follows each player through onboarding: which stage they
+  // reached, so drop-off points show up.
+  const stage = !mode
+    ? null
+    : mode === "granted"
+      ? "granted"
+      : !claimed
+        ? passiveIndex === 0 ? "welcome" : "primer"
+        : activeQuest?.id ?? "finale";
+  useEffect(() => {
+    if (stage) trackEvent("onboarding", stage, { completed: progress.completedCount, total: progress.total });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stage]);
 
   // Follow along: whenever the ACTIVE quest changes (checklist entry, or a
   // quest just completed), show the board it happens on — and pop the card

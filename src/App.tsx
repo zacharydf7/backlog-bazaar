@@ -92,6 +92,8 @@ import { ImportPreorderPrompt } from "./components/ImportPreorderPrompt";
 import { PasswordRecoveryModal } from "./components/PasswordRecoveryModal";
 import { ReleaseNotes } from "./components/ReleaseNotes";
 import { AboutPage } from "./components/AboutPage";
+import { startAppEvents, trackEvent, trackScreen } from "./lib/appEvents";
+import { supabase } from "./lib/supabase";
 import { PrivacyPage } from "./components/PrivacyPage";
 import { GamePage } from "./components/gamepage/GamePage";
 import { AchievementsPage } from "./components/AchievementsPage";
@@ -289,6 +291,7 @@ export default function App() {
   //   "features" / "features:<id>"        → the Requests board (+ that request)
   //   "mysubmissions" / "mysubmissions:<id>" → My contributions (+ that item)
   function openNotificationLink(link: string) {
+    trackEvent("notification", "click", { target: link.split(":")[0] });
     if (link === "features" || link.startsWith("features:")) {
       const id = link.startsWith("features:") ? link.slice("features:".length) : undefined;
       setFeaturesRequestId(id || undefined);
@@ -730,6 +733,37 @@ export default function App() {
     };
   }, [cloud, userId, fetchUnreadMessageCount, fetchFriendRequests, fetchNotifications, fetchPendingRecCount]);
 
+  // The app usage log (lib/appEvents): runs for a signed-in session only.
+  useEffect(() => {
+    if (!cloud || !userId || !supabase) return;
+    const client = supabase;
+    return startAppEvents(
+      async (events) => {
+        await client.rpc("log_app_events", { p_events: events });
+      },
+      { version: typeof __APP_VERSION__ === "string" ? __APP_VERSION__ : undefined },
+    );
+  }, [cloud, userId]);
+
+  // Which screen is showing, for the usage log.
+  const screenName = openGameId
+    ? "game"
+    : openCompilationId
+      ? "compilation"
+      : openListId
+        ? "list"
+        : viewing
+          ? `visiting:${view}`
+          : view;
+  useEffect(() => {
+    trackScreen(screenName);
+  }, [screenName]);
+
+  // An error banner the player saw.
+  useEffect(() => {
+    if (error) trackEvent("error", "banner", { message: String(error).slice(0, 200) });
+  }, [error]);
+
   // The bounty rate the finish previews apply loads with the session and
   // refreshes on tab return (an admin may have changed it meanwhile).
   useEffect(() => {
@@ -1052,6 +1086,11 @@ export default function App() {
   // resolves by id, so even a child folded inside a collapsed compilation
   // opens without expanding anything).
   const openSearchResult = (entry: LibrarySearchEntry) => {
+    trackEvent("search", "library_pick", {
+      query: searchQuery.trim(),
+      results: searchResults.length,
+      picked: entry.kind,
+    });
     setSearchOpen(false);
     window.location.hash =
       entry.kind === "game"
@@ -1132,7 +1171,10 @@ export default function App() {
     onReleaseNotes: openReleaseNotes,
     onAbout: () => navigate("about"),
     onPrivacy: () => navigate("privacy"),
-    onOpenAlerts: () => setAlertsOpen(true),
+    onOpenAlerts: () => {
+      setAlertsOpen(true);
+      trackEvent("notification", "open_bell");
+    },
   };
 
   return (
@@ -1444,7 +1486,18 @@ export default function App() {
           onQueryChange={setSearchQuery}
           results={searchResults}
           onPick={openSearchResult}
-          onClose={() => setSearchOpen(false)}
+          onClose={() => {
+            // A search closed without opening anything — and especially one
+            // that found nothing — says what people look for and don't find.
+            if (searchQuery.trim()) {
+              trackEvent(
+                "search",
+                searchResults.length === 0 ? "library_no_results" : "library_abandoned",
+                { query: searchQuery.trim(), results: searchResults.length },
+              );
+            }
+            setSearchOpen(false);
+          }}
           onAddGame={viewing ? undefined : (q) => {
             setSearchOpen(false);
             openAdd(q);

@@ -1,3 +1,4 @@
+import { trackEvent } from "../../lib/appEvents";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { ArrowLeft, BookOpen, Clock, Banknote, Eye, EyeOff, Flag, Heart, Layers, Link2, Lock, Map, MoreVertical, Package, Star, Trash2, Trophy, Users, type LucideIcon } from "lucide-react";
@@ -643,7 +644,10 @@ function GamePageBody({
                 key={t.id}
                 role="tab"
                 aria-selected={isActive}
-                onClick={() => setTab(t.id)}
+                onClick={() => {
+                  setTab(t.id);
+                  trackEvent("feature", "game_tab", { tab: t.id });
+                }}
                 className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-medium transition ${
                   isActive
                     ? "border-brand bg-brand text-brand-fg shadow-sm"
