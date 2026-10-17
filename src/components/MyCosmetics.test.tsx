@@ -78,6 +78,10 @@ beforeEach(() => {
     defaultCoin: "mint",
     bg: null,
     accent: null,
+    selectedTitleId: null,
+    equippedFrameId: null,
+    equippedStallId: null,
+    equippedCoinId: null,
   });
 });
 async function open() {
@@ -103,11 +107,31 @@ describe("dressing room", () => {
     fireEvent.click(tile("Retired Bronze"));
     expect(mocks.apply).toHaveBeenCalledWith({ ...empty, frame: "frame" }, empty);
     await waitFor(() => expect(tile("Retired Bronze").getAttribute("aria-pressed")).toBe("true"));
+    // The real save mirrors the outfit into the store; Undo reads it from there.
+    act(() => useStore.setState({ equippedFrameId: "frame" }));
     const toast = useToasts.getState().toasts.at(-1)!;
     expect(toast.message).toBe("Wearing Retired Bronze");
     await act(async () => toast.action!.onAction());
     expect(mocks.apply).toHaveBeenLastCalledWith(empty, { ...empty, frame: "frame" });
   });
+  it("undoes against what's worn now, even after the page closed and reopened", async () => {
+    useToasts.setState({ toasts: [] });
+    const first = render(<MyCosmetics onClose={vi.fn()} />);
+    await screen.findByRole("tablist", { name: "Cosmetic slots" });
+    tab("Frame");
+    fireEvent.click(tile("Retired Bronze"));
+    await waitFor(() => expect(mocks.apply).toHaveBeenCalledTimes(1));
+    // The real save mirrors the outfit into the store.
+    act(() => useStore.setState({ equippedFrameId: "frame" }));
+    const undo = useToasts.getState().toasts.at(-1)!.action!;
+    first.unmount();
+    mocks.load.mockResolvedValue({ ...session, look: { ...empty, frame: "frame" } });
+    await open();
+    await act(async () => undo.onAction());
+    expect(mocks.apply).toHaveBeenLastCalledWith(empty, { ...empty, frame: "frame" });
+    expect(useToasts.getState().toasts.at(-1)!.message).toBe("Back to your previous outfit");
+  });
+
   it("takes a slot back to None", async () => {
     mocks.load.mockResolvedValue({ ...session, look: { ...empty, frame: "frame" } });
     await open();

@@ -43,7 +43,7 @@ beforeEach(() => {
       cloud: true,
       economyEnabled: true,
       challenges: state(),
-      fetchChallenges: vi.fn(async () => {}),
+      fetchChallenges: vi.fn(async () => true),
       evaluateChallenges: vi.fn(async () => {}),
       pickMonthlyGoal: vi.fn(async () => {}),
       swapQuickGoal: vi.fn(async () => {}),
@@ -182,6 +182,16 @@ describe("ChallengesPage — seasonal", () => {
     expect(card.getByText(/Autumn Champion badge/)).toBeTruthy();
     fireEvent.click(card.getByRole("button", { name: /Claim \+40/ }));
     expect(useStore.getState().claimChallengeRewards).toHaveBeenCalledWith("u1");
+  });
+});
+
+describe("ChallengesPage — load failure", () => {
+  it("offers Try again instead of loading forever", async () => {
+    const fetchChallenges = vi.fn(async () => false);
+    act(() => useStore.setState({ challenges: null, fetchChallenges }));
+    render(<ChallengesPage />);
+    fireEvent.click(await screen.findByRole("button", { name: "Try again" }));
+    await vi.waitFor(() => expect(fetchChallenges).toHaveBeenCalledTimes(2));
   });
 });
 

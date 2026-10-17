@@ -306,6 +306,12 @@ function MysteryPullModal({ kind, onClose }: { kind: PullKind; onClose: () => vo
                   type="button"
                   onClick={() => {
                     trackEvent("feature", "mystery_pull_mode", { mode: "surprise" });
+                    // A fresh random draw, logged as a plain pull (not a
+                    // picker choice made earlier in this modal).
+                    setPickerDetail(null);
+                    setSeen(new Set());
+                    setRerolls(0);
+                    setCurrentId(drawPull(pool, new Set())?.id ?? currentId);
                     setPhase("pull");
                   }}
                   className="flex items-center gap-3 rounded-2xl border border-line bg-panel p-4 text-left transition hover:border-brand/50"

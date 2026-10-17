@@ -13,7 +13,7 @@ import {
   type CosmeticLook,
   type CosmeticsSession,
 } from "../lib/cosmeticsPreview";
-import { pieceName } from "../lib/dressingRoom";
+import { pieceName, wearOutfit } from "../lib/dressingRoom";
 import { sameLook } from "../lib/wardrobe";
 import {
   previewButton,
@@ -232,7 +232,9 @@ function PresetPanel({
       <div className="mt-3 flex min-w-0 flex-col gap-2">
         {shown.map((preset) => {
           const missing = missingPresetSlots(session, preset.look);
-          const wearing = sameLook(look, preset.look);
+          // Wearing it = it would change nothing (pieces you no longer own
+          // leave their slots empty when it goes on).
+          const wearing = sameLook(look, wearOutfit(session, look, preset.look).next);
           return (
             <article
               aria-label={preset.name}

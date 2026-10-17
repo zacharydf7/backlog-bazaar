@@ -81,10 +81,13 @@ export function isWorn(look: CosmeticLook, item: ShopItem): boolean {
 
 const SLOT_NOUN: Record<ShopItemKind, string> = { title: "title", frame: "frame", stall: "stall", coin: "coin" };
 
-/** The toast after a change: what went on, plus anything taken off because
- *  you no longer own it. */
-export function wearMessage(wearing: string, cleared: ShopItemKind[]): string {
+/** The toast after a change: what went on, plus any slot left empty because
+ *  its piece is no longer yours: the one you had on, or (`from: "look"`) the
+ *  one a saved look asked for. */
+export function wearMessage(wearing: string, cleared: ShopItemKind[], from: "worn" | "look" = "worn"): string {
   if (cleared.length === 0) return wearing;
   const list = cleared.map((s) => SLOT_NOUN[s]).join(" and ");
-  return `${wearing}. Your old ${list} is no longer yours, so it came off.`;
+  return from === "look"
+    ? `${wearing}. Its ${list} is no longer yours, so that slot is empty.`
+    : `${wearing}. Your old ${list} is no longer yours, so it came off.`;
 }

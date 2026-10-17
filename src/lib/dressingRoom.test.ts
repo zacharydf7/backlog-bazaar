@@ -40,6 +40,9 @@ describe("dressing room", () => {
       "Wearing Gold Ring. Your old coin is no longer yours, so it came off.",
     );
     expect(wearMessage("Wearing Gold Ring", [])).toBe("Wearing Gold Ring");
+    expect(wearMessage("Wearing Evening", ["frame"], "look")).toBe(
+      "Wearing Evening. Its frame is no longer yours, so that slot is empty.",
+    );
   });
 
   it("lists a slot's pieces with search and collection filters, plus counts", () => {

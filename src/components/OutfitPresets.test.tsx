@@ -125,6 +125,12 @@ describe("saved look panel", () => {
     expect(wear).toHaveBeenCalledWith({ ...empty, title: "revoked" }, "Evening");
     expect(mocks.save).not.toHaveBeenCalled();
   });
+  it("treats a look you'd only lose missing pieces from as already worn", async () => {
+    mocks.list.mockResolvedValueOnce([{ ...preset, look: { ...empty, title: "revoked" } }]);
+    await open(empty);
+    expect(screen.getByRole("button", { name: "Wear" }).hasAttribute("disabled")).toBe(true);
+  });
+
   it("requires a review confirmation before replacing saved pieces", async () => {
     mocks.list.mockResolvedValueOnce([
       { ...preset, look: { ...empty, title: "revoked" } },

@@ -262,6 +262,27 @@ describe("MysteryPull — Help me choose", () => {
     expect(picks().textContent).not.toContain("Long One");
   });
 
+  it("logs a later Surprise me pull as a random pull, not the picker's choice", async () => {
+    const buyGame = vi.fn(async (id: string) => {
+      useStore.setState({
+        games: useStore.getState().games.map((g) => (g.id === id ? { ...g, status: "playing" as const } : g)),
+      });
+    });
+    act(() => useStore.setState({ buyGame }));
+    render(<MysteryPull />);
+    fireEvent.click(screen.getByRole("button", { name: /Mystery Pull/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Help me choose/i }));
+    fireEvent.click(screen.getByTestId("play-next-picks").querySelector("button")!);
+    // Back out of the activation and the picker, then roll instead.
+    await screen.findByRole("button", { name: /Pay with coins/i });
+    fireEvent.click(screen.getAllByRole("button", { name: "Close" }).at(-1)!); // the activation's
+    fireEvent.click(screen.getByRole("button", { name: /Back/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Surprise me/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Add to Now Playing/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /Pay with coins/i }));
+    await waitFor(() => expect(logMysteryPull).toHaveBeenCalledWith("g1", 0, "play"));
+  });
+
   it("starts a pick through the normal activation and logs it with the answers", async () => {
     const buyGame = vi.fn(async (id: string) => {
       useStore.setState({

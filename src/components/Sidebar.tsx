@@ -714,11 +714,13 @@ function UtilityActions(
             props.view === "users" ||
             props.view === "slots" ||
             props.view === "economy" ||
+            props.view === "shopmanager" ||
             props.view === "submissions" ||
             props.view === "catalog" ||
             props.view === "taxonomy" ||
             props.view === "reports" ||
             props.view === "stats" ||
+            props.view === "challengeadmin" ||
             props.view === "roles"
           }
           onClick={run(props.onAdmin)}

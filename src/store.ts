@@ -1647,7 +1647,7 @@ interface BazaarState {
   // each payout is its own ledger row and a medal can only pay once.
   claimAchievementRewards: (achievementId?: string) => Promise<void>;
   // Load the Challenges page (menu + progress, picks, bonus, seasonal events).
-  fetchChallenges: () => Promise<void>;
+  fetchChallenges: () => Promise<boolean>;
   // Record newly completed goals and events and toast them. Runs alongside
   // evaluateAchievements (same triggers), so every call site covers both.
   evaluateChallenges: () => Promise<void>;
@@ -8286,11 +8286,13 @@ export const useStore = create<BazaarState>((set, get) => ({
     await get().fetchAchievements();
   },
 
+  // Resolves false when the page couldn't be loaded (so it can offer Retry).
   fetchChallenges: async () => {
-    if (!supabase || !get().cloud) return;
+    if (!supabase || !get().cloud) return false;
     const { data, error } = await supabase.rpc("list_challenges");
-    if (error) return;
+    if (error) return false;
     set({ challenges: coerceChallenges(data) });
+    return true;
   },
 
   evaluateChallenges: async () => {

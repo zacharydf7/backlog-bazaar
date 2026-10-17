@@ -261,12 +261,17 @@ export function ChallengesPage() {
   const evaluateChallenges = useStore((s) => s.evaluateChallenges);
   const claimAll = useStore((s) => s.claimChallengeRewards);
   const swap = useStore((s) => s.swapQuickGoal);
+  const [failed, setFailed] = useState(false);
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     if (!cloud) return;
+    setFailed(false);
     // Record anything just completed, then load the page with fresh progress.
-    void evaluateChallenges().then(() => fetchChallenges());
-  }, [cloud, evaluateChallenges, fetchChallenges]);
+    void evaluateChallenges()
+      .then(() => fetchChallenges())
+      .then((ok) => setFailed(!ok));
+  }, [cloud, evaluateChallenges, fetchChallenges, attempt]);
 
   if (!cloud) {
     return (
@@ -282,7 +287,20 @@ export function ChallengesPage() {
   if (!challenges) {
     return (
       <div className="mx-auto w-full max-w-3xl rounded-2xl border border-dashed border-line px-6 py-16 text-center text-sm text-muted">
-        Loading your challenges…
+        {failed ? (
+          <>
+            <p>Your challenges couldn&apos;t be loaded.</p>
+            <button
+              type="button"
+              onClick={() => setAttempt((n) => n + 1)}
+              className="mt-3 rounded-xl border border-line bg-panel px-4 py-2 text-sm font-medium text-ink transition hover:border-brand/50"
+            >
+              Try again
+            </button>
+          </>
+        ) : (
+          "Loading your challenges…"
+        )}
       </div>
     );
   }

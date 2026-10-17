@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { Check, Shirt } from "lucide-react";
+import { AlertTriangle, Check, Shirt } from "lucide-react";
 import { useStore } from "../store";
-import { toastAction } from "../lib/toast";
+import { toast, toastAction } from "../lib/toast";
 import { wardrobeApi, sameLook } from "../lib/wardrobe";
 import {
   COSMETIC_SLOTS,
@@ -35,6 +35,26 @@ export function MyCosmetics({ onClose }: { onClose: () => void }) {
   const userId = useStore((s) => s.userId);
   if (!allowed) return <p className="text-sm text-muted">Sign in to use My Cosmetics.</p>;
   return <Wardrobe key={userId} onClose={onClose} />;
+}
+
+/** The outfit the app has saved for you right now (the store mirrors every
+ *  save, including ones made after this page closed). */
+function savedLook(): CosmeticLook {
+  const s = useStore.getState();
+  return { title: s.selectedTitleId, frame: s.equippedFrameId, stall: s.equippedStallId, coin: s.equippedCoinId };
+}
+
+/** Undo (from the toast): put the previous outfit back, saved against what's
+ *  worn now, so it works even after the page has closed or reopened. */
+async function undoOutfit(previous: CosmeticLook) {
+  const current = savedLook();
+  if (sameLook(previous, current)) return;
+  try {
+    await wardrobeApi.apply(previous, current);
+    toast("Back to your previous outfit", Shirt);
+  } catch (reason) {
+    toast(reason instanceof Error ? reason.message : "Could not undo that change.", AlertTriangle);
+  }
 }
 
 /** The dressing room: the live preview stays in view while you browse one
@@ -98,9 +118,25 @@ function Wardrobe({ onClose }: { onClose: () => void }) {
     return () => window.removeEventListener("beforeunload", warn);
   }, [presetEditing]);
 
+  // An outfit saved from elsewhere (Undo after this page reopened, another
+  // tab) shows up here: follow the store's saved outfit when it CHANGES.
+  const titleId = useStore((s) => s.selectedTitleId);
+  const frameId = useStore((s) => s.equippedFrameId);
+  const stallId = useStore((s) => s.equippedStallId);
+  const coinId = useStore((s) => s.equippedCoinId);
+  const seenSaved = useRef<CosmeticLook | null>(null);
+  useEffect(() => {
+    const now = { title: titleId, frame: frameId, stall: stallId, coin: coinId };
+    const before = seenSaved.current;
+    seenSaved.current = now;
+    if (!before || sameLook(before, now) || saving.current) return;
+    setSession((s) => (s && !sameLook(s.look, now) ? { ...s, look: now } : s));
+    setLook((l) => (l && !sameLook(l, now) ? now : l));
+  }, [titleId, frameId, stallId, coinId]);
+
   /** Put changes on and save them. One save at a time; a failed save puts the
    *  previous outfit back on screen and says why. */
-  async function wear(changes: Partial<CosmeticLook>, label: string) {
+  async function wear(changes: Partial<CosmeticLook>, label: string, from: "worn" | "look" = "worn") {
     if (!session || saving.current) return;
     const before = session.look;
     const { next, cleared } = wearOutfit(session, before, changes);
@@ -113,11 +149,7 @@ function Wardrobe({ onClose }: { onClose: () => void }) {
       const saved = await wardrobeApi.apply(next, before);
       setSession((s) => (s ? { ...s, look: saved } : s));
       setLook(saved);
-      toastAction(
-        wearMessage(label, cleared),
-        { label: "Undo", onAction: () => void undo.current(before) },
-        Shirt,
-      );
+      toastAction(wearMessage(label, cleared, from), { label: "Undo", onAction: () => void undoOutfit(before) }, Shirt);
     } catch (reason) {
       setLook(before);
       setError(reason instanceof Error ? reason.message : "Could not save your outfit.");
@@ -126,10 +158,6 @@ function Wardrobe({ onClose }: { onClose: () => void }) {
       setBusy(false);
     }
   }
-  // Undo (from the toast) always reaches the latest wear(), so it saves
-  // against the outfit as it stands now.
-  const undo = useRef((previous: CosmeticLook) => wear(previous, "Back to your previous outfit"));
-  undo.current = (previous: CosmeticLook) => wear(previous, "Back to your previous outfit");
 
   const unheld = session && look ? unheldSlots(session, look) : [];
   const counts = session ? slotCounts(session) : null;
@@ -316,7 +344,7 @@ function Wardrobe({ onClose }: { onClose: () => void }) {
               look={look}
               disabled={busy}
               onEditingChange={setPresetEditing}
-              onWear={(presetLook, name) => void wear(presetLook, `Wearing ${name}`)}
+              onWear={(presetLook, name) => void wear(presetLook, `Wearing ${name}`, "look")}
             />
           </div>
         </div>
