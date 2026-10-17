@@ -968,6 +968,11 @@ interface BazaarState {
   defaultCoin: CoinVariant; // app-wide coin skin, admin-configurable
   economy: EconomyConfig; // buy-price + finish-bounty formulas, admin-configurable
   rotationCheckinReward: number; // coins per weekly Rotation-lane check-in, admin-configurable
+  // Rotation milestones: every `hours` of live play on a Rotation game pays
+  // `reward` coins (admin-configurable).
+  rotationMilestone: { hours: number; reward: number };
+  // Live hours on each Rotation game and the milestones reached, by game id.
+  rotationProgress: Record<string, { hours: number; paid: number }>;
   rotationReset: RotationResetConfig; // the weekly Rotation reset schedule, admin-configurable
   rotationCheckedIn: string[]; // gameIds already checked in this weekly Rotation period
   defaultRotationSlots: number; // admin default Rotation-lane capacity for new accounts
@@ -1288,7 +1293,13 @@ interface BazaarState {
   setDefaultReplaySlots: (n: number) => Promise<boolean>;
   setDefaultCompletionistSlots: (n: number) => Promise<boolean>;
   // The Rotation lane economy: weekly check-in reward + the weekly reset schedule.
-  setRotationConfig: (reward: number, reset: RotationResetConfig) => Promise<boolean>;
+  setRotationConfig: (
+    reward: number,
+    reset: RotationResetConfig,
+    milestone: { hours: number; reward: number },
+  ) => Promise<boolean>;
+  // Load live hours toward each Rotation game's next milestone.
+  fetchRotationProgress: () => Promise<void>;
   fetchUserSlots: (userId: string) => Promise<TargetedSlot[]>;
   grantUserSlot: (userId: string, definitionId: string) => Promise<boolean>;
   revokeUserSlot: (slotId: string) => Promise<boolean>;
@@ -2061,6 +2072,8 @@ export const useStore = create<BazaarState>((set, get) => ({
   defaultCoin: DEFAULT_COIN,
   economy: DEFAULT_ECONOMY,
   rotationCheckinReward: DEFAULT_ROTATION_CHECKIN_REWARD,
+  rotationMilestone: { hours: 10, reward: 25 },
+  rotationProgress: {},
   rotationReset: DEFAULT_ROTATION_RESET,
   rotationCheckedIn: [],
   pendingRouteId: null,
@@ -2212,7 +2225,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     const { data: cfg } = await supabase
       .from("app_config")
       .select(
-        "maintenance, message, replay_bonus_pct, completion_bonus_pct, co_op_bonus_pct, clear_streak_threshold, clear_streak_bonus_base, clear_streak_bonus_step, clear_streak_bonus_cap, submission_reward, onboarding_vouchers, default_general_slots, default_rotation_slots, default_replay_slots, default_completionist_slots, rotation_checkin_reward, rotation_reset_dow, rotation_reset_hour, rotation_reset_tz, default_coin, price_formula, bounty_formula, sponsor_max_stake, sponsor_monthly_pair_cap, sponsor_expiry_days, preorder_strip_days, shop_open, loan_interest_pct, rec_discount_pct, rec_bounty_pct, rec_bounty_cap, story_order_bonus, collectors_record_bonus, review_bonus, review_bonus_min_chars, session_bonus, session_bonus_min_minutes, session_bonus_daily_cap, challenge_goal_reward, challenge_set_bonus, challenge_daily_reward, challenge_weekly_reward, challenge_weekly_sweep, bounty_gate_pct",
+        "maintenance, message, replay_bonus_pct, completion_bonus_pct, co_op_bonus_pct, clear_streak_threshold, clear_streak_bonus_base, clear_streak_bonus_step, clear_streak_bonus_cap, submission_reward, onboarding_vouchers, default_general_slots, default_rotation_slots, default_replay_slots, default_completionist_slots, rotation_checkin_reward, rotation_milestone_hours, rotation_milestone_reward, rotation_reset_dow, rotation_reset_hour, rotation_reset_tz, default_coin, price_formula, bounty_formula, sponsor_max_stake, sponsor_monthly_pair_cap, sponsor_expiry_days, preorder_strip_days, shop_open, loan_interest_pct, rec_discount_pct, rec_bounty_pct, rec_bounty_cap, story_order_bonus, collectors_record_bonus, review_bonus, review_bonus_min_chars, session_bonus, session_bonus_min_minutes, session_bonus_daily_cap, challenge_goal_reward, challenge_set_bonus, challenge_daily_reward, challenge_weekly_reward, challenge_weekly_sweep, bounty_gate_pct",
       )
       .eq("id", 1)
       .single();
@@ -2334,6 +2347,12 @@ export const useStore = create<BazaarState>((set, get) => ({
         typeof cfg?.rotation_checkin_reward === "number"
           ? cfg.rotation_checkin_reward
           : DEFAULT_ROTATION_CHECKIN_REWARD,
+      rotationMilestone: {
+        hours: Number(cfg?.rotation_milestone_hours) > 0 ? Number(cfg?.rotation_milestone_hours) : 10,
+        reward: Number.isFinite(Number(cfg?.rotation_milestone_reward)) && cfg?.rotation_milestone_reward != null
+          ? Number(cfg?.rotation_milestone_reward)
+          : 25,
+      },
       rotationReset: {
         resetDow:
           typeof cfg?.rotation_reset_dow === "number"
@@ -2407,6 +2426,7 @@ export const useStore = create<BazaarState>((set, get) => ({
         weeklyRecap: null,
         bonusEvents: [],
         bonusPerks: {},
+        rotationProgress: {},
         shopItems: [],
         shopSets: [],
         shopOwnedIds: [],
@@ -2661,6 +2681,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     // count anything just earned.
     void get().evaluateAchievements().then(() => get().fetchWeeklyRecap());
     void get().fetchBonusEvents();
+    void get().fetchRotationProgress();
 
     // Save the browser's timezone so Night Owl and "days played" count this
     // player's own nights and days (awaited via then: a supabase-js call only
@@ -4688,7 +4709,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     return true;
   },
 
-  setRotationConfig: async (reward, reset) => {
+  setRotationConfig: async (reward, reset, milestone) => {
     if (!supabase || !get().can("economy.edit")) return false;
     const nextReward = Math.max(0, Math.min(100000, Math.floor(reward)));
     const nextReset: RotationResetConfig = {
@@ -4696,10 +4717,16 @@ export const useStore = create<BazaarState>((set, get) => ({
       resetHour: Math.max(0, Math.min(23, Math.trunc(reset.resetHour))),
       resetTz: reset.resetTz.trim() || "UTC",
     };
+    const nextMilestone = {
+      hours: Math.max(0.5, Math.min(1000, Math.round(milestone.hours * 2) / 2)),
+      reward: Math.max(0, Math.min(100000, Math.floor(milestone.reward))),
+    };
     const { error } = await supabase
       .from("app_config")
       .update({
         rotation_checkin_reward: nextReward,
+        rotation_milestone_hours: nextMilestone.hours,
+        rotation_milestone_reward: nextMilestone.reward,
         rotation_reset_dow: nextReset.resetDow,
         rotation_reset_hour: nextReset.resetHour,
         rotation_reset_tz: nextReset.resetTz,
@@ -4709,7 +4736,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       set({ error: error.message });
       return false;
     }
-    set({ rotationCheckinReward: nextReward, rotationReset: nextReset });
+    set({ rotationCheckinReward: nextReward, rotationReset: nextReset, rotationMilestone: nextMilestone });
     toast("Rotation lane settings saved", Pencil);
     return true;
   },
@@ -6971,16 +6998,19 @@ export const useStore = create<BazaarState>((set, get) => ({
       set({ error: error.message });
       return;
     }
-    const { coins: newCoins, played_hours, bonus } = data as {
+    const { coins: newCoins, played_hours, bonus, milestone } = data as {
       coins: number;
       played_hours: number;
       bonus: number | null;
+      milestone: number | null;
     };
     set({
       coins: newCoins,
       games: get().games.map((g) => (g.id === id ? { ...g, playedHours: played_hours } : g)),
     });
-    toast(loggedToastText(hours, bonus ?? 0), (bonus ?? 0) > 0 ? Coins : Gamepad2);
+    const paid = (bonus ?? 0) + (milestone ?? 0);
+    toast(loggedToastText(hours, bonus ?? 0, milestone ?? 0), paid > 0 ? Coins : Gamepad2);
+    if (game.inRotation) void get().fetchRotationProgress();
     void get().evaluateAchievements();
   },
 
@@ -7117,6 +7147,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       coins: number | null;
       played_hours: number | null;
       bonus: number | null;
+      milestone: number | null;
     };
     const andThen = get().sessionStopThen;
     set({
@@ -7132,7 +7163,9 @@ export const useStore = create<BazaarState>((set, get) => ({
           : get().games,
     });
     if (row.logged > 0) {
-      toast(loggedToastText(row.logged, row.bonus ?? 0), (row.bonus ?? 0) > 0 ? Coins : Gamepad2);
+      const paid = (row.bonus ?? 0) + (row.milestone ?? 0);
+      toast(loggedToastText(row.logged, row.bonus ?? 0, row.milestone ?? 0), paid > 0 ? Coins : Gamepad2);
+      if (s.gameId && get().games.find((g) => g.id === s.gameId)?.inRotation) void get().fetchRotationProgress();
       void get().evaluateAchievements();
     } else {
       // Sub-minute stop, or the game left the Playing lane mid-session.
@@ -8469,6 +8502,17 @@ export const useStore = create<BazaarState>((set, get) => ({
     }
     trackEvent("feature", "quick_goal_swap");
     await get().fetchChallenges();
+  },
+
+  fetchRotationProgress: async () => {
+    if (!supabase || !get().cloud) return;
+    const { data, error } = await supabase.rpc("my_rotation_progress");
+    if (error || !data || typeof data !== "object") return;
+    const progress: Record<string, { hours: number; paid: number }> = {};
+    for (const [id, v] of Object.entries(data as Record<string, { hours?: unknown; paid?: unknown }>)) {
+      progress[id] = { hours: Number(v?.hours) || 0, paid: Number(v?.paid) || 0 };
+    }
+    set({ rotationProgress: progress });
   },
 
   fetchBonusEvents: async () => {

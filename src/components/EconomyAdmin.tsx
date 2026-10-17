@@ -378,13 +378,16 @@ const RESET_TZ_OPTIONS = [
   "Australia/Sydney",
 ];
 
-/** Admin editor for the Rotation lane economy: the weekly check-in reward and the
- *  fixed weekly reset (day + hour + timezone) that gates it — mirroring how a
- *  live-service game resets its quests. Self-contained Save → app_config. The lane
- *  itself is UNCAPPED, so there is no size to configure. */
+/** Admin editor for the Rotation lane economy: the weekly check-in reward, the
+ *  hours milestones (every N live hours on a Rotation game pays coins) and the
+ *  fixed weekly reset (day + hour + timezone) that gates the check-in —
+ *  mirroring how a live-service game resets its quests. Self-contained Save →
+ *  app_config. The lane itself is UNCAPPED, so there is no size to configure. */
 function RotationCard() {
-  const { rotationCheckinReward, rotationReset, setRotationConfig } = useStore();
+  const { rotationCheckinReward, rotationMilestone, rotationReset, setRotationConfig } = useStore();
   const [reward, setReward] = useState(String(rotationCheckinReward));
+  const [milestoneHours, setMilestoneHours] = useState(String(rotationMilestone.hours));
+  const [milestoneReward, setMilestoneReward] = useState(String(rotationMilestone.reward));
   const [dow, setDow] = useState(rotationReset.resetDow);
   const [hour, setHour] = useState(String(rotationReset.resetHour));
   const [tz, setTz] = useState(rotationReset.resetTz);
@@ -393,18 +396,22 @@ function RotationCard() {
   const draft = { resetDow: dow, resetHour: num(hour), resetTz: tz };
   const dirty =
     num(reward) !== rotationCheckinReward ||
+    num(milestoneHours) !== rotationMilestone.hours ||
+    num(milestoneReward) !== rotationMilestone.reward ||
     dow !== rotationReset.resetDow ||
     num(hour) !== rotationReset.resetHour ||
     tz !== rotationReset.resetTz;
 
   async function save() {
     setSaving(true);
-    await setRotationConfig(num(reward), draft);
+    await setRotationConfig(num(reward), draft, { hours: num(milestoneHours), reward: num(milestoneReward) });
     setSaving(false);
   }
 
   function revert() {
     setReward(String(rotationCheckinReward));
+    setMilestoneHours(String(rotationMilestone.hours));
+    setMilestoneReward(String(rotationMilestone.reward));
     setDow(rotationReset.resetDow);
     setHour(String(rotationReset.resetHour));
     setTz(rotationReset.resetTz);
@@ -420,8 +427,8 @@ function RotationCard() {
         </h3>
         <p className="text-xs text-muted">
           Live-service &amp; ongoing games sit in their own lane — uncapped, any number can
-          rotate — and earn a weekly check-in reward instead of a finish bounty. Set the reward
-          and when the week resets.
+          rotate — and earn a weekly check-in reward plus hours milestones instead of a finish
+          bounty. Set the rewards and when the week resets.
         </p>
       </div>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -435,6 +442,32 @@ function RotationCard() {
             max={100000}
             value={reward}
             onChange={(e) => setReward(e.target.value)}
+            className={inputClass + " mt-1"}
+          />
+        </label>
+        <label className="block text-sm text-ink">
+          <span>
+            Milestone every <span className="text-xs text-subtle">— live hours on one game</span>
+          </span>
+          <input
+            type="number"
+            min={0.5}
+            step={0.5}
+            value={milestoneHours}
+            onChange={(e) => setMilestoneHours(e.target.value)}
+            className={inputClass + " mt-1"}
+          />
+        </label>
+        <label className="block text-sm text-ink">
+          <span>
+            Milestone reward <span className="text-xs text-subtle">— coins, 0–100000</span>
+          </span>
+          <input
+            type="number"
+            min={0}
+            max={100000}
+            value={milestoneReward}
+            onChange={(e) => setMilestoneReward(e.target.value)}
             className={inputClass + " mt-1"}
           />
         </label>

@@ -6,6 +6,8 @@ import {
   resetDayLabel,
   rotationResetSummary,
   formatResetCountdown,
+  rotationMilestoneProgress,
+  wallTimeInTz,
   type RotationResetConfig,
 } from "./rotation";
 
@@ -81,5 +83,23 @@ describe("labels", () => {
     expect(formatResetCountdown(new Date("2026-06-22T19:00:00Z"), TUE_UTC)).toBe("5h 0m");
     // 2 days 3 hours before
     expect(formatResetCountdown(new Date("2026-06-20T21:00:00Z"), TUE_UTC)).toBe("2d 3h");
+  });
+});
+
+describe("rotationMilestoneProgress", () => {
+  it("counts down to the next milestone and fills the bar for this stretch", () => {
+    expect(rotationMilestoneProgress(0, 0, 10)).toEqual({ next: 10, toGo: 10, fraction: 0 });
+    expect(rotationMilestoneProgress(13.5, 1, 10)).toEqual({ next: 20, toGo: 6.5, fraction: 0.35 });
+  });
+
+  it("never goes below zero when hours were taken back", () => {
+    expect(rotationMilestoneProgress(8, 1, 10)).toEqual({ next: 20, toGo: 12, fraction: 0 });
+  });
+});
+
+describe("wallTimeInTz", () => {
+  it("finds midnight Eastern on either side of the clock change", () => {
+    expect(new Date(wallTimeInTz(2026, 11, 1, 0, "America/New_York")).toISOString()).toBe("2026-11-01T04:00:00.000Z");
+    expect(new Date(wallTimeInTz(2026, 11, 2, 0, "America/New_York")).toISOString()).toBe("2026-11-02T05:00:00.000Z");
   });
 });

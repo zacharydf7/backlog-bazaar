@@ -102,6 +102,22 @@ export function wallTimeInTz(year: number, month: number, day: number, hour: num
   return wall - tzOffsetMs(new Date(guess), zone);
 }
 
+/** Progress toward a Rotation game's next hours milestone (every `step` live
+ *  hours pays; `paid` milestones are already reached): the hours it lands at,
+ *  how far there is to go, and how much of this stretch is done (0-1). */
+export function rotationMilestoneProgress(
+  hours: number,
+  paid: number,
+  step: number,
+): { next: number; toGo: number; fraction: number } {
+  const next = (paid + 1) * step;
+  return {
+    next,
+    toGo: Math.max(0, next - hours),
+    fraction: step > 0 ? Math.min(1, Math.max(0, (hours - paid * step) / step)) : 0,
+  };
+}
+
 /** Start of the current weekly Rotation period: the most recent reset boundary
  *  (configured weekday + hour, in the configured tz) that is not in the future. */
 export function rotationPeriodStart(now: Date, cfg: RotationResetConfig): Date {

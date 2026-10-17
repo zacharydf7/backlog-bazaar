@@ -20,6 +20,7 @@ export const LEDGER_LABELS: Record<string, string> = {
   review_bonus: "Reviewer Bonus",
   session_bonus: "Daily Session Bonus",
   rotation_checkin: "Rotation Check-in",
+  rotation_milestone: "Rotation Milestone",
   achievement_reward: "Achievement Reward",
   monthly_goal: "Monthly Goal Reward",
   monthly_goal_bonus: "All Monthly Goals Bonus",

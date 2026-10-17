@@ -9075,6 +9075,8 @@ drop function if exists public.log_playtime(uuid, real);
 drop function if exists public.log_playtime(uuid, real, text);
 -- The Daily Session bonus column (bonus) widened the RETURNS TABLE shape.
 drop function if exists public.log_playtime(uuid, real, text, text);
+-- (Re-dropped each apply: the Rotation milestone column, 2026-10-17, widened
+-- the result.)
 -- Daily Session bonus (feature bonuses): each logging of play time — the Log
 -- button, a stopwatch stop (end_play_session -> log_playtime) or time added in
 -- the Played editor (set_platform_playtime) — pays session_bonus coins, up to
@@ -9125,7 +9127,7 @@ $$;
 revoke execute on function public.pay_session_bonus(uuid, uuid, real) from public, anon, authenticated;
 
 create or replace function public.log_playtime(p_game uuid, p_hours real, p_platform text default null, p_format text default null)
-returns table (coins integer, played_hours real, bonus integer)
+returns table (coins integer, played_hours real, bonus integer, milestone integer)
 language plpgsql
 security definer set search_path = public
 as $$
@@ -9138,6 +9140,7 @@ declare
   v_coins     integer;
   v_pact      public.co_op_pacts%rowtype;
   v_bonus     integer := 0;
+  v_milestone integer := 0;
 begin
   if p_hours is null or p_hours <= 0 then
     raise exception 'Hours must be positive';
@@ -9198,11 +9201,12 @@ begin
      where id = v_pact.invitee_game and status = 'playing';
   end if;
 
-  -- Daily Session bonus (see pay_session_bonus).
+  -- Daily Session bonus (see pay_session_bonus), and any Rotation milestone.
   v_bonus := public.pay_session_bonus(auth.uid(), p_game, p_hours);
+  v_milestone := public.pay_rotation_milestones(auth.uid(), p_game);
   select coins into v_coins from public.profiles where id = auth.uid();
 
-  return query select v_coins, v_played, v_bonus;
+  return query select v_coins, v_played, v_bonus, v_milestone;
 end;
 $$;
 
@@ -12101,9 +12105,11 @@ begin
       else 'live'
     end;
     insert into public.playtime_events
-      (user_id, game_id, game_title, hours, played_after, platform, format, genres, developers, game_hours, pact_id, session_id, source)
+      (user_id, game_id, game_title, hours, played_after, platform, format, genres, developers, game_hours,
+       pact_id, session_id, source, in_rotation)
     values (new.user_id, new.id, new.title, new.played_hours - old.played_hours, new.played_hours,
-            v_platform, v_format, new.genres, new.developers, new.hours, v_pact, v_session, v_source);
+            v_platform, v_format, new.genres, new.developers, new.hours, v_pact, v_session, v_source,
+            coalesce(new.in_rotation, false));
   end if;
   return new;
 end;
@@ -12113,6 +12119,112 @@ drop trigger if exists games_log_playtime on public.games;
 create trigger games_log_playtime
   after update of played_hours on public.games
   for each row execute function public.log_playtime_event();
+
+-- ---------------------------------------------------------------------------
+-- Rotation milestones (owner, 2026-10-17): a live-service game never finishes,
+-- so it can't pay a bounty; instead every rotation_milestone_hours of live play
+-- logged on it while it's in Rotation pays rotation_milestone_reward. Only play
+-- logged while in Rotation counts (playtime_events.in_rotation, recorded from
+-- 2026-10-17 on), so hours already paid by a finish bounty never pay twice,
+-- and catch-up time (is_live_play) never counts. Each milestone is one
+-- append-only row; with the economy off it's recorded at 0 coins, so nothing
+-- is back-paid later. Hours taken back don't claw a milestone back; the next
+-- one just needs the total to climb past it.
+-- ---------------------------------------------------------------------------
+alter table public.playtime_events add column if not exists in_rotation boolean not null default false;
+alter table public.app_config add column if not exists rotation_milestone_hours numeric not null default 10
+  check (rotation_milestone_hours > 0);
+alter table public.app_config add column if not exists rotation_milestone_reward integer not null default 25
+  check (rotation_milestone_reward between 0 and 100000);
+
+create table if not exists public.rotation_milestones (
+  id         uuid primary key default gen_random_uuid(),
+  user_id    uuid not null references auth.users (id) on delete cascade,
+  game_id    uuid references public.games (id) on delete set null,
+  game_title text not null default '',
+  milestone  integer not null check (milestone > 0),
+  hours      numeric not null,
+  coins      integer not null default 0,
+  created_at timestamptz not null default now()
+);
+create unique index if not exists rotation_milestones_game_idx
+  on public.rotation_milestones (user_id, game_id, milestone);
+alter table public.rotation_milestones enable row level security;
+revoke insert, update, delete on public.rotation_milestones from anon, authenticated;
+drop policy if exists "rotation_milestones_select_own" on public.rotation_milestones;
+create policy "rotation_milestones_select_own" on public.rotation_milestones
+  for select to authenticated using (auth.uid() = user_id);
+
+-- Pay any milestones this game has newly reached; returns the coins paid.
+-- Internal: called by log_playtime (the stopwatch logs through it too).
+create or replace function public.pay_rotation_milestones(p_user uuid, p_game uuid)
+returns integer
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  v_step   numeric;
+  v_reward integer;
+  v_title  text;
+  v_total  numeric;
+  v_paid   integer;
+  v_reach  integer;
+  v_econ   boolean := public.economy_enabled(p_user);
+  v_coins  integer;
+  v_sum    integer := 0;
+begin
+  if not exists (select 1 from public.games
+                  where id = p_game and user_id = p_user and status = 'playing' and in_rotation) then
+    return 0;
+  end if;
+  select coalesce(c.rotation_milestone_hours, 10), coalesce(c.rotation_milestone_reward, 25)
+    into v_step, v_reward from public.app_config c where c.id = 1;
+  select coalesce(sum(e.hours), 0) into v_total
+    from public.playtime_events e
+   where e.user_id = p_user and e.game_id = p_game and e.in_rotation
+     and public.is_live_play(e.source, e.hours);
+  select coalesce(max(m.milestone), 0) into v_paid
+    from public.rotation_milestones m where m.user_id = p_user and m.game_id = p_game;
+  v_reach := floor(v_total / v_step)::integer;
+  if v_reach <= v_paid then return 0; end if;
+  select title into v_title from public.games where id = p_game;
+  for i in v_paid + 1 .. v_reach loop
+    insert into public.rotation_milestones (user_id, game_id, game_title, milestone, hours, coins)
+    values (p_user, p_game, coalesce(v_title, ''), i, i * v_step, case when v_econ then v_reward else 0 end)
+    on conflict (user_id, game_id, milestone) do nothing;
+    if found and v_econ and v_reward > 0 then
+      update public.profiles set coins = coins + v_reward where id = p_user returning coins into v_coins;
+      perform public.log_coin_event(
+        p_user, 'rotation_milestone', v_reward, 0, v_coins, null, p_game, v_title,
+        trim(to_char(i * v_step, 'FM999990.##')) || ' hours',
+        jsonb_build_object('milestone', i, 'hours', i * v_step));
+      v_sum := v_sum + v_reward;
+    end if;
+  end loop;
+  return v_sum;
+end;
+$$;
+revoke execute on function public.pay_rotation_milestones(uuid, uuid) from public, anon, authenticated;
+
+-- The caller's Rotation games and their live hours toward the next milestone,
+-- for the cards: {game_id: {hours, paid}} (paid = milestones reached so far).
+create or replace function public.my_rotation_progress()
+returns jsonb
+language sql
+stable
+security definer set search_path = public
+as $$
+  select coalesce(jsonb_object_agg(g.id, jsonb_build_object(
+           'hours', round((select coalesce(sum(e.hours), 0) from public.playtime_events e
+                            where e.user_id = auth.uid() and e.game_id = g.id and e.in_rotation
+                              and public.is_live_play(e.source, e.hours))::numeric, 2),
+           'paid', (select coalesce(max(m.milestone), 0) from public.rotation_milestones m
+                     where m.user_id = auth.uid() and m.game_id = g.id))), '{}'::jsonb)
+    from public.games g
+   where g.user_id = auth.uid() and g.status = 'playing' and g.in_rotation;
+$$;
+revoke execute on function public.my_rotation_progress() from public, anon;
+grant execute on function public.my_rotation_progress() to authenticated;
 
 -- ---------------------------------------------------------------------------
 -- Play-session stopwatch: start a
@@ -12216,7 +12328,7 @@ $$;
 -- widened the RETURNS TABLE shape.
 drop function if exists public.end_play_session(uuid, real);
 create or replace function public.end_play_session(p_session uuid, p_hours real default null)
-returns table (logged real, coins integer, played_hours real, bonus integer)
+returns table (logged real, coins integer, played_hours real, bonus integer, milestone integer)
 language plpgsql
 security definer set search_path = public
 as $$
@@ -12228,6 +12340,7 @@ declare
   v_coins   integer;
   v_played  real;
   v_bonus   integer;
+  v_milestone integer;
 begin
   select * into v_sess
     from public.play_sessions
@@ -12255,7 +12368,7 @@ begin
      where id = v_sess.id;
     select p.coins into v_coins from public.profiles p where p.id = auth.uid();
     select g.played_hours into v_played from public.games g where g.id = v_sess.game_id;
-    return query select 0::real, v_coins, v_played, 0;
+    return query select 0::real, v_coins, v_played, 0, 0;
     return;
   end if;
 
@@ -12267,10 +12380,10 @@ begin
      set status = 'logged', ended_at = now(), logged_hours = v_hours
    where id = v_sess.id;
 
-  select l.coins, l.played_hours, l.bonus into v_coins, v_played, v_bonus
+  select l.coins, l.played_hours, l.bonus, l.milestone into v_coins, v_played, v_bonus, v_milestone
     from public.log_playtime(v_sess.game_id, v_hours, v_sess.platform, v_sess.format) l;
 
-  return query select v_hours, v_coins, v_played, coalesce(v_bonus, 0);
+  return query select v_hours, v_coins, v_played, coalesce(v_bonus, 0), coalesce(v_milestone, 0);
 end;
 $$;
 

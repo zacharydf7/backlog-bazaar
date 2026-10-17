@@ -43,15 +43,16 @@ export const RELEASES: Release[] = [
   {
     id: "2026-10-17-rotation-players",
     date: "2026-10-17",
-    title: "Rotation play counts",
-    summary: "Live-service games like Hearthstone now earn goals and recaps, and never cost you a streak.",
-    tag: "improvement",
+    title: "Rotation play pays off",
+    summary: "Live-service games like Hearthstone now earn coins, goals and recaps, and never cost you a streak.",
+    tag: "feature",
     items: [
+      "Rotation games pay 25 coins for every 10 hours you play.",
+      "Log time and use the stopwatch right on Rotation cards.",
+      "New daily, weekly and monthly goals for Rotation play.",
       "Adding a live-service game no longer breaks your Clear Streak.",
-      "New daily, weekly and monthly goals for time on Rotation games.",
-      "You're only dealt a weekly finish goal when you have a game to finish.",
-      "Your weekly recap shows your Rotation hours and check-ins.",
     ],
+    link: { label: "Open Now Playing", view: "playing" },
   },
   {
     id: "2026-10-17-event-calendar",

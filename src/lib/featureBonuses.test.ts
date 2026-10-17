@@ -5,6 +5,7 @@ import {
   finishBonuses,
   finishBonusSummary,
   finishBonusTotal,
+  loggedToastText,
   hasCollectorsRecord,
   reviewQualifies,
   sessionQualifies,
@@ -117,5 +118,13 @@ describe("reviewQualifies / sessionQualifies", () => {
     expect(sessionQualifies(1.5, 20)).toBe(true);
     expect(sessionQualifies(19 / 60, 20)).toBe(false);
     expect(sessionQualifies(Number.NaN, 20)).toBe(false);
+  });
+});
+
+describe("loggedToastText", () => {
+  it("names the time and any coins the log paid", () => {
+    expect(loggedToastText(1.5, 0)).toBe("1h 30m logged");
+    expect(loggedToastText(1, 5)).toBe("1h logged · Daily Session +5");
+    expect(loggedToastText(1, 5, 25)).toBe("1h logged · Daily Session +5 · Rotation milestone +25");
   });
 });

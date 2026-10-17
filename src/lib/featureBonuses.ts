@@ -129,7 +129,9 @@ export function sessionQualifies(hours: number, minMinutes: number): boolean {
 }
 
 /** "1h 30m logged", plus " · Daily Session +3" when the log earned the bonus. */
-export function loggedToastText(hours: number, bonus: number): string {
-  const base = `${formatPlaytime(hours)} logged`;
-  return bonus > 0 ? `${base} · Daily Session +${bonus}` : base;
+export function loggedToastText(hours: number, bonus: number, milestone = 0): string {
+  let text = `${formatPlaytime(hours)} logged`;
+  if (bonus > 0) text += ` · Daily Session +${bonus}`;
+  if (milestone > 0) text += ` · Rotation milestone +${milestone}`;
+  return text;
 }

@@ -44,7 +44,7 @@ import {
   LANE_LABEL,
   type Lane,
 } from "../lib/slots";
-import { formatResetCountdown } from "../lib/rotation";
+import { formatResetCountdown, rotationMilestoneProgress } from "../lib/rotation";
 import { isReplayFinish, isFamilyDiscounted, familyCardPlayed } from "../lib/families";
 import {
   activePactForCard,
@@ -369,6 +369,8 @@ export function GameActions({
     setFinishTag,
     rotationCheckin,
     rotationCheckedIn,
+    rotationMilestone,
+    rotationProgress,
     rotationCheckinReward,
     rotationReset,
     trackEditions,
@@ -682,6 +684,125 @@ export function GameActions({
       />
     ) : null;
 
+  // The time logger (Log box + stopwatch), shared by Now Playing cards and
+  // Rotation cards, so live-service play logs as easily (Rotation players,
+  // 2026-10-17).
+  const playLogger = (
+      <div className="rounded-lg bg-panel p-2">
+        <div className="flex items-center justify-between text-xs text-muted">
+          <span className="inline-flex items-center gap-1" title={familyPlayedTitle}>
+            <Clock size={13} className="text-accent" /> {formatPlaytime(displayPlayed)} played
+            {familyPlayed != null && <span className="text-subtle">· family total</span>}
+          </span>
+        </div>
+        {pactLocksLog ? (
+          <p className="mt-2 flex items-start gap-1.5 text-[11px] text-subtle">
+            <Handshake size={12} className="mt-0.5 shrink-0 text-accent" />
+            <span>
+              {pact?.partnerName ?? "Player 1"} logs your shared time while the pact is on —
+              it lands here automatically.
+            </span>
+          </p>
+        ) : (
+          <>
+            {showVersionPicker && (
+              <div className="mt-2 flex items-center gap-2">
+                <label className="shrink-0 text-[11px] text-muted">Played on</label>
+                <select
+                  value={selectedVersion ? versionKey(selectedVersion.platform, selectedVersion.format) : ""}
+                  onChange={(e) => setLogVersionKey(e.target.value)}
+                  aria-label={`Version played for ${game.title}`}
+                  className="w-full rounded-lg border border-line bg-surface px-2 py-1.5 text-sm text-ink outline-none focus:border-brand"
+                >
+                  {versions.map((v) => {
+                    const key = versionKey(v.platform, v.format);
+                    return (
+                      <option key={key} value={key}>
+                        {versionLabel(v.platform, v.format)}
+                      </option>
+                    );
+                  })}
+                </select>
+              </div>
+            )}
+            <div
+              className={
+                "mt-2 flex gap-2 rounded-lg" +
+                (coachTarget === "log-time" && game.status === "playing" ? coachRing : "")
+              }
+            >
+              <input
+                type="text"
+                inputMode="text"
+                value={logHours}
+                onChange={(e) => setLogHours(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    submitLog();
+                  }
+                }}
+                placeholder="Add time (e.g. 1h 30m)"
+                aria-label={`Log play time for ${game.title}`}
+                className="w-full rounded-lg border border-line bg-surface px-2 py-1.5 text-sm text-ink outline-none transition placeholder:text-subtle focus:border-brand focus:ring-2 focus:ring-brand/25"
+              />
+              <button
+                onClick={submitLog}
+                disabled={!(logParsed && logParsed > 0)}
+                className="shrink-0 rounded-lg bg-brand px-3 py-1.5 text-sm font-semibold text-brand-fg transition hover:brightness-105 active:brightness-95 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Log
+              </button>
+            </div>
+            {logHours.trim() !== "" && logParsed == null && (
+              <p className="mt-1 text-[11px] text-danger">
+                Try formats like “1h 30m”, “90m”, or “2.75”.
+              </p>
+            )}
+            {pactSharesLog && (
+              <p className="mt-1 flex items-center gap-1.5 text-[11px] text-subtle">
+                <Handshake size={12} className="shrink-0 text-accent" />
+                Time you log also counts for {pact?.partnerName ?? "your co-op partner"}.
+              </p>
+            )}
+            {showStopwatch &&
+              (sessionOnThis ? (
+                <button
+                  onClick={() => openSessionStop()}
+                  title={`Stop the stopwatch and log the time on ${game.title}`}
+                  className="mt-2 inline-flex w-full items-center justify-center gap-1.5 rounded-lg border-[1.5px] border-brand bg-brand/10 px-2 py-1.5 text-xs font-semibold text-brand transition hover:bg-brand/20"
+                >
+                  <Timer size={13} /> Stop stopwatch ·{" "}
+                  <span className="tabular-nums">
+                    {activeSession ? formatElapsed(activeSession.startedAt, now) : ""}
+                  </span>
+                </button>
+              ) : activeSession ? (
+                <button
+                  onClick={() => openSessionStop()}
+                  title="One stopwatch at a time — stop it to start one here"
+                  className="mt-2 inline-flex w-full items-center justify-center gap-1.5 text-[11px] text-subtle transition hover:text-ink"
+                >
+                  <Timer size={12} /> Stopwatch running on {activeSession.gameTitle} — tap to
+                  stop
+                </button>
+              ) : (
+                <button
+                  onClick={() => {
+                    const version = showVersionPicker ? selectedVersion : undefined;
+                    void startPlaySession(game.id, version?.platform, version?.format);
+                  }}
+                  title={`Start a stopwatch — stopping it logs the play time on ${game.title}`}
+                  className="mt-2 inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-line px-2 py-1.5 text-xs font-medium text-muted transition hover:border-brand hover:text-ink"
+                >
+                  <Timer size={13} /> Start stopwatch
+                </button>
+              ))}
+          </>
+        )}
+      </div>
+  );
+
   // ── Live-service / ongoing games: no buy price, no finish bounty. Their whole
   // lifecycle is parked ⇄ in the Rotation lane, with a weekly check-in for coins.
   if (isOngoing) {
@@ -720,6 +841,34 @@ export function GameActions({
                 <span className="text-[11px] text-subtle">resets in {formatResetCountdown(new Date(), rotationReset)}</span>
               </div>
             )}
+            {playLogger}
+            {/* Hours milestones: the live-service stand-in for a finish bounty. */}
+            {cloud && economyEnabled && rotationMilestone.reward > 0 && (() => {
+              const p = rotationProgress[game.id];
+              const m = rotationMilestoneProgress(p?.hours ?? 0, p?.paid ?? 0, rotationMilestone.hours);
+              return (
+                <div className="flex flex-col gap-1" title={`Every ${formatPlaytime(rotationMilestone.hours)} you play pays ${rotationMilestone.reward} coins`}>
+                  <div className="flex items-center justify-between gap-2 text-[11px] text-muted">
+                    <span className="inline-flex items-center gap-1">
+                      <Trophy size={12} className="text-accent" /> Next milestone: {formatPlaytime(m.toGo)} to go
+                    </span>
+                    <span className="inline-flex items-center gap-1 font-medium text-ink">
+                      +<CoinIcon size={11} /> {rotationMilestone.reward}
+                    </span>
+                  </div>
+                  <div
+                    className="h-1.5 overflow-hidden rounded-full bg-line"
+                    role="progressbar"
+                    aria-label="Progress to the next Rotation milestone"
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                    aria-valuenow={Math.round(m.fraction * 100)}
+                  >
+                    <div className="h-full rounded-full bg-success" style={{ width: `${m.fraction * 100}%` }} />
+                  </div>
+                </div>
+              );
+            })()}
             {/* One origin-aware exit: a game that joined the lane from Finished
                 returns straight there (badge intact, check-in over); one that
                 joined from the Bazaar chooses between parking and concluding. */}
@@ -816,7 +965,8 @@ export function GameActions({
               {economyEnabled ? (
                 <>
                   Free to add. Check in once a week for <CoinIcon size={11} />{" "}
-                  {rotationCheckinReward} — no buy price, no finish bounty.
+                  {rotationCheckinReward}, and earn <CoinIcon size={11} /> {rotationMilestone.reward} for
+                  every {formatPlaytime(rotationMilestone.hours)} you play. No buy price, no finish bounty.
                 </>
               ) : (
                 "Free to add — check in once a week to log that you're still playing."
@@ -1250,119 +1400,7 @@ export function GameActions({
             </button>
           )}
 
-          <div className="rounded-lg bg-panel p-2">
-            <div className="flex items-center justify-between text-xs text-muted">
-              <span className="inline-flex items-center gap-1" title={familyPlayedTitle}>
-                <Clock size={13} className="text-accent" /> {formatPlaytime(displayPlayed)} played
-                {familyPlayed != null && <span className="text-subtle">· family total</span>}
-              </span>
-            </div>
-            {pactLocksLog ? (
-              <p className="mt-2 flex items-start gap-1.5 text-[11px] text-subtle">
-                <Handshake size={12} className="mt-0.5 shrink-0 text-accent" />
-                <span>
-                  {pact?.partnerName ?? "Player 1"} logs your shared time while the pact is on —
-                  it lands here automatically.
-                </span>
-              </p>
-            ) : (
-              <>
-                {showVersionPicker && (
-                  <div className="mt-2 flex items-center gap-2">
-                    <label className="shrink-0 text-[11px] text-muted">Played on</label>
-                    <select
-                      value={selectedVersion ? versionKey(selectedVersion.platform, selectedVersion.format) : ""}
-                      onChange={(e) => setLogVersionKey(e.target.value)}
-                      aria-label={`Version played for ${game.title}`}
-                      className="w-full rounded-lg border border-line bg-surface px-2 py-1.5 text-sm text-ink outline-none focus:border-brand"
-                    >
-                      {versions.map((v) => {
-                        const key = versionKey(v.platform, v.format);
-                        return (
-                          <option key={key} value={key}>
-                            {versionLabel(v.platform, v.format)}
-                          </option>
-                        );
-                      })}
-                    </select>
-                  </div>
-                )}
-                <div
-                  className={
-                    "mt-2 flex gap-2 rounded-lg" +
-                    (coachTarget === "log-time" && game.status === "playing" ? coachRing : "")
-                  }
-                >
-                  <input
-                    type="text"
-                    inputMode="text"
-                    value={logHours}
-                    onChange={(e) => setLogHours(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        e.preventDefault();
-                        submitLog();
-                      }
-                    }}
-                    placeholder="Add time (e.g. 1h 30m)"
-                    aria-label={`Log play time for ${game.title}`}
-                    className="w-full rounded-lg border border-line bg-surface px-2 py-1.5 text-sm text-ink outline-none transition placeholder:text-subtle focus:border-brand focus:ring-2 focus:ring-brand/25"
-                  />
-                  <button
-                    onClick={submitLog}
-                    disabled={!(logParsed && logParsed > 0)}
-                    className="shrink-0 rounded-lg bg-brand px-3 py-1.5 text-sm font-semibold text-brand-fg transition hover:brightness-105 active:brightness-95 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    Log
-                  </button>
-                </div>
-                {logHours.trim() !== "" && logParsed == null && (
-                  <p className="mt-1 text-[11px] text-danger">
-                    Try formats like “1h 30m”, “90m”, or “2.75”.
-                  </p>
-                )}
-                {pactSharesLog && (
-                  <p className="mt-1 flex items-center gap-1.5 text-[11px] text-subtle">
-                    <Handshake size={12} className="shrink-0 text-accent" />
-                    Time you log also counts for {pact?.partnerName ?? "your co-op partner"}.
-                  </p>
-                )}
-                {showStopwatch &&
-                  (sessionOnThis ? (
-                    <button
-                      onClick={() => openSessionStop()}
-                      title={`Stop the stopwatch and log the time on ${game.title}`}
-                      className="mt-2 inline-flex w-full items-center justify-center gap-1.5 rounded-lg border-[1.5px] border-brand bg-brand/10 px-2 py-1.5 text-xs font-semibold text-brand transition hover:bg-brand/20"
-                    >
-                      <Timer size={13} /> Stop stopwatch ·{" "}
-                      <span className="tabular-nums">
-                        {activeSession ? formatElapsed(activeSession.startedAt, now) : ""}
-                      </span>
-                    </button>
-                  ) : activeSession ? (
-                    <button
-                      onClick={() => openSessionStop()}
-                      title="One stopwatch at a time — stop it to start one here"
-                      className="mt-2 inline-flex w-full items-center justify-center gap-1.5 text-[11px] text-subtle transition hover:text-ink"
-                    >
-                      <Timer size={12} /> Stopwatch running on {activeSession.gameTitle} — tap to
-                      stop
-                    </button>
-                  ) : (
-                    <button
-                      onClick={() => {
-                        const version = showVersionPicker ? selectedVersion : undefined;
-                        void startPlaySession(game.id, version?.platform, version?.format);
-                      }}
-                      title={`Start a stopwatch — stopping it logs the play time on ${game.title}`}
-                      className="mt-2 inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-line px-2 py-1.5 text-xs font-medium text-muted transition hover:border-brand hover:text-ink"
-                    >
-                      <Timer size={13} /> Start stopwatch
-                    </button>
-                  ))}
-              </>
-            )}
-          </div>
+          {playLogger}
           {showEconomy && perk?.session && (
             <p className="inline-flex items-center justify-center gap-1 text-center text-xs font-semibold text-success">
               <PartyPopper size={13} className="shrink-0" /> {perk.session.event}: Daily Session coins{" "}

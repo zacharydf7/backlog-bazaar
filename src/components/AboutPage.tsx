@@ -26,6 +26,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { useStore } from "../store";
+import { formatPlaytime } from "../lib/playtime";
 import { CoinIcon } from "./CoinIcon";
 import { STARTING_COINS } from "../lib/pricing";
 import { resetDayLabel } from "../lib/rotation";
@@ -73,6 +74,7 @@ export function AboutPage() {
     submissionReward,
     economy,
     rotationCheckinReward,
+    rotationMilestone,
     rotationReset,
     coOpBonusPct,
     sponsorMaxStake,
@@ -371,6 +373,13 @@ export function AboutPage() {
               <Coin n={rotationCheckinReward} />. The week resets every{" "}
               <strong className="text-ink">{resetDayLabel(rotationReset.resetDow)}</strong> (the lane
               shows the countdown).
+            </p>
+            <p>
+              Ongoing games never finish, so instead of a bounty they pay{" "}
+              <strong className="text-ink">milestones</strong>: every{" "}
+              {formatPlaytime(rotationMilestone.hours)} you log on a Rotation game earns{" "}
+              <Coin n={rotationMilestone.reward} />. Log time or run the stopwatch right on its card;
+              only time played while it&apos;s in Rotation counts.
             </p>
             <p>
               Rotation play counts like any other: logging time earns{" "}

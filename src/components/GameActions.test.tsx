@@ -605,3 +605,39 @@ describe("GameActions coin event perks", () => {
     expect(screen.getByText(new RegExp(`${EVENT}: Daily Session coins ×2 when you log time`))).toBeTruthy();
   });
 });
+
+describe("GameActions Rotation card (Rotation players, 2026-10-17)", () => {
+  const rotation = () =>
+    game({ id: "r", title: "Hearthstone", status: "playing", ongoing: true, inRotation: true, playedHours: 12 });
+
+  beforeEach(() => {
+    act(() =>
+      useStore.setState({
+        viewing: null,
+        cloud: true,
+        economyEnabled: true,
+        activeSession: null,
+        rotationCheckedIn: [],
+        rotationMilestone: { hours: 10, reward: 25 },
+        rotationProgress: { r: { hours: 13.5, paid: 1 } },
+      }),
+    );
+  });
+
+  it("logs time and runs the stopwatch like a Now Playing card", () => {
+    const logPlaytime = vi.fn(async () => {});
+    act(() => useStore.setState({ games: [rotation()], logPlaytime }));
+    render(<GameActions game={rotation()} />);
+    fireEvent.change(screen.getByLabelText("Log play time for Hearthstone"), { target: { value: "45m" } });
+    fireEvent.click(screen.getByRole("button", { name: "Log" }));
+    expect(logPlaytime).toHaveBeenCalledWith("r", 0.75, undefined, undefined);
+    expect(screen.getByRole("button", { name: /Start stopwatch/ })).toBeTruthy();
+  });
+
+  it("shows how far it is to the next hours milestone", () => {
+    act(() => useStore.setState({ games: [rotation()] }));
+    render(<GameActions game={rotation()} />);
+    expect(screen.getByText(/Next milestone: 6h 30m to go/)).toBeTruthy();
+    expect(screen.getByRole("progressbar", { name: /next Rotation milestone/ }).getAttribute("aria-valuenow")).toBe("35");
+  });
+});

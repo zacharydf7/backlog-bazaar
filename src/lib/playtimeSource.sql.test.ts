@@ -30,10 +30,12 @@ beforeAll(async () => {
     create function auth.uid() returns uuid language sql
       as $$ select nullif(current_setting('test.uid', true), '')::uuid $$;
     create table public.games (id uuid primary key, user_id uuid, title text, played_hours real not null default 0,
-      copies jsonb not null default '[]'::jsonb, genres jsonb, developers jsonb, hours real);
+      copies jsonb not null default '[]'::jsonb, genres jsonb, developers jsonb, hours real,
+      in_rotation boolean not null default false);
     create table public.playtime_events (user_id uuid, game_id uuid, game_title text, hours real, played_after real,
       platform text, format text, genres jsonb, developers jsonb, game_hours real, pact_id uuid, session_id uuid,
-      source text not null default 'live', created_at timestamptz not null default now());
+      source text not null default 'live', in_rotation boolean not null default false,
+      created_at timestamptz not null default now());
     create table public.bonus_calls (hours real);
     create function public.pay_session_bonus(p_user uuid, p_game uuid, p_hours real) returns integer
       language sql as $$ insert into public.bonus_calls values (p_hours); select 5 $$;
