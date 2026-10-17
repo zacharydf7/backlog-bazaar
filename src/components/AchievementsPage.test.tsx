@@ -1,6 +1,7 @@
-import { describe, it, expect, beforeEach } from "vitest";
-import { act, render, screen } from "@testing-library/react";
-import { AchievementsPage, AchievementMedallion } from "./AchievementsPage";
+import { describe, it, expect, beforeEach, vi } from "vitest";
+import { act, fireEvent, render, screen } from "@testing-library/react";
+import { AchievementsPage } from "./AchievementsPage";
+import { SealMedal } from "./SealMedal";
 import { useStore } from "../store";
 import type { Achievement } from "../types";
 
@@ -20,6 +21,9 @@ function ach(over: Partial<Achievement> = {}): Achievement {
     metricValue: 0,
     holders: 3,
     players: 20,
+    hidden: false,
+    reward: 10,
+    rewardPaidAt: null,
     ...over,
   };
 }
@@ -51,7 +55,15 @@ const CATALOG: Achievement[] = [
 ];
 
 beforeEach(() => {
-  act(() => useStore.setState({ cloud: true, achievements: CATALOG }));
+  act(() =>
+    useStore.setState({
+      cloud: true,
+      economyEnabled: true,
+      achievements: CATALOG,
+      fetchAchievements: vi.fn(async () => {}),
+      claimAchievementRewards: vi.fn(async () => {}),
+    }),
+  );
 });
 
 describe("AchievementsPage", () => {
@@ -92,11 +104,65 @@ describe("AchievementsPage", () => {
   });
 });
 
-describe("AchievementMedallion", () => {
-  it("greys out a locked medal and colours an earned one", () => {
-    const { container, rerender } = render(<AchievementMedallion achievement={ach()} />);
-    expect(container.querySelector(".grayscale")).toBeTruthy();
-    rerender(<AchievementMedallion achievement={ach({ earnedAt: 1 })} />);
-    expect(container.querySelector(".grayscale")).toBeNull();
+describe("AchievementsPage — rewards", () => {
+  it("offers Claim on an unclaimed earned medal and Claim all for the total", () => {
+    render(<AchievementsPage />);
+    expect(screen.getByText(/1 reward ready to claim — 10 coins/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /Claim \+10/ }));
+    expect(useStore.getState().claimAchievementRewards).toHaveBeenCalledWith("f1");
+    fireEvent.click(screen.getByRole("button", { name: /Claim all/ }));
+    expect(useStore.getState().claimAchievementRewards).toHaveBeenCalledWith();
+  });
+
+  it("marks a paid medal as claimed, with no Claim buttons left", () => {
+    act(() =>
+      useStore.setState({ achievements: [{ ...CATALOG[0], rewardPaidAt: 2 }, ...CATALOG.slice(1)] }),
+    );
+    render(<AchievementsPage />);
+    expect(screen.getByText("+10 claimed")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Claim/ })).toBeNull();
+  });
+
+  it("keeps rewards waiting, with nothing to press, while the economy is off", () => {
+    act(() => useStore.setState({ economyEnabled: false }));
+    render(<AchievementsPage />);
+    expect(screen.getByText(/waiting for when your coin economy is back on/)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Claim/ })).toBeNull();
+  });
+
+  it("scores earned medals and lists secret medals in their own card", () => {
+    act(() =>
+      useStore.setState({
+        achievements: [
+          ...CATALOG,
+          ach({ id: "h1", slug: "hidden", family: "hidden:h1", name: "Hidden achievement", hidden: true, reward: 25, sort: 30 }),
+        ],
+      }),
+    );
+    render(<AchievementsPage />);
+    expect(screen.getByText("Score 10")).toBeTruthy();
+    expect(screen.getByTestId("achievement-secrets").textContent).toMatch(/Hidden achievement.*Secret/);
+  });
+});
+
+describe("SealMedal", () => {
+  it("pours an earned seal in its metal and leaves a locked one as an outline", () => {
+    const { container, rerender } = render(<SealMedal achievement={ach()} />);
+    expect(container.querySelector("path[stroke-dasharray]")).toBeTruthy();
+    expect(container.querySelector("radialGradient")).toBeNull();
+    rerender(<SealMedal achievement={ach({ earnedAt: 1 })} />);
+    expect(container.querySelector("path[stroke-dasharray]")).toBeNull();
+    expect(container.querySelector("radialGradient stop")?.getAttribute("stop-color")).toBe("#c0532f");
+  });
+
+  it("adds laurels from Silver and ribbon tails plus a glint on Gold", () => {
+    const { container, rerender } = render(<SealMedal achievement={ach({ earnedAt: 1 })} />);
+    expect(container.querySelectorAll("ellipse")).toHaveLength(0);
+    rerender(<SealMedal achievement={ach({ earnedAt: 1, tier: 2 })} />);
+    expect(container.querySelectorAll("ellipse")).toHaveLength(8);
+    expect(container.querySelector(".animate-seal-shine")).toBeNull();
+    rerender(<SealMedal achievement={ach({ earnedAt: 1, tier: 3 })} />);
+    expect(container.querySelectorAll("ellipse")).toHaveLength(12);
+    expect(container.querySelector(".animate-seal-shine")).toBeTruthy();
   });
 });

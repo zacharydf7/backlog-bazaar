@@ -239,6 +239,13 @@ export interface Achievement {
   /** How many players hold it / how many players exist (rarity). */
   holders: number;
   players: number;
+  /** A secret medal: until earned the server masks its name and requirement. */
+  hidden: boolean;
+  /** Coins the medal pays when claimed — also its achievement-score points. */
+  reward: number;
+  /** ms epoch when its reward was claimed; null while waiting (or for other
+   *  players, whose claim state isn't shared). */
+  rewardPaidAt: number | null;
 }
 
 /** A user's visitor-privacy flags, e.g. { hide_spend: true }. Extensible — add

@@ -215,6 +215,12 @@ export function AboutPage() {
               game is lined up for, and replays never earn them twice.
             </p>
             <p>
+              <strong className="text-ink">Achievements</strong> pay too. Every medal you earn
+              carries a coin reward (more for Silver and Gold, and a little extra for a secret
+              medal) that waits on your Achievements page until you claim it. The rewards also add
+              up to your achievement score, shown on your profile.
+            </p>
+            <p>
               A game&apos;s length comes from a shared estimate, but you can set{" "}
               <strong className="text-ink">your own length</strong> on its Overview — mainlining it,
               or going for 100% — and it drives your price and bounty instead, without changing the

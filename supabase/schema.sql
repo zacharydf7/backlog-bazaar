@@ -18552,6 +18552,68 @@ insert into public.achievements (slug, family, tier, name, description, icon, me
   ('master-curator', 'curator', 3, 'Master Curator', 'Curate 15 lists of at least 5 games each',  'list-ordered', 'lists_curated', 15, 10)
 on conflict (slug) do nothing;
 
+-- ---- Achievements v2 (2026-10-17): wax-seal facelift, 11 new families, 4
+-- hidden medals, and a coin reward per medal (10 / 25 / 50 by tier, 25 for a
+-- hidden one). `reward` is also each medal's achievement-score points; a
+-- hidden medal's name stays secret until earned (list_achievements masks it).
+alter table public.achievements add column if not exists hidden boolean not null default false;
+alter table public.achievements add column if not exists reward integer not null default 0;
+alter table public.achievements drop constraint if exists achievements_reward_check;
+alter table public.achievements add constraint achievements_reward_check check (reward between 0 and 10000);
+-- When the player claimed the medal's coin reward (null = waiting to be
+-- claimed). Rewards are claimed by hand from the trophy room, so every medal
+-- earned before rewards existed is claimable too.
+alter table public.user_achievements add column if not exists reward_paid_at timestamptz;
+
+-- Tier rewards on the existing medals (only rows still at the 0 default, so a
+-- reward tuned later is never overwritten).
+update public.achievements set reward = case tier when 1 then 10 when 2 then 25 else 50 end
+ where reward = 0 and not hidden;
+
+insert into public.achievements (slug, family, tier, name, description, icon, metric, threshold, sort, reward) values
+  ('first-verified',      'verified',        1, 'Honest Ink',          'Earn a Verified clear',                              'badge-check', 'verified_clears',      1,   11, 10),
+  ('verified-ten',        'verified',        2, 'True Ledger',         'Earn 10 Verified clears',                            'badge-check', 'verified_clears',      10,  11, 25),
+  ('verified-fifty',      'verified',        3, 'Sworn Record',        'Earn 50 Verified clears',                            'badge-check', 'verified_clears',      50,  11, 50),
+  ('streak-three',        'streak-keeper',   1, 'On a Roll',           'Reach a Clear Streak of 3',                          'flame',       'best_streak',          3,   12, 10),
+  ('streak-seven',        'streak-keeper',   2, 'Streak Keeper',       'Reach a Clear Streak of 7',                          'flame',       'best_streak',          7,   12, 25),
+  ('streak-fifteen',      'streak-keeper',   3, 'Unbroken',            'Reach a Clear Streak of 15',                         'flame',       'best_streak',          15,  12, 50),
+  ('regular-week',        'regular',         1, 'Regular',             'Log play on 7 different days',                       'calendar',    'play_days',            7,   13, 10),
+  ('regular-month',       'regular',         2, 'Familiar Face',       'Log play on 30 different days',                      'calendar',    'play_days',            30,  13, 25),
+  ('regular-hundred',     'regular',         3, 'Fixture of the Bazaar','Log play on 100 different days',                    'calendar',    'play_days',            100, 13, 50),
+  ('stopwatch-ten',       'timekeeper',      1, 'Clocked In',          'Log 10 stopwatch sessions',                          'timer',       'stopwatch_sessions',   10,  14, 10),
+  ('stopwatch-fifty',     'timekeeper',      2, 'Timekeeper',          'Log 50 stopwatch sessions',                          'timer',       'stopwatch_sessions',   50,  14, 25),
+  ('stopwatch-250',       'timekeeper',      3, 'Keeper of Hours',     'Log 250 stopwatch sessions',                         'timer',       'stopwatch_sessions',   250, 14, 50),
+  ('dusted-off',          'archaeologist',   1, 'Dusted Off',          'Clear a game that waited a year or more',            'shovel',      'backlog_year_clears',  1,   15, 10),
+  ('archaeologist',       'archaeologist',   2, 'Archaeologist',       'Clear 10 games that waited a year or more',          'shovel',      'backlog_year_clears',  10,  15, 25),
+  ('relic-hunter',        'archaeologist',   3, 'Relic Hunter',        'Clear 50 games that waited a year or more',          'shovel',      'backlog_year_clears',  50,  15, 50),
+  ('long-haul',           'long-haul',       1, 'Long Haul',           'Clear a game 40 hours or longer',                    'mountain',    'long_clears',          1,   16, 10),
+  ('epic-journeys',       'long-haul',       2, 'Epic Journeys',       'Clear 10 games 40 hours or longer',                  'mountain',    'long_clears',          10,  16, 25),
+  ('odyssey',             'long-haul',       3, 'Odyssey',             'Clear 30 games 40 hours or longer',                  'mountain',    'long_clears',          30,  16, 50),
+  ('well-rounded',        'well-rounded',    1, 'Sampler',             'Clear games in 5 different genres',                  'compass',     'genres_cleared',       5,   17, 10),
+  ('genre-explorer',      'well-rounded',    2, 'Well-Rounded',        'Clear games in 12 different genres',                 'compass',     'genres_cleared',       12,  17, 25),
+  ('renaissance-player',  'well-rounded',    3, 'Renaissance Player',  'Clear games in 20 different genres',                 'compass',     'genres_cleared',       20,  17, 50),
+  ('co-op-first',         'co-op-partner',   1, 'Player Two',          'Complete a Co-op Pact',                              'handshake',   'coop_pacts_completed', 1,   18, 10),
+  ('co-op-partner',       'co-op-partner',   2, 'Co-op Partner',       'Complete 5 Co-op Pacts',                             'handshake',   'coop_pacts_completed', 5,   18, 25),
+  ('co-op-legend',        'co-op-partner',   3, 'Inseparable',         'Complete 15 Co-op Pacts',                            'handshake',   'coop_pacts_completed', 15,  18, 50),
+  ('lorekeeper-first',    'lorekeeper',      1, 'By the Book',         'Clear a game played in story order',                 'book-open',   'story_order_clears',   1,   19, 10),
+  ('lorekeeper',          'lorekeeper',      2, 'Lorekeeper',          'Clear 5 games played in story order',                'book-open',   'story_order_clears',   5,   19, 25),
+  ('loremaster',          'lorekeeper',      3, 'Loremaster',          'Clear 15 games played in story order',               'book-open',   'story_order_clears',   15,  19, 50),
+  ('rotation-five',       'rotation-regular',1, 'In the Rotation',     'Make 5 Rotation check-ins',                          'refresh-cw',  'rotation_checkins',    5,   20, 10),
+  ('rotation-regular',    'rotation-regular',2, 'Rotation Regular',    'Make 25 Rotation check-ins',                         'refresh-cw',  'rotation_checkins',    25,  20, 25),
+  ('rotation-devotee',    'rotation-regular',3, 'Old Faithful',        'Make 100 Rotation check-ins',                        'refresh-cw',  'rotation_checkins',    100, 20, 50),
+  ('contributor',         'contributor',     1, 'Contributor',         'Get 10 catalog suggestions approved',                'pen-line',    'submissions_approved', 10,  21, 10),
+  ('cartographer',        'contributor',     2, 'Cartographer',        'Get 100 catalog suggestions approved',               'pen-line',    'submissions_approved', 100, 21, 25),
+  ('master-archivist',    'contributor',     3, 'Keeper of the Catalog','Get 500 catalog suggestions approved',              'pen-line',    'submissions_approved', 500, 21, 50)
+on conflict (slug) do nothing;
+
+-- Hidden medals: one each, secret until earned.
+insert into public.achievements (slug, family, tier, name, description, icon, metric, threshold, sort, hidden, reward) values
+  ('night-owl',   'night-owl',   1, 'Night Owl',   'Log play between midnight and 4am',           'moon',      'night_owl_logs',       1, 30, true, 25),
+  ('full-set',    'full-set',    1, 'Full Set',    'Clear every game in a compilation',            'package',   'compilations_cleared', 1, 31, true, 25),
+  ('clean-slate', 'clean-slate', 1, 'Clean Slate', 'Retire 5 games in a single day',               'eraser',    'retired_one_day',      5, 32, true, 25),
+  ('speed-clear', 'speed-clear', 1, 'Speed Clear', 'Earn a Verified clear within a day of starting','zap',       'speed_clears',         1, 33, true, 25)
+on conflict (slug) do nothing;
+
 -- Every achievement metric for one user, computed in one place so the evaluator
 -- and the progress display can never disagree. Semantics mirror the visible
 -- profile stats: finished/completed counts exclude retired drops (like
@@ -18633,16 +18695,121 @@ as $$
     from public.game_lists l
    where l.user_id = p_user
      and (select count(*) from public.game_list_items i where i.list_id = l.id) >= 5
+  -- ---- Achievements v2 (2026-10-17) ----
+  union all
+  -- Verified clears: finished (not retired) games whose logged time reaches
+  -- the bounty gate's share of their length — the Verified mark's own rule.
+  select 'verified_clears',
+         count(distinct coalesce(
+                 public.game_identity_key(g.rawg_id, g.igdb_id, g.catalog_id),
+                 'g:' || g.id::text))::numeric
+    from public.games g
+   where g.user_id = p_user and g.status = 'finished'
+     and g.finish_tag in ('beaten', 'completed')
+     and coalesce(g.personal_hours, g.hours, 0) > 0
+     and coalesce(g.played_hours, 0) >= coalesce((select bounty_gate_pct from public.app_config where id = 1), 25)
+                                         / 100.0 * coalesce(g.personal_hours, g.hours)
+  union all
+  select 'best_streak', coalesce((select clear_streak_best from public.profiles where id = p_user), 0)::numeric
+  union all
+  -- Different days with play logged, in the Rotation reset's timezone.
+  select 'play_days', count(distinct (e.created_at at time zone
+           coalesce((select nullif(btrim(rotation_reset_tz), '') from public.app_config where id = 1), 'UTC'))::date)::numeric
+    from public.playtime_events e
+   where e.user_id = p_user and e.hours > 0
+  union all
+  select 'stopwatch_sessions', count(*)::numeric
+    from public.play_sessions s
+   where s.user_id = p_user and s.status = 'logged'
+  union all
+  -- Clears of games that waited a year or more in the library.
+  select 'backlog_year_clears',
+         count(distinct coalesce(
+                 public.game_identity_key(g.rawg_id, g.igdb_id, g.catalog_id),
+                 'g:' || g.id::text))::numeric
+    from public.games g
+   where g.user_id = p_user and g.status = 'finished'
+     and g.finish_tag in ('beaten', 'completed')
+     and g.finished_at - g.added_at >= interval '365 days'
+  union all
+  select 'long_clears',
+         count(distinct coalesce(
+                 public.game_identity_key(g.rawg_id, g.igdb_id, g.catalog_id),
+                 'g:' || g.id::text))::numeric
+    from public.games g
+   where g.user_id = p_user and g.status = 'finished'
+     and g.finish_tag in ('beaten', 'completed')
+     and coalesce(g.personal_hours, g.hours, 0) >= 40
+  union all
+  select 'genres_cleared', count(distinct genre)::numeric
+    from public.games g
+    cross join lateral jsonb_array_elements_text(
+           case when jsonb_typeof(g.genres) = 'array' then g.genres else '[]'::jsonb end) as genre
+   where g.user_id = p_user and g.status = 'finished'
+     and g.finish_tag in ('beaten', 'completed')
+  union all
+  select 'coop_pacts_completed', count(*)::numeric
+    from public.co_op_pacts c
+   where c.status = 'completed' and p_user in (c.inviter, c.invitee)
+  union all
+  select 'story_order_clears', count(*)::numeric
+    from public.games g
+   where g.user_id = p_user and g.status = 'finished'
+     and g.finish_tag in ('beaten', 'completed')
+     and coalesce(g.started_story_locked, false)
+  union all
+  select 'rotation_checkins', count(*)::numeric
+    from public.rotation_checkins r
+   where r.user_id = p_user
+  union all
+  select 'submissions_approved', count(*)::numeric
+    from public.game_submissions s
+   where s.submitter = p_user and s.status = 'approved'
+  -- Hidden medals.
+  union all
+  -- Play logged between midnight and 4am local time.
+  select 'night_owl_logs', count(*)::numeric
+    from public.playtime_events e
+   where e.user_id = p_user and e.hours > 0
+     and extract(hour from e.created_at at time zone
+           coalesce((select nullif(btrim(rotation_reset_tz), '') from public.app_config where id = 1), 'UTC')) < 4
+  union all
+  -- Compilations with every game (2+) cleared.
+  select 'compilations_cleared', count(*)::numeric
+    from public.compilations c
+   where c.user_id = p_user
+     and (select count(*) from public.games g where g.compilation_id = c.id) >= 2
+     and not exists (select 1 from public.games g
+                      where g.compilation_id = c.id
+                        and not (g.status = 'finished' and g.finish_tag in ('beaten', 'completed')))
+  union all
+  -- The most games retired on a single day.
+  select 'retired_one_day', coalesce(max(n), 0)::numeric
+    from (select count(*) as n from public.games g
+           where g.user_id = p_user and g.finish_tag = 'retired' and g.finished_at is not null
+           group by (g.finished_at at time zone 'UTC')::date) d
+  union all
+  -- Verified clears inside 24 hours of starting.
+  select 'speed_clears', count(*)::numeric
+    from public.games g
+   where g.user_id = p_user and g.status = 'finished'
+     and g.finish_tag in ('beaten', 'completed')
+     and g.started_at is not null and g.finished_at - g.started_at <= interval '24 hours'
+     and coalesce(g.personal_hours, g.hours, 0) > 0
+     and coalesce(g.played_hours, 0) >= coalesce((select bounty_gate_pct from public.app_config where id = 1), 25)
+                                         / 100.0 * coalesce(g.personal_hours, g.hours)
 $$;
 
 -- Award the caller every unearned achievement whose metric now passes, and
--- return just the NEW earns (so the client can toast them). Idempotent and
--- safe to call at any frequency; concurrent calls are deduped by the primary
--- key + on-conflict guard.
-create or replace function public.evaluate_achievements()
+-- return just the NEW earns (so the client can toast them, with the coins now
+-- waiting to be claimed). Idempotent and safe to call at any frequency;
+-- concurrent calls are deduped by the primary key + on-conflict guard.
+drop function if exists public.evaluate_achievements();
+create function public.evaluate_achievements()
 returns table (
   id uuid, slug text, family text, tier smallint,
-  name text, description text, icon text, earned_at timestamptz
+  name text, description text, icon text, earned_at timestamptz,
+  hidden boolean, reward integer
 )
 language plpgsql security definer set search_path = public
 as $$
@@ -18665,7 +18832,8 @@ begin
     on conflict (user_id, achievement_id) do nothing
     returning achievement_id, user_achievements.earned_at
   )
-  select a.id, a.slug, a.family, a.tier, a.name, a.description, a.icon, w.earned_at
+  select a.id, a.slug, a.family, a.tier, a.name, a.description, a.icon, w.earned_at,
+         a.hidden, a.reward
     from won w
     join public.achievements a on a.id = w.achievement_id
    order by a.sort, a.tier;
@@ -18676,12 +18844,17 @@ $$;
 -- achievement (locked ones included) + earned_at, the caller's own live metric
 -- value (progress bars — withheld when viewing someone else), and holder counts
 -- for rarity. p_user null = self; another id shows that player's earned set
--- (their profile module), gated like other profile reads.
-create or replace function public.list_achievements(p_user uuid default null)
+-- (their profile module), gated like other profile reads. A hidden medal the
+-- player hasn't earned comes back masked (no name, requirement, family or
+-- progress) so the trophy room shows only that a secret exists. reward_paid_at
+-- (claimed state) is the caller's own only.
+drop function if exists public.list_achievements(uuid);
+create function public.list_achievements(p_user uuid default null)
 returns table (
   id uuid, slug text, family text, tier smallint, name text, description text,
   icon text, metric text, threshold numeric, sort integer,
-  earned_at timestamptz, metric_value numeric, holders bigint, players bigint
+  earned_at timestamptz, metric_value numeric, holders bigint, players bigint,
+  hidden boolean, reward integer, reward_paid_at timestamptz
 )
 language plpgsql security definer set search_path = public
 as $$
@@ -18716,20 +18889,88 @@ begin
   ),
   pl as (
     select count(*)::bigint as players from public.profiles
+  ),
+  cat as (
+    select a.*, ua.earned_at, ua.reward_paid_at,
+           (a.hidden and ua.earned_at is null) as masked
+      from public.achievements a
+      left join public.user_achievements ua
+        on ua.achievement_id = a.id and ua.user_id = v_target
   )
-  select a.id, a.slug, a.family, a.tier, a.name, a.description, a.icon,
-         a.metric, a.threshold, a.sort,
-         ua.earned_at,
-         case when v_self then m.value end as metric_value,
+  select r.id,
+         case when r.masked then 'hidden' else r.slug end,
+         case when r.masked then 'hidden:' || r.id::text else r.family end,
+         r.tier,
+         case when r.masked then 'Hidden achievement' else r.name end,
+         case when r.masked then 'Keep playing to uncover this one.' else r.description end,
+         case when r.masked then 'lock' else r.icon end,
+         case when r.masked then '' else r.metric end,
+         case when r.masked then 0 else r.threshold end,
+         r.sort,
+         r.earned_at,
+         case when v_self and not r.masked then m.value end as metric_value,
          coalesce(h.holders, 0) as holders,
-         pl.players
-    from public.achievements a
-    left join public.user_achievements ua
-      on ua.achievement_id = a.id and ua.user_id = v_target
-    left join m on m.metric = a.metric
-    left join h on h.achievement_id = a.id
+         pl.players,
+         r.hidden,
+         r.reward,
+         case when v_self then r.reward_paid_at end as reward_paid_at
+    from cat r
+    left join m on m.metric = r.metric
+    left join h on h.achievement_id = r.id
     cross join pl
-   order by a.sort, a.tier;
+   order by r.sort, r.tier;
+end;
+$$;
+
+-- Claim the coin reward on the caller's earned medals: one medal
+-- (p_achievement) or every unclaimed one (null). Each payout is its own
+-- 'achievement_reward' ledger row named after the medal, and reward_paid_at
+-- marks the medal claimed so it can never pay twice (the profile row lock
+-- serializes concurrent claims). Paused while the player's coin economy is
+-- off — the rewards keep waiting for them. Returns the coins paid, how many
+-- medals paid out, and the new balance.
+create or replace function public.claim_achievement_rewards(p_achievement uuid default null)
+returns table (paid integer, medals integer, coins integer)
+language plpgsql security definer set search_path = public
+as $$
+#variable_conflict use_column
+declare
+  v_me    uuid := auth.uid();
+  v_coins integer;
+  v_paid  integer := 0;
+  v_n     integer := 0;
+  r       record;
+begin
+  if v_me is null then raise exception 'Not authenticated'; end if;
+  select pr.coins into v_coins from public.profiles pr where pr.id = v_me for update;
+  if not public.economy_enabled(v_me) then
+    raise exception 'Achievement rewards are paused while your coin economy is off';
+  end if;
+  for r in
+    select ua.achievement_id, a.slug, a.tier, a.name, a.reward
+      from public.user_achievements ua
+      join public.achievements a on a.id = ua.achievement_id
+     where ua.user_id = v_me
+       and ua.reward_paid_at is null
+       and a.reward > 0
+       and (p_achievement is null or ua.achievement_id = p_achievement)
+     order by ua.earned_at, a.sort, a.tier
+  loop
+    update public.user_achievements
+       set reward_paid_at = now()
+     where user_id = v_me and achievement_id = r.achievement_id;
+    update public.profiles
+       set coins = coins + r.reward
+     where id = v_me
+     returning coins into v_coins;
+    perform public.log_coin_event(
+      v_me, 'achievement_reward', r.reward, 0, v_coins, null, null, null, r.name,
+      jsonb_build_object('achievement', r.slug, 'tier', r.tier)
+    );
+    v_paid := v_paid + r.reward;
+    v_n := v_n + 1;
+  end loop;
+  return query select v_paid, v_n, v_coins;
 end;
 $$;
 
@@ -18738,9 +18979,11 @@ $$;
 revoke execute on function public.achievement_metrics(uuid)  from public, anon, authenticated;
 revoke execute on function public.evaluate_achievements()    from public, anon;
 revoke execute on function public.list_achievements(uuid)    from public, anon;
+revoke execute on function public.claim_achievement_rewards(uuid) from public, anon;
 
 grant execute on function public.evaluate_achievements()     to authenticated;
 grant execute on function public.list_achievements(uuid)     to authenticated;
+grant execute on function public.claim_achievement_rewards(uuid) to authenticated;
 
 -- ---------------------------------------------------------------------------
 -- Instance isolation: per-platform game instances (issues a2b0bcf4 + 5a320005).

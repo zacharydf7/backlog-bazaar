@@ -646,6 +646,9 @@ describe("ProfileHub — Achievements module", () => {
     metricValue: 3,
     holders: 3,
     players: 20,
+    hidden: false,
+    reward: 10,
+    rewardPaidAt: null,
   };
 
   it("shows your earned medals with a View all into the trophy room", () => {
@@ -654,7 +657,7 @@ describe("ProfileHub — Achievements module", () => {
     render(<ProfileHub onOpenTab={() => {}} onOpenAchievements={onOpen} />);
     const module = within(screen.getByText("Achievements").closest("section") as HTMLElement);
     expect(module.getByText("First Clear")).toBeTruthy();
-    expect(module.getByText("1 of 1 earned")).toBeTruthy();
+    expect(module.getByText("Score 10 · 1 of 1 earned")).toBeTruthy();
     fireEvent.click(module.getByRole("button", { name: /View all/i }));
     expect(onOpen).toHaveBeenCalled();
   });

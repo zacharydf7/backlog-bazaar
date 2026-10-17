@@ -56,6 +56,9 @@ export function coerceAchievements(rows: unknown): Achievement[] {
       metricValue: r.metric_value == null ? null : num(r.metric_value),
       holders: num(r.holders),
       players: Math.max(1, num(r.players)), // never divide by zero
+      hidden: r.hidden === true,
+      reward: num(r.reward),
+      rewardPaidAt: typeof r.reward_paid_at === "string" ? Date.parse(r.reward_paid_at) : null,
     });
   }
   return out.sort((a, b) => a.sort - b.sort || a.tier - b.tier);
@@ -147,12 +150,33 @@ export function earnedSummary(list: Achievement[]): string {
   return `${earned} of ${list.length} earned`;
 }
 
+/** Achievement score: the reward points of every earned medal, so a Gold
+ *  counts for more than a Bronze and a hidden medal for a bit extra. */
+export function achievementScore(list: Achievement[]): number {
+  return list.reduce((sum, a) => sum + (a.earnedAt != null ? a.reward : 0), 0);
+}
+
+/** An earned medal whose coin reward is still waiting to be claimed. */
+export function isClaimable(a: Achievement): boolean {
+  return a.earnedAt != null && a.reward > 0 && a.rewardPaidAt == null;
+}
+
+/** The rewards waiting on your own medals: how many, and the coins in all. */
+export function unclaimedRewards(list: Achievement[]): { count: number; coins: number } {
+  const waiting = list.filter(isClaimable);
+  return { count: waiting.length, coins: waiting.reduce((sum, a) => sum + a.reward, 0) };
+}
+
 /** Toast copy for a batch of fresh earns: name one or two outright; collapse a
  *  bigger burst (e.g. the first sign-in after this ships, when a whole history
- *  is awarded at once) into a count so the screen isn't papered with toasts. */
-export function earnToastMessage(names: string[]): string | null {
+ *  is awarded at once) into a count so the screen isn't papered with toasts.
+ *  `coins` is the reward now waiting to be claimed (0 = say nothing of it). */
+export function earnToastMessage(names: string[], coins = 0): string | null {
   if (names.length === 0) return null;
-  if (names.length === 1) return `Achievement unlocked — ${names[0]}!`;
-  if (names.length === 2) return `Achievements unlocked — ${names[0]} and ${names[1]}!`;
-  return `${names.length} achievements unlocked — see your Profile!`;
+  const claim = coins > 0 ? ` Claim ${coins} coins in Achievements.` : "";
+  if (names.length === 1) return `Achievement unlocked — ${names[0]}!${claim}`;
+  if (names.length === 2) return `Achievements unlocked — ${names[0]} and ${names[1]}!${claim}`;
+  return claim
+    ? `${names.length} achievements unlocked!${claim}`
+    : `${names.length} achievements unlocked — see your Profile!`;
 }

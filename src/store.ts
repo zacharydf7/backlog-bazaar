@@ -1626,6 +1626,10 @@ interface BazaarState {
   // that move metrics (finish, retire, log time, review…) + once at boot —
   // it's idempotent, and anything missed self-heals at the next boot.
   evaluateAchievements: () => Promise<void>;
+  // Claim the coin reward on one earned medal (by achievement id) or on every
+  // unclaimed one (no id). Server-authoritative (claim_achievement_rewards):
+  // each payout is its own ledger row and a medal can only pay once.
+  claimAchievementRewards: (achievementId?: string) => Promise<void>;
   // Record a confirmed Mystery Pull in the append-only history (fire-and-forget;
   // cloud-only). kind: 'play' bought a Bazaar game, 'complete' pulled a beaten
   // game back for a 100% run. The move itself is captured by the normal flows.
@@ -8166,10 +8170,14 @@ export const useStore = create<BazaarState>((set, get) => ({
     try {
       const { data, error } = await supabase.rpc("evaluate_achievements");
       if (!error && Array.isArray(data) && data.length > 0) {
-        const names = data
-          .map((r) => (r as { name?: unknown }).name)
-          .filter((n): n is string => typeof n === "string");
-        const message = earnToastMessage(names);
+        const earned = data as { name?: unknown; reward?: unknown }[];
+        const names = earned.map((r) => r.name).filter((n): n is string => typeof n === "string");
+        // Rewards wait to be claimed; with the economy off they're paused, so
+        // the toast doesn't promise coins.
+        const waiting = get().economyEnabled
+          ? earned.reduce((sum, r) => sum + (typeof r.reward === "number" ? r.reward : 0), 0)
+          : 0;
+        const message = earnToastMessage(names, waiting);
         if (message) toast(message, Medal);
       }
       // Refresh the trophy case either way (progress bars move even without a
@@ -8178,6 +8186,24 @@ export const useStore = create<BazaarState>((set, get) => ({
     } catch {
       // Opportunistic call — never let it surface or reject.
     }
+  },
+
+  claimAchievementRewards: async (achievementId) => {
+    if (!supabase || !get().cloud) return;
+    const { data, error } = await supabase
+      .rpc("claim_achievement_rewards", { p_achievement: achievementId ?? null })
+      .single();
+    if (error) {
+      toast(error.message, AlertTriangle);
+      return;
+    }
+    const row = data as { paid: number; medals: number; coins: number } | null;
+    if (row && row.medals > 0) {
+      set({ coins: row.coins });
+      const what = row.medals === 1 ? "achievement reward" : `${row.medals} achievement rewards`;
+      toast(`+${row.paid} coins — ${what} claimed`, Coins);
+    }
+    await get().fetchAchievements();
   },
 
   // Search the moderated catalog by title: community-added games RAWG doesn't know

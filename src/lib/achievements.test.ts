@@ -9,6 +9,9 @@ import {
   rarityLabel,
   earnedSummary,
   earnToastMessage,
+  achievementScore,
+  unclaimedRewards,
+  isClaimable,
   tierLabel,
   TIER_META,
 } from "./achievements";
@@ -31,6 +34,9 @@ function row(over: Record<string, unknown> = {}): Record<string, unknown> {
     metric_value: "0",
     holders: "3",
     players: "20",
+    hidden: false,
+    reward: 10,
+    reward_paid_at: null,
     ...over,
   };
 }
@@ -51,6 +57,9 @@ function ach(over: Partial<Achievement> = {}): Achievement {
     metricValue: 0,
     holders: 3,
     players: 20,
+    hidden: false,
+    reward: 10,
+    rewardPaidAt: null,
     ...over,
   };
 }
@@ -169,5 +178,40 @@ describe("earnToastMessage", () => {
     expect(earnToastMessage(["A", "B", "C", "D"])).toBe(
       "4 achievements unlocked — see your Profile!",
     );
+  });
+
+  it("points at the coins waiting to be claimed", () => {
+    expect(earnToastMessage(["First Clear"], 10)).toBe(
+      "Achievement unlocked — First Clear! Claim 10 coins in Achievements.",
+    );
+    expect(earnToastMessage(["A", "B", "C"], 85)).toBe(
+      "3 achievements unlocked! Claim 85 coins in Achievements.",
+    );
+  });
+});
+
+describe("achievement rewards", () => {
+  const list = [
+    ach({ id: "a", reward: 10, earnedAt: 1, rewardPaidAt: 2 }),
+    ach({ id: "b", reward: 25, earnedAt: 1 }),
+    ach({ id: "c", reward: 50, earnedAt: 1 }),
+    ach({ id: "d", reward: 50 }), // not earned yet
+    ach({ id: "e", reward: 0, earnedAt: 1 }), // no reward to claim
+  ];
+
+  it("scores every earned medal's points, claimed or not", () => {
+    expect(achievementScore(list)).toBe(85);
+  });
+
+  it("counts only earned, unpaid medals that carry a reward as claimable", () => {
+    expect(list.map(isClaimable)).toEqual([false, true, true, false, false]);
+    expect(unclaimedRewards(list)).toEqual({ count: 2, coins: 75 });
+  });
+
+  it("reads reward, hidden and claimed state from raw rows", () => {
+    const [a] = coerceAchievements([
+      row({ hidden: true, reward: 25, reward_paid_at: "2026-10-17T12:00:00Z" }),
+    ]);
+    expect(a).toMatchObject({ hidden: true, reward: 25, rewardPaidAt: Date.parse("2026-10-17T12:00:00Z") });
   });
 });

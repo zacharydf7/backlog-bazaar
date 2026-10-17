@@ -61,6 +61,22 @@ export const RELEASES: Release[] = [
     title: "Compilations are games too, and bounties follow your time",
     items: [
       {
+        text: "Achievements have a new look: every medal is a wax seal with its own crest, in bronze wax, silver foil or gold leaf.",
+        tag: "feature",
+      },
+      {
+        text: "11 new medal families: Verified clears, Clear Streaks, days played, stopwatch sessions, long games, old backlog clears, genres, Co-op Pacts, story order, Rotation check-ins and catalog contributions. There are also a few secret medals to discover.",
+        tag: "feature",
+      },
+      {
+        text: "Every medal now pays coins: 10, 25 or 50 by tier, and 25 for a secret one. Claim them on the Achievements page, including the medals you've already earned.",
+        tag: "feature",
+      },
+      {
+        text: "Your achievement score adds up your medals. You'll see it on the Achievements page and on your profile.",
+        tag: "feature",
+      },
+      {
         text: "Bounties now follow the time you log. Finish a game with little of it logged and your activation coins come straight back; the rest of the bounty unlocks as you log your time, all of it once you've logged a quarter of the game's length.",
         tag: "feature",
       },

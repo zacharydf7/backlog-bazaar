@@ -43,8 +43,8 @@ import {
 import { milestoneLabel, type MilestoneKind } from "../lib/milestones";
 import { laneOf, LANE_LABEL, LANE_ORDER, type Lane } from "../lib/slots";
 import { isInRotation } from "../lib/status";
-import { displayMedals, earnedSummary } from "../lib/achievements";
-import { AchievementMedallion } from "./AchievementsPage";
+import { achievementScore, displayMedals, earnedSummary } from "../lib/achievements";
+import { SealMedal } from "./SealMedal";
 import { gameHash, listHash } from "../lib/route";
 import type { GameListSummary } from "../lib/gameLists";
 import { VisibilityBadge } from "./lists/VisibilityBadge";
@@ -491,7 +491,7 @@ export function ProfileHub({
                     it, so the case shows current standing, not a pile. */}
                 {medals.slice(0, 8).map((a) => (
                   <div key={a.id} className="flex w-16 flex-col items-center gap-1 text-center">
-                    <AchievementMedallion achievement={a} size={44} />
+                    <SealMedal achievement={a} size={48} />
                     <span className="w-full truncate text-[10px] font-medium text-muted" title={a.name}>
                       {a.name}
                     </span>
@@ -499,8 +499,11 @@ export function ProfileHub({
                 ))}
               </div>
             )}
-            {!visiting && achievements.length > 0 && (
-              <p className="mt-3 text-[11px] text-subtle">{earnedSummary(achievements)}</p>
+            {achievements.length > 0 && (
+              <p className="mt-3 text-[11px] text-subtle">
+                Score {achievementScore(achievements).toLocaleString()}
+                {!visiting && ` · ${earnedSummary(achievements)}`}
+              </p>
             )}
           </Module>
         )}

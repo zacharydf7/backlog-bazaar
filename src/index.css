@@ -541,6 +541,26 @@ input[type="search"]::-webkit-search-decoration {
   }
 }
 
+/* The gold wax seal's slow glint (SealMedal). */
+@keyframes seal-shine {
+  0%,
+  62% {
+    transform: translateX(-120px) skewX(-18deg);
+  }
+  100% {
+    transform: translateX(150px) skewX(-18deg);
+  }
+}
+.animate-seal-shine {
+  animation: seal-shine 3.6s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .animate-seal-shine {
+    animation: none;
+    opacity: 0;
+  }
+}
+
 /* Reduced-motion fallback: the composed (already-stamped) ticket calmly fades
    in place; the particle layers are not rendered at all (gated in
    ImportCelebration.tsx), and these overrides catch the rest. */
