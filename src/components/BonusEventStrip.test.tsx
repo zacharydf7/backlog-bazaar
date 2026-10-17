@@ -18,6 +18,7 @@ function ev(over: Partial<BonusEvent> = {}): BonusEvent {
     sessionMult: 1,
     rewardsMult: 1,
     startDiscountPct: 0,
+    discountLimit: null,
     genres: ["RPG"],
     platforms: [],
     offMainPlatform: false,
@@ -25,6 +26,7 @@ function ev(over: Partial<BonusEvent> = {}): BonusEvent {
     maxHours: null,
     playerCap: null,
     capUsed: 0,
+    discountUsed: 0,
     ...over,
   };
 }
@@ -47,6 +49,17 @@ describe("BonusEventStrip", () => {
     expect(screen.getByText("For RPG")).toBeTruthy();
     expect(screen.getByText("Up to 150 bonus coins left")).toBeTruthy();
     expect(screen.getByText("Ends in 2 days")).toBeTruthy();
+  });
+
+  it("counts down a live event's discounted starts", () => {
+    act(() =>
+      useStore.setState({
+        bonusEvents: [ev({ bountyMult: 1, startDiscountPct: 50, discountLimit: 2, discountUsed: 1 })],
+      }),
+    );
+    render(<BonusEventStrip />);
+    expect(screen.getByText("50% off 2 starts")).toBeTruthy();
+    expect(screen.getByText("1 of 2 discounted starts left")).toBeTruthy();
   });
 
   it("labels an upcoming event as coming up", () => {

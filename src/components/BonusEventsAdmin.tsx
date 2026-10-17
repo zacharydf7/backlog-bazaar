@@ -41,6 +41,8 @@ function blankDraft(): BonusEventDraft {
     sessionMult: 1,
     rewardsMult: 1,
     startDiscountPct: 0,
+    // Only used once a discount is set; 2 keeps half-price starts from being stockpiled.
+    discountLimit: 2,
     genres: [],
     platforms: [],
     offMainPlatform: false,
@@ -63,6 +65,7 @@ function toDraft(e: AdminBonusEvent): BonusEventDraft {
     sessionMult: e.sessionMult,
     rewardsMult: e.rewardsMult,
     startDiscountPct: e.startDiscountPct,
+    discountLimit: e.discountLimit,
     genres: e.genres,
     platforms: e.platforms,
     offMainPlatform: e.offMainPlatform,
@@ -290,6 +293,22 @@ function EventForm({
           />
         </Field>
       </div>
+      {draft.startDiscountPct > 0 && (
+        <div className="sm:max-w-xs">
+          <Field label="Discounted starts per player">
+            <input
+              type="number"
+              min={1}
+              className={inputClass}
+              value={draft.discountLimit ?? ""}
+              placeholder="No limit"
+              onChange={(e) =>
+                patch({ discountLimit: optionalNumber(e.target.value) })
+              }
+            />
+          </Field>
+        </div>
+      )}
 
       <p className="text-sm font-semibold text-ink">
         Which games (leave empty for all)

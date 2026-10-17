@@ -20651,6 +20651,10 @@ create table if not exists public.bonus_events (
       or (repeat = 'monthly' and ends_at - starts_at <= interval '28 days'))
 );
 create index if not exists bonus_events_window_idx on public.bonus_events (starts_at, ends_at);
+-- How many discounted starts each player gets per run (owner, 2026-10-17);
+-- null = no limit. A discounted start counts once bought: shelving refunds
+-- what was paid but doesn't give the start back.
+alter table public.bonus_events add column if not exists discount_limit integer check (discount_limit > 0);
 
 create table if not exists public.bonus_event_payouts (
   id         uuid primary key default gen_random_uuid(),
@@ -20822,6 +20826,10 @@ as $$
                      when 'rewards' then e.rewards_mult > 1 when 'discount' then e.start_discount_pct > 0
                      else false end
      and (p_kind = 'rewards' or public.bonus_event_applies(e, p_user, p_game))
+     and (p_kind <> 'discount' or e.discount_limit is null
+          or (select count(*) from public.bonus_event_payouts p
+               where p.event_id = e.id and p.user_id = p_user and p.kind = 'discount'
+                 and p.created_at >= o.occ_start) < e.discount_limit)
    order by 3 desc, o.occ_end
    limit 1;
 $$;
@@ -20951,7 +20959,11 @@ begin
              'off_main_platform', e.off_main_platform, 'min_hours', e.min_hours, 'max_hours', e.max_hours,
              'player_cap', e.player_cap,
              'cap_used', (select coalesce(sum(p.amount), 0) from public.bonus_event_payouts p
-                           where p.event_id = e.id and p.user_id = v_me and p.created_at >= o.occ_start))
+                           where p.event_id = e.id and p.user_id = v_me and p.created_at >= o.occ_start),
+             'discount_limit', e.discount_limit,
+             'discount_used', (select count(*) from public.bonus_event_payouts p
+                                where p.event_id = e.id and p.user_id = v_me and p.kind = 'discount'
+                                  and p.created_at >= o.occ_start))
            order by o.occ_start)
       from public.bonus_events e
       cross join lateral public.bonus_event_occurrence(e, now()) o
@@ -20997,12 +21009,14 @@ $$;
 revoke execute on function public.bonus_event_notices(uuid) from public, anon, authenticated;
 
 -- Admin (economy.events): create (p_id null) or edit an event; audited.
+drop function if exists public.admin_save_bonus_event(uuid, text, text, timestamptz, timestamptz, numeric, numeric, numeric, integer, text[], text[], boolean, numeric, numeric, integer, text, timestamptz);
 create or replace function public.admin_save_bonus_event(
   p_id uuid, p_name text, p_description text, p_starts_at timestamptz, p_ends_at timestamptz,
   p_bounty_mult numeric, p_session_mult numeric, p_rewards_mult numeric, p_start_discount_pct integer,
   p_genres text[], p_platforms text[], p_off_main_platform boolean,
   p_min_hours numeric, p_max_hours numeric, p_player_cap integer,
-  p_repeat text default null, p_repeat_until timestamptz default null
+  p_repeat text default null, p_repeat_until timestamptz default null,
+  p_discount_limit integer default null
 )
 returns uuid
 language plpgsql security definer set search_path = public
@@ -21015,12 +21029,13 @@ begin
   if p_id is null then
     insert into public.bonus_events
       (name, description, starts_at, ends_at, bounty_mult, session_mult, rewards_mult, start_discount_pct,
-       genres, platforms, off_main_platform, min_hours, max_hours, player_cap, repeat, repeat_until, created_by)
+       genres, platforms, off_main_platform, min_hours, max_hours, player_cap, repeat, repeat_until,
+       discount_limit, created_by)
     values (btrim(p_name), coalesce(p_description, ''), p_starts_at, p_ends_at,
             coalesce(p_bounty_mult, 1), coalesce(p_session_mult, 1), coalesce(p_rewards_mult, 1),
             coalesce(p_start_discount_pct, 0), coalesce(p_genres, '{}'), coalesce(p_platforms, '{}'),
             coalesce(p_off_main_platform, false), p_min_hours, p_max_hours, p_player_cap,
-            nullif(p_repeat, ''), p_repeat_until, auth.uid())
+            nullif(p_repeat, ''), p_repeat_until, p_discount_limit, auth.uid())
     returning * into v_new;
   else
     select * into v_old from public.bonus_events where id = p_id for update;
@@ -21032,7 +21047,8 @@ begin
            genres = coalesce(p_genres, '{}'), platforms = coalesce(p_platforms, '{}'),
            off_main_platform = coalesce(p_off_main_platform, false), min_hours = p_min_hours,
            max_hours = p_max_hours, player_cap = p_player_cap,
-           repeat = nullif(p_repeat, ''), repeat_until = p_repeat_until, updated_at = now()
+           repeat = nullif(p_repeat, ''), repeat_until = p_repeat_until,
+           discount_limit = p_discount_limit, updated_at = now()
      where id = p_id
     returning * into v_new;
   end if;
@@ -21059,13 +21075,15 @@ end;
 $$;
 
 -- Every event (archived included) with what it has paid out so far.
+drop function if exists public.admin_list_bonus_events();
 create or replace function public.admin_list_bonus_events()
 returns table (
   id uuid, name text, description text, starts_at timestamptz, ends_at timestamptz,
   bounty_mult numeric, session_mult numeric, rewards_mult numeric, start_discount_pct integer,
   genres text[], platforms text[], off_main_platform boolean, min_hours numeric, max_hours numeric,
   player_cap integer, archived_at timestamptz, paid_coins bigint, players bigint,
-  repeat text, repeat_until timestamptz, next_start timestamptz, next_end timestamptz, live boolean
+  repeat text, repeat_until timestamptz, next_start timestamptz, next_end timestamptz, live boolean,
+  discount_limit integer
 )
 language plpgsql security definer set search_path = public
 as $$
@@ -21078,7 +21096,7 @@ begin
          e.player_cap, e.archived_at,
          (select coalesce(sum(p.amount), 0) from public.bonus_event_payouts p where p.event_id = e.id),
          (select count(distinct p.user_id) from public.bonus_event_payouts p where p.event_id = e.id),
-         e.repeat, e.repeat_until, o.occ_start, o.occ_end, coalesce(o.live, false)
+         e.repeat, e.repeat_until, o.occ_start, o.occ_end, coalesce(o.live, false), e.discount_limit
     from public.bonus_events e
     left join lateral public.bonus_event_occurrence(e, now()) o on true
    order by e.starts_at desc;
@@ -21087,12 +21105,12 @@ $$;
 
 revoke execute on function public.preview_start_price(uuid, integer) from public, anon;
 revoke execute on function public.list_bonus_events() from public, anon;
-revoke execute on function public.admin_save_bonus_event(uuid, text, text, timestamptz, timestamptz, numeric, numeric, numeric, integer, text[], text[], boolean, numeric, numeric, integer, text, timestamptz) from public, anon;
+revoke execute on function public.admin_save_bonus_event(uuid, text, text, timestamptz, timestamptz, numeric, numeric, numeric, integer, text[], text[], boolean, numeric, numeric, integer, text, timestamptz, integer) from public, anon;
 revoke execute on function public.admin_archive_bonus_event(uuid, boolean) from public, anon;
 revoke execute on function public.admin_list_bonus_events() from public, anon;
 grant execute on function public.preview_start_price(uuid, integer) to authenticated;
 grant execute on function public.list_bonus_events() to authenticated;
-grant execute on function public.admin_save_bonus_event(uuid, text, text, timestamptz, timestamptz, numeric, numeric, numeric, integer, text[], text[], boolean, numeric, numeric, integer, text, timestamptz) to authenticated;
+grant execute on function public.admin_save_bonus_event(uuid, text, text, timestamptz, timestamptz, numeric, numeric, numeric, integer, text[], text[], boolean, numeric, numeric, integer, text, timestamptz, integer) to authenticated;
 grant execute on function public.admin_archive_bonus_event(uuid, boolean) to authenticated;
 grant execute on function public.admin_list_bonus_events() to authenticated;
 

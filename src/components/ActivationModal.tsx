@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { X, Gamepad2, Ticket, Lock, ArrowRight, Target, Handshake, type LucideIcon } from "lucide-react";
+import { X, Gamepad2, Ticket, Lock, ArrowRight, Target, Handshake, BadgePercent, type LucideIcon } from "lucide-react";
 import type { Game } from "../types";
 import { useStore } from "../store";
 import { computeFormula } from "../lib/economy";
@@ -72,6 +72,16 @@ export function ActivationModal({ game, onClose }: { game: Game; onClose: () => 
     };
   }, [game.id, price, economyEnabled, previewStartPrice]);
   const payPrice = eventPrice?.price ?? price;
+  // The running event behind the discount (matched by name, which is all the
+  // preview returns), for its % and how many discounted starts remain.
+  const bonusEvents = useStore((s) => s.bonusEvents);
+  const discountEvent = eventPrice
+    ? bonusEvents.find((e) => e.name === eventPrice.eventName && e.startDiscountPct > 0)
+    : undefined;
+  const startsLeftAfter =
+    discountEvent?.discountLimit != null
+      ? Math.max(0, discountEvent.discountLimit - discountEvent.discountUsed - 1)
+      : null;
   const bounty = computeFormula(game, economy.bounty);
   const reward = applyBountyRate(
     computeFinishReward(isReplayFinish(games, game), bounty, replayBonusPct),
@@ -130,7 +140,7 @@ export function ActivationModal({ game, onClose }: { game: Game; onClose: () => 
       onClick={onClose}
     >
       <div
-        className="w-full max-w-sm overflow-hidden rounded-3xl border border-line bg-surface shadow-2xl"
+        className="max-h-[calc(100dvh-2rem)] w-full max-w-sm overflow-y-auto rounded-3xl border border-line bg-surface shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between px-5 pt-4">
@@ -156,6 +166,30 @@ export function ActivationModal({ game, onClose }: { game: Game; onClose: () => 
         </div>
 
         <div className="flex flex-col gap-2 px-5 pb-5 pt-2">
+          {/* A coin event discount, impossible to miss: what you pay, what you
+              save, and that the finish still pays in full. */}
+          {economyEnabled && eventPrice && (
+            <div className="rounded-2xl border-2 border-success bg-success/10 px-4 py-3" role="status">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-success">
+                  <BadgePercent size={17} /> {eventPrice.eventName}
+                </span>
+                <span className="rounded-full bg-success px-2.5 py-0.5 text-xs font-bold uppercase tracking-wide text-surface">
+                  {discountEvent ? `${discountEvent.startDiscountPct}% off` : "Discounted"}
+                </span>
+              </div>
+              <p className="mt-1.5 text-sm text-ink">
+                Pay <CoinIcon size={13} /> <strong>{payPrice.toLocaleString()}</strong> instead of{" "}
+                <s className="opacity-60">{price.toLocaleString()}</s>. You save{" "}
+                <strong>{(price - payPrice).toLocaleString()}</strong> coins.
+              </p>
+              <p className="mt-0.5 text-xs text-muted">
+                Finishing still pays the full bounty.
+                {startsLeftAfter != null &&
+                  ` After this, ${startsLeftAfter} discounted ${startsLeftAfter === 1 ? "start" : "starts"} left.`}
+              </p>
+            </div>
+          )}
           {!hasOpenSlot && (
             <p className="inline-flex items-center gap-1.5 rounded-xl bg-panel px-3 py-2 text-xs text-danger">
               <Lock size={13} /> No open Now Playing slot — finish or shelve a game, or raise your

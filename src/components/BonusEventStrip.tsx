@@ -20,6 +20,8 @@ export function BonusEventStrip() {
         const live = eventIsLive(e, now);
         const target = targetLabel(e);
         const capLeft = e.playerCap != null ? Math.max(0, e.playerCap - e.capUsed) : null;
+        const startsLeft =
+          e.startDiscountPct > 0 && e.discountLimit != null ? Math.max(0, e.discountLimit - e.discountUsed) : null;
         return (
           <div
             key={e.id}
@@ -43,6 +45,13 @@ export function BonusEventStrip() {
               ))}
               {target && (
                 <span className="rounded-full border border-line px-2.5 py-1 text-xs text-muted">For {target}</span>
+              )}
+              {live && startsLeft != null && (
+                <span className="rounded-full border border-line px-2.5 py-1 text-xs text-muted">
+                  {startsLeft > 0
+                    ? `${startsLeft} of ${e.discountLimit} discounted ${e.discountLimit === 1 ? "start" : "starts"} left`
+                    : "Discounted starts used"}
+                </span>
               )}
               {capLeft != null && (
                 <span className="rounded-full border border-line px-2.5 py-1 text-xs text-muted">

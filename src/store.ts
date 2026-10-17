@@ -377,7 +377,7 @@ import { clampScore, REVIEW_MAX } from "./lib/reviews";
 import { prepareUpload, validateFile, isImage } from "./lib/attachment";
 import { toCanonicalRelation, type RelationPerspective } from "./lib/issueRelations";
 import { coachTargetFor, type CoachTarget } from "./lib/onboarding";
-import { Store, Heart, Gamepad2, Trophy, Coins, Eye, EyeOff, Lightbulb, Clock, Pencil, Undo2, Lock, Trash2, Link2, Unlink, Crown, ImagePlus, Layers, Palette, Stamp, Package, Ticket, AlertTriangle, UserPlus, UserCheck, UserMinus, PartyPopper, Send, Archive, Flag, Sparkles, Check, Star, Medal, Handshake, Gem, CalendarClock, HandCoins, Timer, Flame, Users, X, CloudOff, Target } from "lucide-react";
+import { Store, Heart, Gamepad2, Trophy, Coins, Eye, EyeOff, Lightbulb, Clock, Pencil, Undo2, Lock, Trash2, Link2, Unlink, Crown, ImagePlus, Layers, Palette, Stamp, Package, Ticket, AlertTriangle, UserPlus, UserCheck, UserMinus, PartyPopper, Send, Archive, Flag, Sparkles, Check, Star, Medal, Handshake, Gem, CalendarClock, HandCoins, Timer, Flame, Users, X, CloudOff, Target, BadgePercent } from "lucide-react";
 
 function addedToast(title: string, status: GameStatus): void {
   if (status === "wishlist") toast(`Wishlisted ${title}`, Heart);
@@ -5875,7 +5875,11 @@ export const useStore = create<BazaarState>((set, get) => ({
     // What the server actually charged: less than `price` when a coin event's
     // start discount applied (the server takes it off).
     const charged = economyOn ? Math.max(0, coins - newCoins) : price;
-    if (charged < price) toast(`Coin event discount: you saved ${price - charged} coins`, Sparkles);
+    if (charged < price) {
+      toast(`Discount applied: you saved ${price - charged} coins on ${game.title}`, BadgePercent);
+      // The banner's "discounted starts left" count moves.
+      void get().fetchBonusEvents();
+    }
     set({
       coins: newCoins,
       games: games.map((g) =>
@@ -8480,6 +8484,8 @@ export const useStore = create<BazaarState>((set, get) => ({
       p_player_cap: d.playerCap,
       p_repeat: d.repeat,
       p_repeat_until: d.repeat && d.repeatUntil != null ? new Date(d.repeatUntil).toISOString() : null,
+      // Only meaningful with a discount; cleared otherwise so it can't linger.
+      p_discount_limit: d.startDiscountPct > 0 ? d.discountLimit : null,
     });
     if (error) {
       toast(error.message, AlertTriangle);

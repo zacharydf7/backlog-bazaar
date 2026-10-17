@@ -19,6 +19,8 @@ export interface BonusEventBoosts {
   sessionMult: number;
   rewardsMult: number;
   startDiscountPct: number;
+  /** Discounted starts per player per run; null = no limit. */
+  discountLimit: number | null;
 }
 
 export type BonusEventRepeat = "weekly" | "monthly";
@@ -34,6 +36,8 @@ export interface BonusEvent extends BonusEventBoosts, BonusEventTargets {
   repeat: BonusEventRepeat | null;
   playerCap: number | null;
   capUsed: number;
+  /** Discounted starts used this run. */
+  discountUsed: number;
 }
 
 /** An event as the admin list shows it (archived included). startsAt/endsAt
@@ -109,6 +113,7 @@ function common(r: Record<string, unknown>) {
     sessionMult: num(r.session_mult, 1),
     rewardsMult: num(r.rewards_mult, 1),
     startDiscountPct: num(r.start_discount_pct),
+    discountLimit: maybeNum(r.discount_limit),
     genres: strings(r.genres),
     platforms: strings(r.platforms),
     offMainPlatform: r.off_main_platform === true,
@@ -120,7 +125,7 @@ function common(r: Record<string, unknown>) {
 
 export function coerceBonusEvents(raw: unknown): BonusEvent[] {
   return rows(raw)
-    .map((r) => ({ ...common(r), capUsed: num(r.cap_used) }))
+    .map((r) => ({ ...common(r), capUsed: num(r.cap_used), discountUsed: num(r.discount_used) }))
     .filter((e) => e.id);
 }
 
@@ -150,7 +155,10 @@ export function boostLabels(e: BonusEventBoosts): string[] {
   if (e.bountyMult > 1) out.push(`Bounties ${times(e.bountyMult)}`);
   if (e.sessionMult > 1) out.push(`Daily Session coins ${times(e.sessionMult)}`);
   if (e.rewardsMult > 1) out.push(`Challenge & medal rewards ${times(e.rewardsMult)}`);
-  if (e.startDiscountPct > 0) out.push(`${e.startDiscountPct}% off starts`);
+  if (e.startDiscountPct > 0) {
+    const n = e.discountLimit;
+    out.push(n == null ? `${e.startDiscountPct}% off starts` : `${e.startDiscountPct}% off ${n} ${n === 1 ? "start" : "starts"}`);
+  }
   return out;
 }
 
@@ -193,6 +201,9 @@ export function bonusEventDraftProblem(d: BonusEventDraft): string | null {
   }
   if (d.minHours != null && d.maxHours != null && d.minHours > d.maxHours) return "The shortest length is longer than the longest.";
   if (d.playerCap != null && !(d.playerCap > 0)) return "A cap must be more than 0 (or leave it empty).";
+  if (d.discountLimit != null && !(Number.isInteger(d.discountLimit) && d.discountLimit > 0)) {
+    return "Discounted starts must be a whole number above 0 (or leave it empty).";
+  }
   return null;
 }
 

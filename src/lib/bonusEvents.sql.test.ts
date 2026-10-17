@@ -20,10 +20,15 @@ function fn(name: string): string {
   return schema.slice(start, schema.indexOf("\n$$;", start) + 4);
 }
 
-/** The real bonus_events table, minus its auth.users reference. */
+/** The real bonus_events table, minus its auth.users reference, plus the
+ *  columns added after it. */
 function bonusEventsTable(): string {
   const start = schema.indexOf("create table if not exists public.bonus_events (");
-  return schema.slice(start, schema.indexOf("\n);", start) + 3).replace(/ references auth\.users \(id\) on delete set null/, "");
+  const table = schema
+    .slice(start, schema.indexOf("\n);", start) + 3)
+    .replace(/ references auth\.users \(id\) on delete set null/, "");
+  const added = schema.match(/^alter table public\.bonus_events add column if not exists .*;$/gm) ?? [];
+  return [table, ...added].join("\n");
 }
 
 const U = "00000000-0000-4000-8000-0000000000a1";
@@ -263,6 +268,18 @@ describe("bonus_event_discount", () => {
     await discount(100, true);
     const p = await db.query("select kind, amount from public.bonus_event_payouts");
     expect(p.rows).toEqual([{ kind: "discount", amount: 25 }]);
+  });
+
+  it("stops discounting once the player's discounted starts are used, then falls back", async () => {
+    await event({ bounty_mult: "1", start_discount_pct: "50", discount_limit: "2" });
+    expect(await discount(100, true)).toMatchObject({ price: 50 });
+    // Previews don't use one up.
+    expect(await discount(100, false)).toMatchObject({ price: 50 });
+    expect(await discount(100, true)).toMatchObject({ price: 50 });
+    expect(await discount(100, true)).toEqual({ price: 100, event_name: null });
+    // A smaller unlimited discount still applies once the bigger one is used.
+    await event({ name: "'Small'", bounty_mult: "1", start_discount_pct: "10" });
+    expect(await discount(100, false)).toEqual({ price: 90, event_name: "Small" });
   });
 
   it("counts savings against the cap", async () => {

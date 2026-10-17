@@ -25,6 +25,7 @@ const DRAFT: BonusEventDraft = {
   sessionMult: 1,
   rewardsMult: 1,
   startDiscountPct: 0,
+  discountLimit: null,
   genres: [],
   platforms: [],
   offMainPlatform: false,
@@ -78,10 +79,13 @@ describe("coerceBonusEvents", () => {
 
 describe("labels", () => {
   it("names each active boost", () => {
-    expect(boostLabels({ bountyMult: 2, sessionMult: 1.5, rewardsMult: 1, startDiscountPct: 25 })).toEqual([
+    expect(boostLabels({ bountyMult: 2, sessionMult: 1.5, rewardsMult: 1, startDiscountPct: 25, discountLimit: null })).toEqual([
       "Bounties ×2",
       "Daily Session coins ×1.5",
       "25% off starts",
+    ]);
+    expect(boostLabels({ bountyMult: 1, sessionMult: 1, rewardsMult: 1, startDiscountPct: 50, discountLimit: 2 })).toEqual([
+      "50% off 2 starts",
     ]);
   });
 
@@ -118,6 +122,7 @@ describe("bonusEventDraftProblem", () => {
     expect(bonusEventDraftProblem({ ...DRAFT, startDiscountPct: 95 })).toMatch(/90%/);
     expect(bonusEventDraftProblem({ ...DRAFT, minHours: 20, maxHours: 10 })).toMatch(/shortest/);
     expect(bonusEventDraftProblem({ ...DRAFT, playerCap: 0 })).toMatch(/cap/);
+    expect(bonusEventDraftProblem({ ...DRAFT, discountLimit: 1.5 })).toMatch(/Discounted starts/);
   });
 
   it("caps a repeat's length and wants its stop date after the first run", () => {
