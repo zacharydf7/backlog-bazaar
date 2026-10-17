@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { X, Plus, Trash2, Package, Store, Heart, Trophy, Scale, Lightbulb, Check, AlertCircle, type LucideIcon } from "lucide-react";
 import type { Compilation, GameMeta, GameStatus } from "../types";
 import { useStore } from "../store";
-import { sortTerms } from "../lib/taxonomy";
+import { optionsWithCurrent, sortTerms } from "../lib/taxonomy";
 import { parsePlaytime, formatLength, formatPlaytime } from "../lib/playtime";
 import { fetchHltbTimes, type HltbTimes } from "../lib/gamedata";
 import { formatUsd, newCopyId, totalCost } from "../lib/copies";
@@ -43,7 +43,6 @@ import { useScrollLock } from "../lib/useScrollLock";
 import { useHistoryDismiss } from "../lib/useHistoryDismiss";
 import { toast } from "../lib/toast";
 import { clearStreakAtRisk } from "../lib/pricing";
-import { GameSearchBox } from "./GameSearchBox";
 import { StreakBreakWarningModal } from "./StreakBreakWarningModal";
 import { type AddDestination, destinationNoun } from "./AddGameModal";
 
@@ -75,7 +74,9 @@ const LENGTH_STYLES: { key: keyof HltbTimes; label: string }[] = [
   { key: "completionist", label: "100%" },
 ];
 
-/** The catalog metadata a picked search result carries onto a child's card. */
+/** Catalog metadata a row carries from a shared template or an existing game —
+ *  kept only so "Suggest" shares a template's snapshot intact; it is never
+ *  saved onto the bundle's games (issue 86fc0b4b). */
 type PickedMeta = Partial<
   Pick<
     GameMeta,
@@ -92,7 +93,7 @@ type PickedMeta = Partial<
 >;
 
 /** One row in the batch game list: name, optional length, manually-assigned cost
- *  (when editing the breakdown), and any metadata from a picked search result.
+ *  (when editing the breakdown), original platform, and any template metadata.
  *  `gameId` links the row to an existing child game when editing. */
 interface ChildRow {
   id: string;
@@ -110,6 +111,9 @@ interface ChildRow {
   // Per-game triage tier at creation (issue 901eb363); null/undefined =
   // unassigned. Create mode only — existing games keep theirs on edit.
   priority?: GamePriority | null;
+  // The game's original console (issue 86fc0b4b) — a label that tells
+  // same-named versions apart. null = unset.
+  originalPlatform?: string | null;
 }
 
 function emptyRow(): ChildRow {
@@ -132,20 +136,6 @@ function rowsToContainerCopies(rows: CopyRowDraft[]): CompilationCopyDraft[] {
         note: r.note.trim() || undefined,
       };
     });
-}
-
-function pickedToMeta(m: GameMeta): PickedMeta {
-  return {
-    rawgId: m.rawgId,
-    image: m.image,
-    released: m.released,
-    genres: m.genres,
-    metacritic: m.metacritic,
-    platforms: m.platforms,
-    developers: m.developers,
-    esrb: m.esrb,
-    catalogId: m.catalogId,
-  };
 }
 
 /** Create or edit a Game Compilation: a single purchase (e.g. a remaster
@@ -199,6 +189,7 @@ export function AddCompilationModal({
       length: g.hours ? formatLength(g.hours) : "",
       cost: String(totalCost(g.copies)),
       currentStatus: g.status,
+      originalPlatform: g.originalPlatform ?? null,
       // Carry each game's metadata so "Suggest" shares its cover/genres, not blanks.
       meta: {
         image: g.image,
@@ -363,21 +354,20 @@ export function AddCompilationModal({
     }
   }
 
-  function onPick(id: string, meta: GameMeta) {
-    update(id, {
-      name: meta.title,
-      length: meta.hours ? formatLength(meta.hours) : "",
-      meta: pickedToMeta(meta),
-    });
-    setHltbByRow((prev) => ({ ...prev, [id]: null }));
-    // Best-effort: refine the length from HowLongToBeat, like Add Game does, and
-    // keep the times so the row can offer a completion-level length picker.
-    fetchHltbTimes(meta.title)
+  // A typed name is looked up on HowLongToBeat once you leave the field: the
+  // completion-level chips appear, and a blank length takes the Main time.
+  // Nothing is linked to the game database (issue 86fc0b4b).
+  function onNameBlur(id: string, name: string) {
+    if (!name.trim()) return;
+    fetchHltbTimes(name.trim())
       .then((times) => {
-        if (!times) return;
-        const best = times.main ?? times.mainExtra ?? times.completionist;
-        setHltbByRow((prev) => ({ ...prev, [id]: times }));
-        if (best) update(id, { length: formatLength(best) });
+        setHltbByRow((prev) => ({ ...prev, [id]: times ?? null }));
+        const best = times?.main ?? times?.mainExtra ?? times?.completionist;
+        if (best) {
+          setRows((rs) =>
+            rs.map((r) => (r.id === id && !r.length.trim() ? { ...r, length: formatLength(best) } : r)),
+          );
+        }
       })
       .catch(() => {});
   }
@@ -577,7 +567,7 @@ export function AddCompilationModal({
       name: r.name.trim(),
       hours: parsePlaytime(r.length) ?? undefined,
       cost: customSplit ? (parseAmount(r.cost) ?? 0) : fromCents(evenShares[i] ?? 0),
-      ...r.meta,
+      originalPlatform: r.originalPlatform ?? null,
       // Edit mode sends only the explicit override (undefined keeps an existing
       // game's status; a new child then defaults to Bazaar). Create mode applies
       // the row's status when landing in Bazaar/Finished (none for a wishlist).
@@ -631,8 +621,9 @@ export function AddCompilationModal({
             <p className="text-xs text-muted">
               A compilation is one purchase that bundles several games (e.g. a remaster
               collection). Record what you paid once here, with the cost split across the games
-              below. They stay together on one compilation card, and you pick which one to play
-              from there.
+              below. Just type each game&apos;s name — they take their cover and release date from
+              the compilation, and stay together on one compilation card. Two versions with the
+              same name? Pick each one&apos;s original platform to tell them apart.
             </p>
           )}
 
@@ -731,7 +722,7 @@ export function AddCompilationModal({
             <div className="flex flex-wrap items-center justify-between gap-2">
               <span className="text-sm text-muted">
                 Games in this compilation{" "}
-                <span className="text-xs text-subtle">— search or type a name</span>
+                <span className="text-xs text-subtle">— type each game&apos;s name</span>
               </span>
               <label className="inline-flex cursor-pointer items-center gap-1.5 text-xs text-muted">
                 <input
@@ -748,16 +739,16 @@ export function AddCompilationModal({
               {rows.map((r) => (
                 <div key={r.id} className="rounded-xl border border-line bg-panel/50 p-2">
                   <div className="flex items-center gap-2">
-                    <GameSearchBox
+                    <input
                       value={r.name}
-                      onChange={(v) => {
-                        update(r.id, { name: v });
-                        // Manual rename clears the chips until a game is picked again.
+                      onChange={(e) => {
+                        update(r.id, { name: e.target.value });
+                        // A rename clears the chips until the new name is looked up.
                         setHltbByRow((prev) => ({ ...prev, [r.id]: null }));
                       }}
-                      onPick={(meta) => onPick(r.id, meta)}
-                      placeholder="Search a game, or type a name"
-                      ariaLabel="Game name"
+                      onBlur={(e) => onNameBlur(r.id, e.target.value)}
+                      placeholder="Game name"
+                      aria-label="Game name"
                       className={rowInputClass}
                     />
                     <button
@@ -801,6 +792,24 @@ export function AddCompilationModal({
                           <span className="text-subtle"> (even split)</span>
                         </span>
                       )
+                    )}
+                    {/* The game's original console (issue 86fc0b4b): tells
+                        same-named versions in one bundle apart. A label only. */}
+                    {r.name.trim() && (
+                      <select
+                        value={r.originalPlatform ?? ""}
+                        onChange={(e) => update(r.id, { originalPlatform: e.target.value || null })}
+                        aria-label="Original platform"
+                        title="Original platform — the console this game first came out on"
+                        className="w-36 shrink-0 rounded-lg border border-line bg-surface px-2 py-1.5 text-sm text-ink outline-none transition focus:border-brand focus:ring-2 focus:ring-brand/25"
+                      >
+                        <option value="">Original platform…</option>
+                        {optionsWithCurrent(platformOptions, r.originalPlatform).map((p) => (
+                          <option key={p} value={p}>
+                            {p}
+                          </option>
+                        ))}
+                      </select>
                     )}
                     {/* Per-game triage tier (issue 901eb363), creation only — a
                         bundle's headliner can rank Essential while the filler

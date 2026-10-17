@@ -270,3 +270,11 @@ export const DEFAULT_SERVICE_NAMES: string[] = [
   "Prime Gaming",
   "Humble Choice",
 ];
+
+/** A picker's options plus a stored value that has since left the master list,
+ *  first — so an existing row keeps showing (and can keep) what it has. */
+export function optionsWithCurrent(options: string[], current: string | null | undefined): string[] {
+  return current && !options.some((o) => o.toLowerCase() === current.toLowerCase())
+    ? [current, ...options]
+    : options;
+}

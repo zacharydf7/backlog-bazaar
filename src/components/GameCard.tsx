@@ -28,7 +28,8 @@ import type { UnifiedFamily } from "../lib/familyGrouping";
 import { prerequisiteOf } from "../lib/prerequisites";
 import { clearedElsewhere } from "../lib/ownershipMerge";
 import { ownedElsewhere } from "../lib/addRouting";
-import { findExpandTemplate } from "../lib/compilationGrouping";
+import { findExpandTemplate, inheritedCover } from "../lib/compilationGrouping";
+import { TitleWithOrigin } from "./TitleWithOrigin";
 import { ownedPlatformSummary, ownedVersions, totalCost, formatUsd, versionLabel, primaryAcquisition, primaryProvider, accessLost } from "../lib/copies";
 import { formatPlaytime } from "../lib/playtime";
 import { isLocalCover } from "../lib/covers";
@@ -138,7 +139,11 @@ export function GameCard({
   // The family card wears its designated member cover when one is set
   // (set_family_cover, switchable on the game page's Overview); otherwise —
   // and always for a plain card — this game's own image.
-  const cover = (fam ? familyCoverImage(fam.members) : undefined) ?? game.image;
+  // A bundled game with no art of its own wears its bundle's cover (issue
+  // 86fc0b4b); a visited library's bundles aren't loaded, so it keeps its own.
+  const cover =
+    (fam ? familyCoverImage(fam.members) : undefined) ??
+    inheritedCover(game, viewing ? [] : compilations, storeGames);
   // This card's own membership drives the ⋮ menu (a compilation child gets the
   // compilation-piece options; a standalone master keeps the normal ones).
   const inCompilation = game.compilationId != null;
@@ -752,7 +757,7 @@ export function GameCard({
             {/* A unified family card wears the family's display name (which
                 falls back to the primary's own title). */}
             <h3 className="font-display text-lg font-semibold leading-tight text-ink">
-              {fam ? fam.name : game.title}
+              {fam ? fam.name : <TitleWithOrigin game={game} />}
             </h3>
             <div className="mt-1 flex flex-wrap items-center gap-1">
               {/* Triage tier (issue 901eb363) — owner-only, like the Private

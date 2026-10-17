@@ -431,37 +431,22 @@ function childToRpc(
     hours: c.hours ?? null,
     cost: costDollars,
     copies: copies ?? null,
-    image: c.image ?? null,
-    rawg_id: c.rawgId ?? null,
-    released: c.released ?? null,
-    genres: c.genres ?? [],
-    metacritic: c.metacritic ?? null,
-    platforms: c.platforms ?? [],
-    developers: c.developers ?? [],
-    esrb: c.esrb ?? null,
-    catalog_id: c.catalogId ?? null,
     status: c.status ?? null,
     priority: c.priority ?? null,
+    // Sent only when the editor set it, so update_compilation leaves an
+    // existing game's label alone otherwise (it keys off the field's presence).
+    ...(c.originalPlatform !== undefined && { original_platform: c.originalPlatform }),
   };
 }
 
-/** The catalog metadata fields for a locally-built child Game (offline mode),
- *  taken from whatever the creator picked from search. */
+/** The draft's own fields for a locally-built child Game (offline mode). A
+ *  bundled game carries no catalog metadata (issue 86fc0b4b). */
 function childGameMeta(c: CompilationChildDraft) {
   return {
+    genres: [],
     hours: c.hours,
-    rawgId: c.rawgId,
-    released: c.released,
-    genres: c.genres ?? [],
-    image: c.image,
-    stockImage: c.image,
-    originalImage: c.image,
-    metacritic: c.metacritic ?? null,
-    platforms: c.platforms ?? [],
-    developers: c.developers ?? [],
-    esrb: c.esrb,
-    catalogId: c.catalogId,
     priority: c.priority ?? null,
+    originalPlatform: c.originalPlatform ?? null,
   };
 }
 
@@ -1388,6 +1373,9 @@ interface BazaarState {
   // metadata only — never touches the economy; history lands server-side in
   // game_priority_events.
   setGamePriority: (id: string, value: GamePriority | null) => Promise<void>;
+  // Set (or clear, with null) a bundled game's original-platform label (issue
+  // 86fc0b4b). Display-only; the server validates it against the platform list.
+  setOriginalPlatform: (id: string, value: string | null) => Promise<void>;
   // Set (or clear, with null) the player's PERSONAL length override for a game,
   // taking precedence over the shared catalog length in the economy. For a game
   // you're already playing, this re-settles the length-driven activation fee (see
@@ -4589,17 +4577,8 @@ export const useStore = create<BazaarState>((set, get) => ({
   },
 
   addCompilation: async (container, children, status = "backlog", templateId) => {
-    const { cloud, userId, coins, platformList, genreList } = get();
-    // Controlled taxonomy: canonicalize each child's genres/platforms and the
-    // container's platform to the master lists (drop off-list terms) so the games
-    // the RPC inserts never trip the server's taxonomy triggers.
-    const named = children
-      .filter((c) => c.name.trim())
-      .map((c) => ({
-        ...c,
-        genres: canonicalizeTerms(c.genres, genreList),
-        platforms: canonicalizeTerms(c.platforms, platformList),
-      }));
+    const { cloud, userId, coins, platformList } = get();
+    const named = children.filter((c) => c.name.trim());
     if (!container.title.trim() || named.length === 0) return;
     // Every container copy's platform is canonicalized like the old single one.
     const copies = container.copies.map((c) => ({
@@ -4637,8 +4616,7 @@ export const useStore = create<BazaarState>((set, get) => ({
         id: uid(),
         title: c.name.trim(),
         ...childGameMeta(c),
-        // Fill-blanks: the child's own (catalog) date wins over the bundle's.
-        released: c.released ?? container.released,
+        released: container.released,
         status: childStatus,
         addedAt: Date.now(),
         finishedAt: childStatus === "finished" ? Date.now() : undefined,
@@ -4802,7 +4780,8 @@ export const useStore = create<BazaarState>((set, get) => ({
             hours: c.hours,
             compilationName: title,
             copies: newCopies,
-            released: existing.released ?? c.released ?? container.released,
+            released: existing.released ?? container.released,
+            ...(c.originalPlatform !== undefined && { originalPlatform: c.originalPlatform }),
             ...(moved
               ? {
                   status: c.status!,
@@ -4818,7 +4797,7 @@ export const useStore = create<BazaarState>((set, get) => ({
           id: uid(),
           title: c.name.trim(),
           ...childGameMeta(c),
-          released: c.released ?? container.released,
+          released: container.released,
           status: childStatus,
           addedAt: Date.now(),
           finishedAt: childStatus === "finished" ? Date.now() : undefined,
@@ -5056,17 +5035,10 @@ export const useStore = create<BazaarState>((set, get) => ({
   },
 
   expandGameToCompilation: async (gameId, template) => {
-    const { cloud, games, coins, platformList, genreList } = get();
+    const { cloud, games, coins } = get();
     const game = games.find((g) => g.id === gameId);
     if (!game || game.status === "wishlist" || game.compilationId != null) return;
-    // Canonicalize the template's metadata against the master lists (off-list
-    // terms drop), mirroring the server RPC — a template stored before terms
-    // were validated can carry stale spellings (issue 955090f2).
-    const drafts = templateGamesToChildDrafts(template.games).map((c) => ({
-      ...c,
-      genres: canonicalizeTerms(c.genres, genreList),
-      platforms: canonicalizeTerms(c.platforms, platformList),
-    }));
+    const drafts = templateGamesToChildDrafts(template.games);
     if (drafts.length === 0) return;
 
     if (!cloud) {
@@ -5085,7 +5057,7 @@ export const useStore = create<BazaarState>((set, get) => ({
         id: uid(),
         title: c.name.trim(),
         ...childGameMeta(c),
-        released: c.released ?? game.released,
+        released: game.released,
         status: childStatus,
         addedAt: Date.now(),
         finishedAt: childStatus === "finished" ? (game.finishedAt ?? Date.now()) : undefined,
@@ -7063,6 +7035,26 @@ export const useStore = create<BazaarState>((set, get) => ({
     if (error) set({ error: error.message });
   },
 
+  setOriginalPlatform: async (id, value) => {
+    const { cloud, games, coins } = get();
+    const game = games.find((g) => g.id === id);
+    if (!game || (game.originalPlatform ?? null) === value) return;
+    const prev = game.originalPlatform ?? null;
+    const patch = (v: string | null) =>
+      get().games.map((g) => (g.id === id ? { ...g, originalPlatform: v } : g));
+    const next = patch(value);
+    set({ games: next });
+
+    if (!cloud) {
+      saveLocal(coins, next);
+      return;
+    }
+    if (!supabase) return;
+    const { error } = await supabase.from("games").update({ original_platform: value }).eq("id", id);
+    // The server rejects an off-list platform; put the label back.
+    if (error) set({ games: patch(prev), error: error.message });
+  },
+
   // Set (or clear, with null) the player's PERSONAL length override — their own
   // estimate of how long a game will take them, which beats the shared catalog
   // length everywhere the economy reads length (see src/lib/economy.ts). It never
@@ -8384,8 +8376,10 @@ export const useStore = create<BazaarState>((set, get) => ({
       return false;
     }
     set({
+      // Mirrors the server cascade: a compilation's games follow their bundle,
+      // not the catalog (issue 86fc0b4b).
       games: get().games.map((g) =>
-        g.catalogId === id
+        g.catalogId === id && g.compilationId == null
           ? {
               ...g,
               title: f.title,

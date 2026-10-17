@@ -158,6 +158,25 @@ describe("editionLabel", () => {
     expect(editionLabel(e, "Chrono Trigger")).toBe("Chrono Trigger");
   });
 
+  it("adds a bundled game's original platform (86fc0b4b)", () => {
+    const e = hubEditions([
+      game({
+        id: "a",
+        title: "Buzz Lightyear",
+        originalPlatform: "Game Boy Color",
+        compilationId: "C",
+        compilationName: "Toy Story Retro Roundup",
+        copies: [{ id: "c1", platform: "Nintendo Switch" }],
+      }),
+    ])[0];
+    expect(editionLabel(e, "Buzz Lightyear")).toBe(
+      "Nintendo Switch · Game Boy Color — part of Toy Story Retro Roundup",
+    );
+    expect(familyMemberLabel(e.kind === "family" ? e.members[0] : e.game)).toBe(
+      "Buzz Lightyear (Nintendo Switch) · Game Boy Color — part of Toy Story Retro Roundup",
+    );
+  });
+
   it("names the bundle so two same-platform copies tell each other apart", () => {
     const switchCopy = () => [{ id: "c1", platform: "Nintendo Switch" }];
     const [a, b] = hubEditions([

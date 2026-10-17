@@ -49,6 +49,7 @@ import {
 } from "../../lib/milestones";
 import { GamePriorityBadge } from "../GamePriorityBadge";
 import { BundleGameDrawer } from "./BundleGameDrawer";
+import { TitleWithOrigin } from "../TitleWithOrigin";
 
 type CompilationTabId = "overview" | "journey";
 
@@ -452,7 +453,9 @@ function BundleRow({
                 <span className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
               )}
               <div className="min-w-0 flex-1">
-                <span className="block truncate text-sm text-ink">{game.title}</span>
+                <span className="block truncate text-sm text-ink">
+                  <TitleWithOrigin game={game} />
+                </span>
                 <div className="mt-0.5 flex flex-wrap items-center gap-1">
                   <StatusBadge status={game.status} rotation={isInRotation(game)} />
                   {game.priority && <GamePriorityBadge priority={game.priority} />}

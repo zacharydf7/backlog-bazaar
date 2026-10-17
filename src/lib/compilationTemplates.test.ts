@@ -60,7 +60,7 @@ describe("diffTemplate", () => {
 });
 
 describe("templateGamesToChildDrafts", () => {
-  it("maps games to drafts with full metadata, no cost or gameId", () => {
+  it("maps games to drafts with name and length only, no cost or gameId (86fc0b4b)", () => {
     const drafts = templateGamesToChildDrafts([
       {
         name: "Mario 64",
@@ -75,22 +75,9 @@ describe("templateGamesToChildDrafts", () => {
         esrb: "Everyone",
       },
     ]);
-    // All catalog metadata survives the round trip (the bug was these being dropped).
-    expect(drafts[0]).toMatchObject({
-      name: "Mario 64",
-      hours: 12,
-      image: "x.png",
-      rawgId: 5,
-      genres: ["Platformer"],
-      released: "1996-06-23",
-      metacritic: 94,
-      platforms: ["Nintendo 64"],
-      developers: ["Nintendo"],
-      esrb: "Everyone",
-    });
-    // No personal fields leak in.
-    expect(drafts[0]).not.toHaveProperty("cost");
-    expect(drafts[0]).not.toHaveProperty("gameId");
+    // A bundled game inherits from its bundle: the template's catalog snapshot
+    // stays on the shared template, and no personal fields leak in either.
+    expect(drafts[0]).toEqual({ name: "Mario 64", hours: 12 });
   });
 });
 

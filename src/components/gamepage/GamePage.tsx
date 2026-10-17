@@ -21,6 +21,8 @@ import {
   type HubEdition,
 } from "../../lib/gameHub";
 import { familyStats, familyCoverImage, familyPrimary } from "../../lib/families";
+import { inheritedCover } from "../../lib/compilationGrouping";
+import { TitleWithOrigin } from "../TitleWithOrigin";
 import { catalogKey } from "../../lib/ownershipMerge";
 import { formatPlaytime } from "../../lib/playtime";
 import { formatUsd } from "../../lib/copies";
@@ -467,6 +469,8 @@ function GamePageBody({
 }) {
   const { cloud, fetchGameScreenshots } = useStore();
   const can = useStore((s) => s.can);
+  const compilations = useStore((s) => s.compilations);
+  const ownGames = useStore((s) => s.games);
   const [tab, setTab] = useState<GameTabId>("overview");
 
   // The hub: every instance connected to the routed game. The representative
@@ -505,9 +509,12 @@ function GamePageBody({
   const memberGame = scopedMember ?? selected.game;
 
   // The hub hero wears the family's designated cover when one is set
-  // (set_family_cover — switchable on Overview), else the representative's own.
+  // (set_family_cover — switchable on Overview), else the representative's own
+  // — or, for a bundled game with no art, its bundle's (issue 86fc0b4b).
   const repFamily = rep.familyId != null ? hub.filter((m) => m.familyId === rep.familyId) : [];
-  const heroImage = (repFamily.length > 1 ? familyCoverImage(repFamily) : undefined) ?? rep.image;
+  const heroImage =
+    (repFamily.length > 1 ? familyCoverImage(repFamily) : undefined) ??
+    inheritedCover(rep, readOnly ? [] : compilations, ownGames);
 
   const tabs = readOnly
     ? GAME_TABS.filter((t) => t.visitorVisible || (t.id === "review" && hub.some(hasReview)))
@@ -579,7 +586,9 @@ function GamePageBody({
         <div className="flex flex-col gap-3 p-4">
           <div className="flex flex-wrap items-center gap-2">
             <h1 className="min-w-0 font-display text-2xl leading-tight tracking-tight text-ink">
-              {title}
+              {/* A lone bundled game names its original platform (issue 86fc0b4b);
+                  multi-edition hubs say it in the edition selector instead. */}
+              {hub.length === 1 ? <TitleWithOrigin game={rep} /> : title}
             </h1>
             <LikeButton game={rep} size={18} />
             {/* "Money Well Spent" for the whole hub — every edition's spend and

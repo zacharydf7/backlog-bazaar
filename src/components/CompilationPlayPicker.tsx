@@ -9,6 +9,7 @@ import { useScrollLock } from "../lib/useScrollLock";
 import { useHistoryDismiss } from "../lib/useHistoryDismiss";
 import { ActivationModal } from "./ActivationModal";
 import { GamePriorityBadge } from "./GamePriorityBadge";
+import { TitleWithOrigin } from "./TitleWithOrigin";
 
 /** "Which game are you starting?" — opened by a bundle card's Play a Game
  *  (issue 86fc0b4b). Lists the bundle's Bazaar games with their priority and
@@ -102,7 +103,9 @@ export function CompilationPlayPicker({
                         )}
                       </div>
                       <div className="min-w-0 flex-1">
-                        <span className="block truncate text-sm text-ink">{g.title}</span>
+                        <span className="block truncate text-sm text-ink">
+                          <TitleWithOrigin game={g} />
+                        </span>
                         <span className="mt-1 flex flex-wrap items-center gap-1">
                           {g.priority && <GamePriorityBadge priority={g.priority} />}
                           {length != null && (

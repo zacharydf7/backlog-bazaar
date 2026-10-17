@@ -11,6 +11,7 @@ import {
   DEFAULT_SERVICE_NAMES,
   DEFAULT_SERVICE_TIERS,
   serviceTiersFromRows,
+  optionsWithCurrent,
 } from "./taxonomy";
 
 const PLATFORMS = ["PC", "PlayStation 5", "Nintendo Switch"];
@@ -43,6 +44,17 @@ describe("canonicalizeTerms", () => {
   it("handles undefined / empty input", () => {
     expect(canonicalizeTerms(undefined, PLATFORMS)).toEqual([]);
     expect(canonicalizeTerms([], PLATFORMS)).toEqual([]);
+  });
+});
+
+describe("optionsWithCurrent", () => {
+  it("keeps a stored value that left the master list selectable, first", () => {
+    expect(optionsWithCurrent(["PC", "Switch"], "Dreamcast")).toEqual(["Dreamcast", "PC", "Switch"]);
+  });
+
+  it("adds nothing for a listed value (any case) or no value", () => {
+    expect(optionsWithCurrent(["PC", "Switch"], "pc")).toEqual(["PC", "Switch"]);
+    expect(optionsWithCurrent(["PC"], null)).toEqual(["PC"]);
   });
 });
 

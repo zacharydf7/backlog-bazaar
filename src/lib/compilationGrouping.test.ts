@@ -10,6 +10,7 @@ import {
   compilationTray,
   findExpandTemplate,
   groupCollapsedCompilations,
+  inheritedCover,
   ownershipUnits,
   orderCompilationChildren,
 } from "./compilationGrouping";
@@ -313,6 +314,30 @@ describe("compilationMatchesFilters / compilationMatchesQuery", () => {
     expect(compilationMatchesQuery(collapsed, "bundle")).toBe(true); // own title
     expect(compilationMatchesQuery(collapsed, "pikmin 2")).toBe(true); // child title
     expect(compilationMatchesQuery(collapsed, "zelda")).toBe(false);
+  });
+});
+
+describe("inheritedCover (86fc0b4b)", () => {
+  const kid = (over: Partial<Game> = {}) => game({ id: "k", compilationId: "C", ...over });
+
+  it("keeps a bundled game's own art", () => {
+    expect(inheritedCover(kid({ image: "own.png" }), [comp({ parentImage: "p.png" })], [])).toBe(
+      "own.png",
+    );
+  });
+
+  it("falls back to the bundle's cover for a game with none", () => {
+    const k = kid();
+    expect(inheritedCover(k, [comp({ parentImage: "p.png" })], [k])).toBe("p.png");
+    expect(inheritedCover(k, [comp({ templateImage: "t.png" })], [k])).toBe("t.png");
+    // No bundle cover: the first sibling in bundle order that has art.
+    const art = kid({ id: "a", image: "sib.png" });
+    expect(inheritedCover(k, [comp({ childOrder: ["a", "k"] })], [k, art])).toBe("sib.png");
+  });
+
+  it("leaves standalone games and unloaded bundles alone", () => {
+    expect(inheritedCover(game({ id: "s" }), [comp({ parentImage: "p.png" })], [])).toBeUndefined();
+    expect(inheritedCover(kid(), [], [])).toBeUndefined();
   });
 });
 

@@ -1081,13 +1081,8 @@ describe("compilations (offline)", () => {
     // A decades-old game inside a just-recorded collection: its added_at was
     // stamped when the bundle was created (the acquisition), so it carries the
     // full fresh-pickup bonus regardless of its ancient release date.
-    await store().addCompilation(
-      bundle(0),
-      [{ name: "Old Classic", released: "1997-03-01" }, { name: "B" }],
-      "backlog",
-    );
+    await store().addCompilation(bundle(0), [{ name: "Old Classic" }, { name: "B" }], "backlog");
     const child = store().games.find((g) => g.title === "Old Classic")!;
-    expect(child.released).toBe("1997-03-01"); // own date preserved on the row
 
     const price = computeFormula(child, DEFAULT_PRICE_FORMULA);
     // Full freshness: identical to pricing the same game acquired right now.
@@ -1272,7 +1267,7 @@ describe("multi-copy compilations (offline)", () => {
     expect(copySum(1)).toBe(2050);
   });
 
-  it("fills a typed child's missing release date from the bundle, never a catalog child's", async () => {
+  it("gives every new child the bundle's release date — children inherit from the bundle (86fc0b4b)", async () => {
     await store().addCompilation(
       {
         title: "Bundle",
@@ -1280,16 +1275,40 @@ describe("multi-copy compilations (offline)", () => {
         copies: [{ platform: "PC", cost: 20 }],
         released: "2021-05-14",
       },
-      [
-        { name: "Typed Game" }, // no date of its own
-        { name: "Catalog Game", released: "2007-11-20" },
-      ],
+      [{ name: "First Game" }, { name: "Second Game" }],
       "backlog",
     );
     const byName = (n: string) => store().games.find((g) => g.title === n)!;
-    expect(byName("Typed Game").released).toBe("2021-05-14");
-    expect(byName("Catalog Game").released).toBe("2007-11-20");
+    expect(byName("First Game").released).toBe("2021-05-14");
+    expect(byName("Second Game").released).toBe("2021-05-14");
     expect(store().compilations[0].released).toBe("2021-05-14");
+  });
+
+  it("stores each child's original platform and lets an edit change or keep it (86fc0b4b)", async () => {
+    await store().addCompilation(
+      bundle(20),
+      [
+        { name: "Buzz Lightyear", originalPlatform: "PlayStation" },
+        { name: "Buzz Lightyear", originalPlatform: "Game Boy Color" },
+        { name: "Toy Story 2" },
+      ],
+      "backlog",
+    );
+    const kids = store().games;
+    expect(kids.map((g) => g.originalPlatform)).toEqual(["PlayStation", "Game Boy Color", null]);
+    // Same-named games stay two games, told apart by the label.
+    expect(kids.filter((g) => g.title === "Buzz Lightyear")).toHaveLength(2);
+
+    const compId = store().compilations[0].id;
+    await store().editCompilation(compId, bundle(20), [
+      { gameId: kids[0].id, name: "Buzz Lightyear", originalPlatform: null }, // cleared
+      { gameId: kids[1].id, name: "Buzz Lightyear" }, // not sent: kept
+      { gameId: kids[2].id, name: "Toy Story 2", originalPlatform: "Nintendo 64" },
+    ]);
+    const byId = (id: string) => store().games.find((g) => g.id === id)!;
+    expect(byId(kids[0].id).originalPlatform).toBeNull();
+    expect(byId(kids[1].id).originalPlatform).toBe("Game Boy Color");
+    expect(byId(kids[2].id).originalPlatform).toBe("Nintendo 64");
   });
 
   it("editing keeps a child's existing release date even when the bundle date changes", async () => {
@@ -1548,23 +1567,30 @@ describe("expandGameToCompilation (offline)", () => {
     expect(store().compilations[0].childOrder).toEqual([id("Part 1"), id("Part 2"), id("Part 3")]);
   });
 
-  it("canonicalizes template metadata — off-list platform spellings drop (955090f2)", async () => {
-    useStore.setState({
-      games: [parent()],
-      platformList: ["PC", "Xbox Series X/S"],
-      genreList: ["Shooter"],
-    });
+  it("creates personal entries — name and length only, no catalog metadata (86fc0b4b)", async () => {
+    useStore.setState({ games: [parent()] });
     await store().expandGameToCompilation("P", {
       ...template,
       games: [
-        // RAWG's 'Xbox Series S/X' spelling isn't on the master list; 'pc'
-        // maps to the master casing.
-        { name: "Part 1", platforms: ["Xbox Series S/X", "pc"], genres: ["Shooter", "Unknown Genre"] },
+        {
+          name: "Part 1",
+          hours: 12,
+          image: "part1.png",
+          rawgId: 7,
+          catalogId: "cat-7",
+          platforms: ["PC"],
+          genres: ["Shooter"],
+          released: "2001-01-01",
+        },
       ],
     });
     const child = store().games.find((g) => g.title === "Part 1")!;
-    expect(child.platforms).toEqual(["PC"]);
-    expect(child.genres).toEqual(["Shooter"]);
+    expect(child.hours).toBe(12);
+    expect(child.image).toBeUndefined();
+    expect(child.rawgId).toBeUndefined();
+    expect(child.catalogId).toBeUndefined();
+    expect(child.genres).toEqual([]);
+    expect(child.released).toBe(parent().released);
   });
 
   it("refunds a started parent's activation fee in full", async () => {

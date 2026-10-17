@@ -433,7 +433,10 @@ export function AboutPage() {
             copy you own (platform, format and price each, just like a standalone game&apos;s
             copies). Its games price like everything else: from the moment the bundle joined your
             Bazaar — a recent pickup of decades-old classics prices as the fresh acquisition it
-            is, not the originals. Each game
+            is, not the originals. You just type each game&apos;s name: the games take their
+            cover and release date from the compilation rather than the game database, and an{" "}
+            <strong className="text-ink">original platform</strong> label tells same-named versions
+            apart (a bundle with both the PlayStation and Game Boy Color Buzz Lightyear). Each game
             inside is still bought, played and finished on its own; every copy&apos;s platform shows
             on every game, and each copy&apos;s price is split across them (evenly, by length, or
             however you choose). The split is just for your records — like other costs, it never
@@ -450,7 +453,10 @@ export function AboutPage() {
             bought like any other game and gets its own card in Now Playing, marked with the
             bundle&apos;s name. Open the compilation to see every game inside, what you spent, and
             your total time — tap any game there to play, log time, rate or edit it in place, and
-            its Journey tab tells the whole bundle&apos;s story in one timeline. And when a collection you own as a <em>single</em> card is linked in
+            its Journey tab tells the whole bundle&apos;s story in one timeline. Your collection
+            counts (games owned, the platform bars) count a compilation once — it&apos;s one item
+            on your shelf — while every game you finish still counts as a clear. And when a
+            collection you own as a <em>single</em> card is linked in
             the catalog, its ⋮ menu offers &ldquo;Expand compilation&rdquo; — the card becomes the
             bundle&apos;s games with the cost split evenly, your logged hours kept on the bundle
             total, and any activation fee you paid refunded.

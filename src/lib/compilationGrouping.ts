@@ -69,6 +69,22 @@ export function compilationCoverOf(
   );
 }
 
+/** The cover a bundled game shows (issue 86fc0b4b): its own art when it has
+ *  some, else its bundle's cover — a bundled game inherits from its bundle. A
+ *  game outside a compilation (or whose compilation isn't loaded, as on a
+ *  visited library) keeps just its own art. */
+export function inheritedCover(
+  game: Pick<Game, "image" | "compilationId">,
+  compilations: Compilation[],
+  games: Game[],
+): string | undefined {
+  if (game.image) return game.image;
+  const compilation = compilations.find((c) => c.id === game.compilationId);
+  if (!compilation) return undefined;
+  const siblings = games.filter((g) => g.compilationId === compilation.id);
+  return compilationCoverOf(compilation, orderCompilationChildren(siblings, compilation.childOrder));
+}
+
 /** Build one board's bundle card, with every child in the owner's chosen order
  *  (so the card, its cover fallback, and any preview all agree). */
 export function compilationRollup(

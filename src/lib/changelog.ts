@@ -81,6 +81,18 @@ export const RELEASES: Release[] = [
         tag: "feature",
       },
       {
+        text: "Games in a compilation are now simply typed by name and take their cover and release date from the compilation, instead of each being matched to the game database.",
+        tag: "improvement",
+      },
+      {
+        text: "Give each game in a compilation an original platform — handy when one bundle holds two versions with the same name, like the PlayStation and Game Boy Color Buzz Lightyear.",
+        tag: "feature",
+      },
+      {
+        text: "Your collection counts — games owned, your profile's platform bars and the Master Ledger's totals — now count a compilation once, as the one item on your shelf it is. Every game you finish still counts as a clear.",
+        tag: "improvement",
+      },
+      {
         text: "The compilation progress bar now shows games in play alongside finished ones. Expand / Collapse is gone, because compilations no longer split into separate cards.",
         tag: "improvement",
       },

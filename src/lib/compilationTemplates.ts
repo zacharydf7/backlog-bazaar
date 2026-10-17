@@ -200,20 +200,10 @@ export function isDuplicateTemplate(
   return templates.some((t) => templateSignature(t) === sig);
 }
 
-/** Turn a picked template's games into editable add-form child drafts (no cost or
- *  gameId — those are personal / assigned when the user saves). */
+/** Turn a picked template's games into child drafts: each game's name and
+ *  length only (no cost or gameId — those are personal / assigned when the user
+ *  saves). The template's catalog snapshot stays on the shared template; a
+ *  bundled game inherits from its bundle instead (issue 86fc0b4b). */
 export function templateGamesToChildDrafts(games: TemplateGame[]): CompilationChildDraft[] {
-  return normalizeTemplateGames(games).map((g) => ({
-    name: g.name,
-    hours: g.hours,
-    image: g.image,
-    rawgId: g.rawgId,
-    catalogId: g.catalogId,
-    genres: g.genres ?? [],
-    released: g.released,
-    metacritic: g.metacritic,
-    platforms: g.platforms,
-    developers: g.developers,
-    esrb: g.esrb,
-  }));
+  return normalizeTemplateGames(games).map((g) => ({ name: g.name, hours: g.hours }));
 }

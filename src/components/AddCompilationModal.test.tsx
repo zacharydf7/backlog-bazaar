@@ -5,9 +5,17 @@ import { useStore } from "../store";
 import { totalCost } from "../lib/copies";
 import type { Compilation, Game } from "../types";
 
+const initialPlatforms = useStore.getState().platformList;
+
 beforeEach(() => {
   act(() =>
-    useStore.setState({ cloud: false, viewing: null, games: [], compilations: [] }),
+    useStore.setState({
+      cloud: false,
+      viewing: null,
+      games: [],
+      compilations: [],
+      platformList: initialPlatforms,
+    }),
   );
 });
 
@@ -56,6 +64,26 @@ describe("AddCompilationModal", () => {
     const { games } = useStore.getState();
     expect(games.find((g) => g.title === "Game A")?.priority).toBe("essential");
     expect(games.find((g) => g.title === "Game B")?.priority ?? null).toBeNull();
+  });
+
+  it("saves typed games with their original platform and no database link (86fc0b4b)", async () => {
+    act(() => useStore.setState({ platformList: ["PC", "PlayStation", "Game Boy Color"] }));
+    render(<AddCompilationModal onClose={() => {}} />);
+    fill("Toy Story Retro Roundup", "40", ["Buzz Lightyear", "Buzz Lightyear"]);
+    // No database search on the name field — it's a plain input.
+    expect(screen.queryByPlaceholderText(/Search a game/i)).toBeNull();
+
+    const platforms = screen.getAllByLabelText("Original platform");
+    fireEvent.change(platforms[0], { target: { value: "PlayStation" } });
+    fireEvent.change(platforms[1], { target: { value: "Game Boy Color" } });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /Add 2 games to/i }));
+    });
+
+    const { games } = useStore.getState();
+    expect(games.map((g) => g.originalPlatform).sort()).toEqual(["Game Boy Color", "PlayStation"]);
+    expect(games.every((g) => g.title === "Buzz Lightyear")).toBe(true);
+    expect(games.every((g) => g.rawgId == null && g.catalogId == null && g.image == null)).toBe(true);
   });
 
   it("blocks submit in custom mode until the breakdown sums to the total", () => {

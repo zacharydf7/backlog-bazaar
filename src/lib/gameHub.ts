@@ -120,9 +120,15 @@ export function familyMemberLabel(member: Game): string {
   const platforms = ownedPlatformSummary(member.copies ?? [])
     .map((o) => o.platform)
     .join(", ");
-  const base = platforms ? `${member.title} (${platforms})` : member.title;
+  const base = withOrigin(platforms ? `${member.title} (${platforms})` : member.title, member);
   const bundle = compilationSource(member);
   return bundle ? `${base} — part of ${bundle}` : base;
+}
+
+/** Append a bundled game's original platform (issue 86fc0b4b), which tells
+ *  same-named versions from one bundle apart. */
+function withOrigin(label: string, g: Game): string {
+  return g.originalPlatform ? `${label} · ${g.originalPlatform}` : label;
 }
 
 /** A selector entry's human label. Same-title instances read by platform
@@ -138,12 +144,14 @@ export function editionLabel(edition: HubEdition, hubTitle_: string): string {
   const platforms = ownedPlatformSummary(g.copies ?? [])
     .map((o) => o.platform)
     .join(", ");
-  const base =
+  const base = withOrigin(
     g.title !== hubTitle_
       ? platforms
         ? `${g.title} (${platforms})`
         : g.title
-      : platforms || g.title;
+      : platforms || g.title,
+    g,
+  );
   const bundle = compilationSource(g);
   return bundle ? `${base} — part of ${bundle}` : base;
 }

@@ -1800,6 +1800,12 @@ alter table public.games add column if not exists compilation_id uuid
 -- every child so the "Part of …" tag renders without a join.
 alter table public.games add column if not exists compilation_name text;
 create index if not exists games_compilation_idx on public.games (user_id, compilation_id);
+-- The console a bundled game originally released on (issue 86fc0b4b): a
+-- personal display label that tells same-named versions in one bundle apart
+-- (Buzz Lightyear of Star Command on PlayStation vs Game Boy Color). Label
+-- only — boards, filters and stats go by the bundle's own copies. Validated
+-- against the platform master list by games_validate_terms. Null = unset.
+alter table public.games add column if not exists original_platform text;
 
 -- Expandable/collapsible grouping (all additive; existing rows keep today's
 -- always-expanded rendering):
@@ -3948,7 +3954,9 @@ update public.games g
   from public.catalog_games c
  where c.id = g.catalog_id
    and c.image is not null
-   and g.stock_image is distinct from c.image;
+   and g.stock_image is distinct from c.image
+   -- A compilation's games follow their bundle, not the catalog (issue 86fc0b4b).
+   and g.compilation_id is null;
 
 -- Cover convergence AT ADD TIME (issue f464ec1e): the statement above only
 -- runs when the schema is applied, so a copy added between applies wore its
@@ -3969,7 +3977,8 @@ as $$
 declare
   v_cover text;
 begin
-  if new.catalog_id is null then return new; end if;
+  -- A compilation's games follow their bundle, not the catalog (issue 86fc0b4b).
+  if new.catalog_id is null or new.compilation_id is not null then return new; end if;
   select c.image into v_cover from public.catalog_games c where c.id = new.catalog_id;
   if v_cover is null or new.stock_image is not distinct from v_cover then return new; end if;
   if new.image is null or new.image is not distinct from new.stock_image then
@@ -4152,7 +4161,10 @@ update public.games g
   from public.catalog_games c
  where g.rawg_id is null and g.igdb_id is null and g.catalog_id is null
    and c.rawg_id is null and c.igdb_id is null and c.title is not null
-   and lower(btrim(g.title)) = lower(btrim(c.title));
+   and lower(btrim(g.title)) = lower(btrim(c.title))
+   -- A compilation's games are personal entries; a title match never links
+   -- them to the catalog (issue 86fc0b4b).
+   and g.compilation_id is null;
 
 -- Now that community titles are de-duplicated, enforce uniqueness so a duplicate
 -- can't return. Same normal form the dedup used; excludes platforms-only (null-title)
@@ -4391,7 +4403,9 @@ begin
       update public.games
          set catalog_id = v_catalog
        where rawg_id is null and igdb_id is null and catalog_id is null
-         and lower(btrim(title)) = v_norm;
+         and lower(btrim(title)) = v_norm
+         -- Never a compilation's games: they're personal entries (issue 86fc0b4b).
+         and compilation_id is null;
     end if;
   end if;
 
@@ -4453,7 +4467,9 @@ begin
              where l.status = 'linked' and l.rawg_id = c.rawg_id))
       or (c.igdb_id is not null and g.rawg_id in (
             select l.rawg_id from public.game_identity_links l
-             where l.status = 'linked' and l.igdb_id = c.igdb_id)));
+             where l.status = 'linked' and l.igdb_id = c.igdb_id)))
+    -- A compilation's games follow their bundle, not the catalog (issue 86fc0b4b).
+    and g.compilation_id is null;
 
   -- An approved new game is NOT auto-added to the submitter's Bazaar — it just
   -- becomes available in the shared catalog (searchable by everyone), and anyone,
@@ -4717,7 +4733,9 @@ begin
   where cg.id = v_catalog
     and ((cg.rawg_id is not null and g.rawg_id = cg.rawg_id)
       or (cg.igdb_id is not null and g.igdb_id = cg.igdb_id)
-      or g.catalog_id = cg.id);
+      or g.catalog_id = cg.id)
+    -- A compilation's games follow their bundle, not the catalog (issue 86fc0b4b).
+    and g.compilation_id is null;
 
   -- Mark the submission reverted (kept in the log; approved_fields/status stay as
   -- the historical record of the approval itself).
@@ -4943,7 +4961,9 @@ begin
     ongoing     = case when g.status in ('backlog', 'wishlist', 'finished')
                        then c2.is_live_service else g.ongoing end
   from public.catalog_games c2
-  where c2.id = p_id and g.catalog_id = p_id;
+  where c2.id = p_id and g.catalog_id = p_id
+    -- A compilation's games follow their bundle, not the catalog (issue 86fc0b4b).
+    and g.compilation_id is null;
 
   -- Keep shared compilation templates' embedded snapshots current with this edit.
   perform public.refresh_compilation_templates_for_catalog(p_id);
@@ -9345,7 +9365,8 @@ begin
     insert into public.games
       (user_id, title, hours, genres, image, stock_image, original_image, rawg_id,
        released, metacritic, platforms, developers, esrb, catalog_id, status, copies,
-       compilation_id, compilation_name, finished_at, played_hours, priority)
+       compilation_id, compilation_name, finished_at, played_hours, priority,
+       original_platform)
     values (
       auth.uid(),
       btrim(v_child->>'name'),
@@ -9380,7 +9401,9 @@ begin
       0,
       -- Triage tier picked on the row (issue 901eb363); the insert trigger
       -- logs it to game_priority_events like any Add-form assignment.
-      nullif(v_child->>'priority', '')
+      nullif(v_child->>'priority', ''),
+      -- Original-platform label (issue 86fc0b4b), in the master list's spelling.
+      public.canonical_platform_terms(jsonb_build_array(v_child->>'original_platform'))->>0
     )
     returning id into v_child_id;
     v_child_ids := v_child_ids || v_child_id;
@@ -9530,6 +9553,13 @@ begin
      title = btrim(c->>'name'),
      hours = nullif(c->>'hours', '')::real,
      compilation_name = btrim(p_title),
+     -- Original-platform label (issue 86fc0b4b): the editor always sends the
+     -- row's value, so a cleared row clears it; an older client that omits the
+     -- key leaves it alone.
+     original_platform = case when c ? 'original_platform'
+                              then public.canonical_platform_terms(
+                                     jsonb_build_array(c->>'original_platform'))->>0
+                              else g.original_platform end,
      status = case when nullif(c->>'status', '') is not null
                    then c->>'status' else g.status end,
      slot_id = case when nullif(c->>'status', '') is not null
@@ -9571,7 +9601,7 @@ begin
       insert into public.games
         (user_id, title, hours, genres, image, stock_image, original_image, rawg_id,
          released, metacritic, platforms, developers, esrb, catalog_id, status, copies,
-         compilation_id, compilation_name, finished_at, played_hours)
+         compilation_id, compilation_name, finished_at, played_hours, original_platform)
       values (
         auth.uid(),
         btrim(v_child->>'name'),
@@ -9601,7 +9631,9 @@ begin
         btrim(p_title),
         case when coalesce(nullif(v_child->>'status', ''), 'backlog') = 'finished'
              then now() else null end,
-        0
+        0,
+        -- Original-platform label (issue 86fc0b4b), in the master list's spelling.
+        public.canonical_platform_terms(jsonb_build_array(v_child->>'original_platform'))->>0
       )
       returning id into v_child_id;
       v_child_ids := v_child_ids || v_child_id;
@@ -9862,24 +9894,21 @@ begin
       auth.uid(),
       btrim(v_tpl.e->>'name'),
       nullif(v_tpl.e->>'hours', '')::real,
-      -- Canonicalized against the master lists: a template stored before terms
-      -- were validated (or before a taxonomy rename) can carry off-list
-      -- spellings that the games validation trigger would reject, aborting the
-      -- whole expand (issue 955090f2: 'UNKNOWN_PLATFORM:Xbox Series S/X').
-      -- Off-list terms drop, exactly as the client's add path does.
-      public.canonical_genre_terms(v_tpl.e->'genres'),
-      nullif(v_tpl.e->>'image', ''),
-      nullif(v_tpl.e->>'image', ''),
-      nullif(v_tpl.e->>'image', ''),
-      nullif(v_tpl.e->>'rawg_id', '')::integer,
-      -- Fill-blanks release date: the template child's own date wins; the
-      -- parent's date covers children that arrive without one.
-      coalesce(nullif(v_tpl.e->>'released', '')::date, g.released),
-      nullif(v_tpl.e->>'metacritic', '')::integer,
-      public.canonical_platform_terms(v_tpl.e->'platforms'),
-      coalesce(v_tpl.e->'developers', '[]'::jsonb),
-      nullif(v_tpl.e->>'esrb', ''),
-      nullif(v_tpl.e->>'catalog_id', '')::uuid,
+      -- Bundled games are personal entries that inherit from their bundle
+      -- (issue 86fc0b4b): the name and length come from the template, but no
+      -- catalog link, cover or catalog metadata — the bundle's cover (the
+      -- expanded card's art, parent_image above) and release date stand in.
+      '[]'::jsonb,
+      null,
+      null,
+      null,
+      null,
+      g.released,
+      null,
+      '[]'::jsonb,
+      '[]'::jsonb,
+      null,
+      null,
       case when g.status = 'finished' then 'finished' else 'backlog' end,
       case when v_pc_n > 0 then (
         -- One child copy per parent copy, cost = this child's even-split slice of
@@ -13633,6 +13662,12 @@ begin
                   where lower(c->>'platform') = lower(v_old));
   get diagnostics n = row_count; v_affected := v_affected + n;
 
+  -- A bundled game's original-platform label (issue 86fc0b4b).
+  update public.games g
+     set original_platform = v_new
+   where lower(g.original_platform) = lower(v_old);
+  get diagnostics n = row_count; v_affected := v_affected + n;
+
   update public.game_submissions s
      set platforms = public.jsonb_text_array_replace(s.platforms, v_old, v_new)
    where exists (select 1 from jsonb_array_elements_text(coalesce(s.platforms, '[]'::jsonb)) x
@@ -13783,13 +13818,20 @@ $$;
 create or replace function public.games_validate_terms() returns trigger
 language plpgsql security definer set search_path = public as $$
 begin
-  perform public.assert_known_terms(NEW.genres, NEW.platforms, NEW.copies);
+  -- A bundled game's original-platform label (issue 86fc0b4b) is checked as one
+  -- more platform term.
+  perform public.assert_known_terms(
+    NEW.genres,
+    coalesce(NEW.platforms, '[]'::jsonb)
+      || case when NEW.original_platform is null then '[]'::jsonb
+              else jsonb_build_array(NEW.original_platform) end,
+    NEW.copies);
   return NEW;
 end;
 $$;
 drop trigger if exists games_validate_terms on public.games;
 create trigger games_validate_terms
-  before insert or update of genres, platforms, copies on public.games
+  before insert or update of genres, platforms, copies, original_platform on public.games
   for each row execute function public.games_validate_terms();
 
 create or replace function public.catalog_games_validate_terms() returns trigger

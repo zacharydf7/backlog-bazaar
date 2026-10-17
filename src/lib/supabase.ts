@@ -113,6 +113,7 @@ export interface GameRow {
   private: boolean | null;
   stealth: boolean | null;
   priority: string | null;
+  original_platform: string | null;
   resumed: boolean | null;
   prerequisite_game_id: string | null;
   preordered_at: string | null;
@@ -200,6 +201,7 @@ export function rowToGame(r: GameRow): Game {
     private: r.private ?? false,
     stealth: r.stealth ?? false,
     priority: coerceGamePriority(r.priority),
+    originalPlatform: r.original_platform ?? null,
     resumed: r.resumed ?? false,
     prerequisiteGameId: r.prerequisite_game_id ?? null,
     preorderedAt: r.preordered_at ? Date.parse(r.preordered_at) : null,

@@ -1,4 +1,4 @@
-import type { Compilation, CopyFormat, Game, GameCopy, GameMeta, GameStatus } from "../types";
+import type { Compilation, CopyFormat, Game, GameCopy, GameStatus } from "../types";
 import type { GamePriority } from "./gamePriority";
 
 // Distributing a compilation's total purchase cost across its child games. A
@@ -131,25 +131,12 @@ export interface CompilationContainerDraft {
 }
 
 /** One bundled game passed to the store when creating or editing a compilation:
- *  its name, optional estimated length (hours), and assigned cost share (dollars),
- *  plus any catalog metadata captured from a picked search result (so the child
- *  card gets cover art, genres, etc.). `gameId` is set when editing — it points at
- *  the existing child game so it can be updated rather than re-created. */
-export interface CompilationChildDraft
-  extends Partial<
-    Pick<
-      GameMeta,
-      | "rawgId"
-      | "image"
-      | "released"
-      | "genres"
-      | "metacritic"
-      | "platforms"
-      | "developers"
-      | "esrb"
-      | "catalogId"
-    >
-  > {
+ *  its name, optional estimated length (hours), and assigned cost share
+ *  (dollars). A bundled game is a personal entry that inherits from its bundle
+ *  (issue 86fc0b4b) — it never carries catalog metadata or a catalog link, so a
+ *  draft has none to send. `gameId` is set when editing — it points at the
+ *  existing child game so it can be updated rather than re-created. */
+export interface CompilationChildDraft {
   gameId?: string;
   name: string;
   hours?: number;
@@ -161,4 +148,6 @@ export interface CompilationChildDraft
   // headliner can rank above its filler without a post-add visit to each card.
   // null/undefined = unassigned, matching the Add Game form's default.
   priority?: GamePriority | null;
+  // The game's original console (issue 86fc0b4b), a display label; null clears.
+  originalPlatform?: string | null;
 }

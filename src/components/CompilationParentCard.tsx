@@ -25,6 +25,7 @@ import { CompilationPlayPicker } from "./CompilationPlayPicker";
 import { FinishTagBadge } from "./FinishTagBadge";
 import { GamePriorityBadge } from "./GamePriorityBadge";
 import { PlatformBadge } from "./PlatformBadge";
+import { TitleWithOrigin } from "./TitleWithOrigin";
 import { useViewing } from "../lib/viewContext";
 
 /** A compilation's board card — ONE card standing in for the bundle's games on
@@ -277,7 +278,9 @@ function TrayRow({ game, board }: { game: Game; board: CollapsedCompilation["boa
       title={`Open ${game.title}`}
       className="flex w-full min-w-0 items-center justify-between gap-2 rounded-md px-2 py-1 text-left transition hover:bg-panel"
     >
-      <span className="min-w-0 truncate text-xs text-ink">{game.title}</span>
+      <span className="min-w-0 truncate text-xs text-ink">
+        <TitleWithOrigin game={game} />
+      </span>
       <span className="flex shrink-0 items-center gap-1">
         {board === "finished" ? (
           <>

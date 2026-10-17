@@ -82,6 +82,7 @@ const baseRow: GameRow = {
   private: null,
   stealth: null,
   priority: null,
+  original_platform: null,
   resumed: null,
   prerequisite_game_id: null,
   preordered_at: null,
@@ -179,6 +180,13 @@ describe("rowToGame", () => {
     expect(rowToGame({ ...baseRow, priority: "essential" }).priority).toBe("essential");
     expect(rowToGame({ ...baseRow, priority: null }).priority).toBeNull();
     expect(rowToGame({ ...baseRow, priority: "urgent" }).priority).toBeNull();
+  });
+
+  it("maps a bundled game's original platform label (86fc0b4b)", () => {
+    expect(rowToGame({ ...baseRow, original_platform: "PlayStation" }).originalPlatform).toBe(
+      "PlayStation",
+    );
+    expect(rowToGame(baseRow).originalPlatform).toBeNull();
   });
 });
 

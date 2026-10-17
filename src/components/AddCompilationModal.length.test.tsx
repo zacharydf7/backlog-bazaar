@@ -4,15 +4,8 @@ import { AddCompilationModal } from "./AddCompilationModal";
 import { useStore } from "../store";
 import type { Compilation, Game } from "../types";
 
-// Drive a real pick: the search box returns one suggestion, and HowLongToBeat
-// returns the three completion-level times that power the length chips.
-vi.mock("../lib/gameSearch", async (orig) => ({
-  ...(await orig()),
-  searchGameSuggestions: vi.fn(async () => ({
-    results: [{ title: "Halo Infinite", rawgId: 1, genres: [], hours: 9 }],
-    providerDown: false,
-  })),
-}));
+// HowLongToBeat returns the three completion-level times that power the length
+// chips for a typed name.
 vi.mock("../lib/gamedata", async (orig) => ({
   ...(await orig()),
   fetchHltbTimes: vi.fn(async () => ({ main: 9, mainExtra: 15, completionist: 30 })),
@@ -23,12 +16,13 @@ beforeEach(() => {
 });
 
 describe("AddCompilationModal completion-level length picker", () => {
-  it("offers Main/+Extras/100% chips after picking a game and applies the chosen one", async () => {
+  it("offers Main/+Extras/100% chips for a typed name and applies the chosen one (86fc0b4b)", async () => {
     render(<AddCompilationModal onClose={() => {}} />);
 
-    // Type into the first child's name field and pick the suggestion.
-    fireEvent.change(screen.getAllByLabelText("Game name")[0], { target: { value: "Halo" } });
-    fireEvent.mouseDown(await screen.findByText("Halo Infinite"));
+    // Type the first child's name and leave the field — no database search.
+    const name = screen.getAllByLabelText("Game name")[0];
+    fireEvent.change(name, { target: { value: "Halo Infinite" } });
+    fireEvent.blur(name);
 
     // HLTB times load → the length defaults to Main (9h) and chips appear.
     const length = screen.getAllByLabelText("Length")[0] as HTMLInputElement;
