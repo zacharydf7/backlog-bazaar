@@ -118,6 +118,7 @@ import {
   type Filters,
   type SortKey,
 } from "./lib/bazaarView";
+import { isRetired } from "./lib/finishTags";
 import {
   EMPTY_LEDGER_FILTERS,
   orderedLedgerGames,
@@ -401,10 +402,32 @@ export default function App() {
 
   // Games on the current board, before slicing/sorting — drives the facet lists
   // and the "X of Y" count in the toolbar.
+  // "Hide retired" on the Finished board: games dropped with Retire It leave
+  // the shelf so it shows only the games you played through. A remembered
+  // view preference, like Stack.
+  const [hideRetired, setHideRetired] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem("bb-hide-retired") === "1";
+    } catch {
+      return false;
+    }
+  });
+  const toggleHideRetired = () => {
+    setHideRetired((v) => {
+      try {
+        localStorage.setItem("bb-hide-retired", v ? "0" : "1");
+      } catch {
+        /* ignore */
+      }
+      return !v;
+    });
+  };
   const boardGamesForView = useMemo(
     () => famGrouping.boardGames.filter((g) => g.status === view),
     [famGrouping, view],
   );
+  const hasRetired = view === "finished" && boardGamesForView.some(isRetired);
+  const hidingRetired = hideRetired && hasRetired;
 
   // Bundle cards for the current board, honouring the live search and the
   // slicers the same way family cards do: the bundle matches when ANY of its
@@ -416,9 +439,10 @@ export default function App() {
         (c) =>
           c.board === view &&
           compilationMatchesQuery(c, searchQuery) &&
-          compilationMatchesFilters(c, filters),
+          compilationMatchesFilters(c, filters) &&
+          !(hidingRetired && c.boardChildren.every(isRetired)),
       ),
-    [grouping, view, searchQuery, filters],
+    [grouping, view, searchQuery, filters, hidingRetired],
   );
 
   // Focused family cards for the current board. A family matches the search or
@@ -428,9 +452,12 @@ export default function App() {
     () =>
       famGrouping.families.filter(
         (f) =>
-          f.board === view && familyMatchesQuery(f, searchQuery) && familyMatchesFilters(f, filters),
+          f.board === view &&
+          familyMatchesQuery(f, searchQuery) &&
+          familyMatchesFilters(f, filters) &&
+          !(hidingRetired && isRetired(f.primary)),
       ),
-    [famGrouping, view, searchQuery, filters],
+    [famGrouping, view, searchQuery, filters, hidingRetired],
   );
   const facets = useMemo(() => collectFacets(boardGamesForView), [boardGamesForView]);
   // The slicers/sort, then the live header search query, narrow the board so the
@@ -441,7 +468,7 @@ export default function App() {
         // The coin-value sorts price games the way their buy buttons will —
         // Family Discounts need own-library state (discounts stay personal).
         applyView(
-          boardGamesForView,
+          hidingRetired ? boardGamesForView.filter((g) => !isRetired(g)) : boardGamesForView,
           sortKey,
           filters,
           economy,
@@ -449,7 +476,7 @@ export default function App() {
         ),
         searchQuery,
       ),
-    [boardGamesForView, sortKey, filters, economy, searchQuery, viewing, boardGames, replayBonusPct],
+    [boardGamesForView, sortKey, filters, economy, searchQuery, viewing, boardGames, replayBonusPct, hidingRetired],
   );
 
   // The ONE ordered list the grid renders: plain cards, collapsed bundles, and
@@ -1274,6 +1301,9 @@ export default function App() {
                     ? { on: stackByGame, onToggle: toggleStackByGame }
                     : undefined
                 }
+                retired={
+                  hasRetired ? { hidden: hideRetired, onToggle: toggleHideRetired } : undefined
+                }
               />
             )}
 
@@ -1321,14 +1351,26 @@ export default function App() {
                 <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-line px-6 py-16 text-center">
                   <p className="font-display text-xl text-ink">No games match your filters</p>
                   <p className="max-w-md text-sm text-muted">
-                    Try removing a filter to widen your search.
+                    {hidingRetired
+                      ? "Retired games are hidden — show them, or remove a filter."
+                      : "Try removing a filter to widen your search."}
                   </p>
-                  <button
-                    onClick={() => setFilters(EMPTY_FILTERS)}
-                    className="mt-1 rounded-xl border border-line px-4 py-2 text-sm font-medium text-ink transition hover:bg-panel"
-                  >
-                    Clear filters
-                  </button>
+                  <div className="mt-1 flex flex-wrap justify-center gap-2">
+                    {hidingRetired && (
+                      <button
+                        onClick={toggleHideRetired}
+                        className="rounded-xl border border-line px-4 py-2 text-sm font-medium text-ink transition hover:bg-panel"
+                      >
+                        Show retired
+                      </button>
+                    )}
+                    <button
+                      onClick={() => setFilters(EMPTY_FILTERS)}
+                      className="rounded-xl border border-line px-4 py-2 text-sm font-medium text-ink transition hover:bg-panel"
+                    >
+                      Clear filters
+                    </button>
+                  </div>
                 </div>
               )
             ) : view === "playing" ? (

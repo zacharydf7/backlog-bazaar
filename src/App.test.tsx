@@ -463,6 +463,45 @@ describe("App", () => {
     expect(filtersBtn.textContent).toBe("Filters"); // no active-count badge
   });
 
+  it("hides retired games on the Finished board, and remembers it", async () => {
+    localStorage.removeItem("bb-hide-retired");
+    const { unmount } = render(<App />);
+    await screen.findAllByRole("heading", { name: /Backlog Bazaar/i });
+    const beaten = libGame({ id: "gb", title: "Played Through", status: "finished", finishedAt: 2, finishTag: "beaten" });
+    const retired = libGame({ id: "gr", title: "Dropped It", status: "finished", finishedAt: 1, finishTag: "retired" });
+    act(() => useStore.setState({ viewing: null, games: [beaten, retired] }));
+    fireEvent.click(screen.getAllByRole("button", { name: /Finished/i })[0]);
+    expect(await screen.findByText("Dropped It")).toBeTruthy();
+
+    const toggle = screen.getByRole("button", { name: /Hide retired/ });
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute("aria-pressed")).toBe("true");
+    await waitFor(() => expect(screen.queryByText("Dropped It")).toBeNull());
+    expect(screen.getByText("Played Through")).toBeTruthy();
+    unmount();
+
+    // Remembered across visits, like Stack.
+    render(<App />);
+    await screen.findAllByRole("heading", { name: /Backlog Bazaar/i });
+    act(() => useStore.setState({ viewing: null, games: [beaten, retired] }));
+    fireEvent.click(screen.getAllByRole("button", { name: /Finished/i })[0]);
+    expect(await screen.findByText("Played Through")).toBeTruthy();
+    expect(screen.queryByText("Dropped It")).toBeNull();
+    localStorage.removeItem("bb-hide-retired");
+  });
+
+  it("offers Show retired when hiding them empties the board", async () => {
+    localStorage.setItem("bb-hide-retired", "1");
+    render(<App />);
+    await screen.findAllByRole("heading", { name: /Backlog Bazaar/i });
+    const retired = libGame({ id: "gr", title: "Dropped It", status: "finished", finishedAt: 1, finishTag: "retired" });
+    act(() => useStore.setState({ viewing: null, games: [retired] }));
+    fireEvent.click(screen.getAllByRole("button", { name: /Finished/i })[0]);
+    fireEvent.click(await screen.findByRole("button", { name: "Show retired" }));
+    expect(await screen.findByText("Dropped It")).toBeTruthy();
+    localStorage.removeItem("bb-hide-retired");
+  });
+
   it("the Bazaar pins pre-orders first and shows the Coming up strip", async () => {
     // Arriving inside the strip's 30-day horizon (a far-off date would pin on
     // the board but stay off the strip).

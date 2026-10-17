@@ -85,6 +85,10 @@ export const RELEASES: Release[] = [
         tag: "improvement",
       },
       {
+        text: "The Finished board has a Hide retired button, so it can show only the games you played through. It remembers your choice.",
+        tag: "feature",
+      },
+      {
         text: "A Family's cover picker names each edition's platform, so editions with the same name are easy to tell apart.",
         tag: "fix",
       },

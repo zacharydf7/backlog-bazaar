@@ -17,6 +17,12 @@ export const FINISH_TAGS: { value: FinishTag; label: string; icon: string; blurb
 const VALID = new Set<FinishTag>(["beaten", "completed", "endless", "retired"]);
 
 /** Coerce an unknown value to a FinishTag, or null. */
+/** A game dropped with "Retire It" — on the Finished board, but not a clear.
+ *  The Finished board's "Hide retired" toggle leaves these out. */
+export function isRetired(game: { finishTag?: FinishTag | null }): boolean {
+  return game.finishTag === "retired";
+}
+
 export function coerceFinishTag(v: unknown): FinishTag | null {
   return typeof v === "string" && VALID.has(v as FinishTag) ? (v as FinishTag) : null;
 }

@@ -1,4 +1,4 @@
-import { ArrowDownUp, Layers, SlidersHorizontal, ThumbsUp, X } from "lucide-react";
+import { ArrowDownUp, FlagOff, Layers, SlidersHorizontal, ThumbsUp, X } from "lucide-react";
 import type { CopyFormat, ModifierAcquisition } from "../types";
 import { acquisitionLabel, formatLabel } from "../lib/copies";
 import { GAME_PRIORITY_LABEL, type GamePriority } from "../lib/gamePriority";
@@ -33,6 +33,7 @@ export function BazaarToolbar({
   shown,
   action,
   stacking,
+  retired,
 }: {
   sortKey: SortKey;
   onSortChange: (k: SortKey) => void;
@@ -51,6 +52,9 @@ export function BazaarToolbar({
   /** Optional "Stack by game" view toggle (grid boards): per-platform copies
    *  of one game render as a single fan-out deck while it's on. */
   stacking?: { on: boolean; onToggle: () => void };
+  /** Optional "Hide retired" toggle (the Finished board): leaves out games
+   *  dropped with Retire It, so the shelf shows only real clears. */
+  retired?: { hidden: boolean; onToggle: () => void };
 }) {
   const count = activeFilterCount(filters);
   const active = hasActiveFilters(filters);
@@ -134,6 +138,22 @@ export function BazaarToolbar({
             }
           >
             <Layers size={15} /> Stack
+          </button>
+        )}
+
+        {retired && (
+          <button
+            onClick={retired.onToggle}
+            aria-pressed={retired.hidden}
+            title="Leave out games you retired, so only the ones you played through show"
+            className={
+              "inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-2 text-sm transition " +
+              (retired.hidden
+                ? "border-brand/50 bg-brand/10 text-accent"
+                : "border-line bg-panel text-ink hover:bg-panel/70")
+            }
+          >
+            <FlagOff size={15} /> Hide retired
           </button>
         )}
 
