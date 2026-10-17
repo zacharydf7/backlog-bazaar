@@ -73,10 +73,17 @@ export function GlobalSearchModal({
             aria-label={placeholder}
             className="min-w-0 flex-1 bg-transparent text-base text-ink placeholder:text-subtle focus:outline-none"
           />
+          {/* Clears typed text first, then closes — the same two steps as
+              Escape (issue 86fc0b4b). */}
           <button
             type="button"
-            onClick={onClose}
-            aria-label="Close search"
+            onClick={() => {
+              if (query) {
+                onQueryChange("");
+                inputRef.current?.focus();
+              } else onClose();
+            }}
+            aria-label={query ? "Clear search" : "Close search"}
             className="shrink-0 rounded-lg p-1 text-subtle transition hover:text-ink"
           >
             <X size={18} />

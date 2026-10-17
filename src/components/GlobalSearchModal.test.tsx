@@ -79,6 +79,21 @@ describe("GlobalSearchModal", () => {
     expect(screen.queryByRole("button", { name: /add/i })).toBeNull();
   });
 
+  it("clears typed text with the × first, then closes (86fc0b4b)", () => {
+    const onQueryChange = vi.fn();
+    const onClose = vi.fn();
+    const { rerender } = render(
+      <GlobalSearchModal {...base} results={[]} onQueryChange={onQueryChange} onClose={onClose} />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Clear search" }));
+    expect(onQueryChange).toHaveBeenCalledWith("");
+    expect(onClose).not.toHaveBeenCalled();
+
+    rerender(<GlobalSearchModal {...base} query="" results={[]} onClose={onClose} />);
+    fireEvent.click(screen.getByRole("button", { name: "Close search" }));
+    expect(onClose).toHaveBeenCalled();
+  });
+
   it("marks a private game with a lock on your own results", () => {
     const secret = game({ id: "s", title: "Secret Game", private: true });
     render(<GlobalSearchModal {...base} results={[{ kind: "game", game: secret }]} />);
