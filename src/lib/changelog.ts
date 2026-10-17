@@ -69,7 +69,7 @@ export const RELEASES: Release[] = [
         tag: "feature",
       },
       {
-        text: "The games inside a compilation are simple rows now: tap one to open its own page to play it, log time or review it.",
+        text: "The games inside a compilation are simple rows now. Tap one to open its own page, just for that compilation's copy, to play it and log time. Your review lives on the compilation.",
         tag: "improvement",
       },
       {

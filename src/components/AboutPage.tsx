@@ -456,7 +456,9 @@ export function AboutPage() {
             own cover, details, review, likes and community stats, shared with everyone who owns it
             once you link it to the game database from its Library tab — with a{" "}
             <strong className="text-ink">Games</strong> tab listing every game inside. Tap one to
-            open its own page to play, log time or review it. The compilation&apos;s status follows
+            open its own page — just that compilation&apos;s copy, kept apart from the same game
+            anywhere else — to play it and log time; you review the compilation as a whole. The
+            compilation&apos;s status follows
             its games (Now Playing while you play one, Bazaar while any wait, Finished once all
             are done), and its Journey tab tells the whole bundle&apos;s story in one timeline. Your collection
             counts (games owned, the platform bars) count a compilation once — it&apos;s one item

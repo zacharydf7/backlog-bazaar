@@ -101,14 +101,16 @@ export function FamilyHub({
         }
       : null;
 
-  // Candidates: any other game not already in this family. With no search
-  // typed, kindred titles lead (ranked by title similarity — "Shin Megami
-  // Tensei V: Vengeance" surfaces the other SMT games, not the recently added
-  // ones — issue 9f420872); typing switches to a plain title match.
+  // Candidates: any other game not already in this family — never a game
+  // inside a compilation, which is its own entity (issue 86fc0b4b). With no
+  // search typed, kindred titles lead (ranked by title similarity — "Shin
+  // Megami Tensei V: Vengeance" surfaces the other SMT games, not the recently
+  // added ones — issue 9f420872); typing switches to a plain title match.
   const candidates = useMemo(() => {
+    const linkable = games.filter((g) => g.compilationId == null);
     const q = query.trim().toLowerCase();
-    if (q === "") return suggestedEditionCandidates(games, live, 6);
-    return games
+    if (q === "") return suggestedEditionCandidates(linkable, live, 6);
+    return linkable
       .filter(
         (g) =>
           g.id !== live.id &&

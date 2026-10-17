@@ -247,7 +247,9 @@ describe("GamePage as the unified Game Details Hub", () => {
     expect(options.some((t) => /Nintendo Switch 2/.test(t))).toBe(false);
   });
 
-  it("names each bundle in the dropdown and keeps the long label readable (f1216ba7)", () => {
+  it("opens a game inside a compilation as that compilation's copy alone (86fc0b4b)", () => {
+    window.history.replaceState(null, "", "/");
+    // The same catalog game in two compilations, plus a standalone copy.
     const bundleA = game({
       id: "a",
       title: "Super Mario Galaxy",
@@ -256,31 +258,37 @@ describe("GamePage as the unified Game Details Hub", () => {
       compilationId: "C1",
       compilationName: "Super Mario Galaxy + Super Mario Galaxy 2",
     });
-    const bundleB = game({
-      id: "b",
-      title: "Super Mario Galaxy",
-      rawgId: 7,
-      copies: [{ id: "c2", platform: "Nintendo Switch" }],
-      compilationId: "C2",
-      compilationName: "Super Mario 3D All-Stars",
-    });
-    act(() => useStore.setState({ games: [bundleA, bundleB] }));
+    const bundleB = { ...bundleA, id: "b", compilationId: "C2", compilationName: "Super Mario 3D All-Stars" };
+    const solo = game({ id: "s", title: "Super Mario Galaxy", rawgId: 7, copies: [{ id: "c3", platform: "Wii" }] });
+    act(() => useStore.setState({ games: [bundleA, bundleB, solo] }));
     render(<GamePage gameId="a" onBack={vi.fn()} />);
 
+    // No other copy joins it: no editions row, no edition picker.
+    expect(screen.queryByText(/editions in your library/)).toBeNull();
+    // A light tracker: its review and community live on the compilation.
+    expect(screen.getAllByRole("tab").map((t) => t.textContent?.trim())).toEqual(["Overview", "Journey"]);
     fireEvent.click(screen.getByRole("tab", { name: /Journey/ }));
-    const select = screen.getByLabelText("Select edition");
-    const options = within(select)
-      .getAllByRole("option")
-      .map((o) => o.textContent ?? "");
-    // Two same-platform copies, told apart by the bundle each came in.
-    expect(options).toContain("Nintendo Switch — part of Super Mario Galaxy + Super Mario Galaxy 2");
-    expect(options).toContain("Nintendo Switch — part of Super Mario 3D All-Stars");
-    // A native select clips its closed label, so the full text stays reachable
-    // on hover and the control is no longer capped narrower than its content.
-    expect(select.getAttribute("title")).toBe(
-      "Nintendo Switch — part of Super Mario Galaxy + Super Mario Galaxy 2",
-    );
-    expect(select.className).not.toMatch(/max-w-xs/);
+    expect(screen.queryByLabelText("Select edition")).toBeNull();
+    // The menu leads back to its compilation instead of a Library tab.
+    fireEvent.click(screen.getByRole("button", { name: /More options/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Open compilation/ }));
+    expect(window.location.hash).toBe("#c/C1");
+  });
+
+  it("keeps compilation copies off a standalone copy's page (86fc0b4b)", () => {
+    const bundled = game({
+      id: "a",
+      title: "Super Mario Galaxy",
+      rawgId: 7,
+      copies: [{ id: "c1", platform: "Nintendo Switch" }],
+      compilationId: "C1",
+      compilationName: "Super Mario 3D All-Stars",
+    });
+    const solo = game({ id: "s", title: "Super Mario Galaxy", rawgId: 7, copies: [{ id: "c3", platform: "Wii" }] });
+    act(() => useStore.setState({ games: [bundled, solo] }));
+    render(<GamePage gameId="s" onBack={vi.fn()} />);
+    expect(screen.queryByText(/editions in your library/)).toBeNull();
+    expect(screen.queryByText(/Super Mario 3D All-Stars/)).toBeNull();
   });
 
   it("jumps to a sibling edition via the Library tab's family manager", () => {

@@ -7,7 +7,7 @@ import { afterRemovalTarget, type PageNav, type PageNavStop } from "../../lib/pa
 import { PageNavControls } from "./PageNavControls";
 import { CoOpPactBanner } from "../CoOpPact";
 import { ViewingProvider } from "../../lib/viewContext";
-import { gameHash } from "../../lib/route";
+import { compilationHash, gameHash } from "../../lib/route";
 import { gameToAddMeta } from "../../lib/addRouting";
 import { FamilyHub } from "../FamilyHub";
 import {
@@ -358,16 +358,28 @@ function GamePageMenu({
                   <Link2 size={15} className="text-accent" /> Link editions
                 </button>
               )}
-              {!standalone && (
+              {solo?.compilationId != null ? (
                 <button
                   onClick={() => {
-                    onManageInLibrary();
                     close();
+                    window.location.hash = compilationHash(solo.compilationId!);
                   }}
                   className={item}
                 >
-                  <Package size={15} className="text-accent" /> Manage editions
+                  <Package size={15} className="text-accent" /> Open compilation
                 </button>
+              ) : (
+                !standalone && (
+                  <button
+                    onClick={() => {
+                      onManageInLibrary();
+                      close();
+                    }}
+                    className={item}
+                  >
+                    <Package size={15} className="text-accent" /> Manage editions
+                  </button>
+                )
               )}
               {standalone && (
                 <button
@@ -517,9 +529,14 @@ function GamePageBody({
     (repFamily.length > 1 ? familyCoverImage(repFamily) : undefined) ??
     inheritedCover(rep, readOnly ? [] : compilations, ownGames, compilationGames);
 
-  const tabs = readOnly
-    ? GAME_TABS.filter((t) => t.visitorVisible || (t.id === "review" && hub.some(hasReview)))
-    : GAME_TABS;
+  // A game inside a compilation is a light tracker (issue 86fc0b4b): its review
+  // and community live on the compilation, and its copies are the bundle's.
+  const inCompilation = game.compilationId != null;
+  const tabs = (
+    readOnly
+      ? GAME_TABS.filter((t) => t.visitorVisible || (t.id === "review" && hub.some(hasReview)))
+      : GAME_TABS
+  ).filter((t) => !inCompilation || t.id === "overview" || t.id === "journey");
   const showBar = tabs.length > 1;
   const active = tabs.find((t) => t.id === tab) ?? tabs[0];
 

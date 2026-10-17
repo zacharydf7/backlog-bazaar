@@ -9111,6 +9111,11 @@ begin
   if p_game = p_other then
     raise exception 'Cannot link a game to itself';
   end if;
+  -- A game inside a compilation is its own entity, never a family edition.
+  if exists (select 1 from public.games
+              where id in (p_game, p_other) and compilation_id is not null) then
+    raise exception 'A game inside a compilation can''t be linked as an edition';
+  end if;
 
   select family_id into v_a_fam
     from public.games where id = p_game and user_id = auth.uid();

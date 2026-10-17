@@ -17,8 +17,11 @@ import { compilationSource, ownedPlatformSummary } from "./copies";
 /** Every instance connected to `game`, in collection order: records sharing
  *  its catalog identity, plus family-linked editions, closed transitively
  *  (absorbing a member absorbs its catalog twins and its family). A hand-typed
- *  custom game has no catalog identity, so only family links can connect it. */
+ *  custom game has no catalog identity, so only family links can connect it.
+ *  A game inside a compilation is its own entity (issue 86fc0b4b): its page is
+ *  that compilation's copy alone, and no other page gathers it in. */
 export function hubMembers(games: Game[], game: Game): Game[] {
+  if (game.compilationId != null) return [game];
   const inHub = new Set<string>([game.id]);
   const keys = new Set<string>(); // catalog identities absorbed so far
   const fams = new Set<string>(); // family ids absorbed so far
@@ -31,7 +34,7 @@ export function hubMembers(games: Game[], game: Game): Game[] {
   while (grew) {
     grew = false;
     for (const g of games) {
-      if (inHub.has(g.id)) continue;
+      if (inHub.has(g.id) || g.compilationId != null) continue;
       const gk = catalogKey(g);
       const byKey = gk != null && keys.has(gk);
       const byFam = g.familyId != null && fams.has(g.familyId);

@@ -124,6 +124,26 @@ describe("FamilyHub (Family Breakdown)", () => {
       title: "Unicorn Overlord",
       copies: [{ id: "c1", platform: "PlayStation 5" }],
     });
+    const sw = game({
+      id: "sw",
+      title: "Unicorn Overlord",
+      copies: [{ id: "c2", platform: "Nintendo Switch" }],
+    });
+    act(() => useStore.setState({ games: [ps5, sw], linkGames: vi.fn() }));
+    render(<FamilyHub game={ps5} onClose={() => {}} />);
+
+    // The search list names the platform of the candidate you'd link…
+    fireEvent.click(screen.getByRole("button", { name: /Link to another edition/i }));
+    expect(screen.getByRole("button", { name: /Nintendo Switch/ })).toBeTruthy();
+
+    // …and so does the primary picker.
+    fireEvent.click(screen.getByRole("button", { name: /Unicorn Overlord/ }));
+    expect(screen.getByText(/Which edition is the/i)).toBeTruthy();
+    expect(screen.getByRole("button", { name: /PlayStation 5/ })).toBeTruthy();
+  });
+
+  it("never offers a game inside a compilation as an edition (86fc0b4b)", () => {
+    const ps5 = game({ id: "ps5", title: "Unicorn Overlord", copies: [{ id: "c1", platform: "PlayStation 5" }] });
     const bundled = game({
       id: "sw",
       title: "Unicorn Overlord",
@@ -133,16 +153,11 @@ describe("FamilyHub (Family Breakdown)", () => {
     });
     act(() => useStore.setState({ games: [ps5, bundled], linkGames: vi.fn() }));
     render(<FamilyHub game={ps5} onClose={() => {}} />);
-
-    // The search list names the platform of the candidate you'd link…
     fireEvent.click(screen.getByRole("button", { name: /Link to another edition/i }));
-    expect(screen.getByRole("button", { name: /Nintendo Switch/ })).toBeTruthy();
-
-    // …and so does the primary picker, bundle included.
-    fireEvent.click(screen.getByRole("button", { name: /Unicorn Overlord/ }));
-    expect(screen.getByText(/Which edition is the/i)).toBeTruthy();
-    expect(screen.getByRole("button", { name: /PlayStation 5/ })).toBeTruthy();
-    expect(screen.getByText(/part of Vanillaware Collection/)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Nintendo Switch/ })).toBeNull();
+    // Typing its name doesn't surface it either.
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "Unicorn" } });
+    expect(screen.queryByRole("button", { name: /Nintendo Switch/ })).toBeNull();
   });
 
   it("adding to an EXISTING family links directly (its primary stands)", () => {

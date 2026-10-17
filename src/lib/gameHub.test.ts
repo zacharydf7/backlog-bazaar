@@ -76,6 +76,18 @@ describe("hubMembers", () => {
   });
 });
 
+describe("hubMembers and compilations (86fc0b4b)", () => {
+  it("keeps a game inside a compilation to itself, and out of other hubs", () => {
+    const inA = game({ id: "a", rawgId: 7, compilationId: "C1" });
+    const inB = game({ id: "b", rawgId: 7, compilationId: "C2" });
+    const solo = game({ id: "s", rawgId: 7 });
+    const twin = game({ id: "t", rawgId: 7 });
+    const all = [inA, inB, solo, twin];
+    expect(hubMembers(all, inA).map((g) => g.id)).toEqual(["a"]);
+    expect(hubMembers(all, solo).map((g) => g.id)).toEqual(["s", "t"]);
+  });
+});
+
 describe("hubRepresentative / hubTitle", () => {
   it("prefers the best-placed member, and its family primary when linked", () => {
     const playing = game({ id: "a", rawgId: 7, status: "playing", familyId: "F" });
