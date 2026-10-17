@@ -470,6 +470,7 @@ function GamePageBody({
   const { cloud, fetchGameScreenshots } = useStore();
   const can = useStore((s) => s.can);
   const compilations = useStore((s) => s.compilations);
+  const compilationGames = useStore((s) => s.compilationGames);
   const ownGames = useStore((s) => s.games);
   const [tab, setTab] = useState<GameTabId>("overview");
 
@@ -514,7 +515,7 @@ function GamePageBody({
   const repFamily = rep.familyId != null ? hub.filter((m) => m.familyId === rep.familyId) : [];
   const heroImage =
     (repFamily.length > 1 ? familyCoverImage(repFamily) : undefined) ??
-    inheritedCover(rep, readOnly ? [] : compilations, ownGames);
+    inheritedCover(rep, readOnly ? [] : compilations, ownGames, compilationGames);
 
   const tabs = readOnly
     ? GAME_TABS.filter((t) => t.visitorVisible || (t.id === "review" && hub.some(hasReview)))

@@ -6,6 +6,7 @@ import {
   compilationMatchesFilters,
   compilationMatchesQuery,
   compilationRollup,
+  compilationStatus,
   compilationSummary,
   compilationTray,
   findExpandTemplate,
@@ -150,6 +151,15 @@ describe("groupCollapsedCompilations (86fc0b4b)", () => {
     }
     expect(r.collapsed[0].boardChildren.map((g) => g.id)).toEqual(["a"]);
     expect(r.collapsed[1].boardChildren.map((g) => g.id)).toEqual(["b"]);
+  });
+
+  it("covers each bundle card with its compilation's own game row (86fc0b4b)", () => {
+    const children = [game({ id: "a", compilationId: "C", image: "kid.png" })];
+    const own = game({ id: "CG", compilationGameFor: "C", image: "own-row.png" });
+    expect(groupCollapsedCompilations(children, [comp()], [own]).collapsed[0].image).toBe(
+      "own-row.png",
+    );
+    expect(groupCollapsedCompilations(children, [comp()]).collapsed[0].image).toBe("kid.png");
   });
 
   it("folds a bundle whatever its retired expanded flag says", () => {
@@ -340,6 +350,17 @@ describe("inheritedCover (86fc0b4b)", () => {
     expect(inheritedCover(game({ id: "s" }), [comp({ parentImage: "p.png" })], [])).toBeUndefined();
     expect(inheritedCover(kid(), [], [])).toBeUndefined();
   });
+
+  it("prefers the compilation's own game row's cover (86fc0b4b)", () => {
+    const k = kid();
+    const own = game({ id: "CG", compilationGameFor: "C", image: "own-row.png" });
+    const other = game({ id: "OG", compilationGameFor: "X", image: "other.png" });
+    expect(inheritedCover(k, [comp({ parentImage: "p.png" })], [k], [other, own])).toBe("own-row.png");
+    // A game row with no art defers to the compilation's covers.
+    expect(
+      inheritedCover(k, [comp({ parentImage: "p.png" })], [k], [{ ...own, image: undefined }]),
+    ).toBe("p.png");
+  });
 });
 
 describe("ownershipUnits (86fc0b4b)", () => {
@@ -391,5 +412,24 @@ describe("splitCompilationGames (86fc0b4b)", () => {
     const { games, compilationGames } = splitCompilationGames([a, kh, b]);
     expect(games.map((g) => g.id)).toEqual(["a", "b"]);
     expect(compilationGames.map((g) => g.id)).toEqual(["kh"]);
+  });
+});
+
+describe("compilationStatus (86fc0b4b)", () => {
+  const st = (...ss: Game["status"][]) => compilationStatus(ss.map((status) => ({ status })));
+
+  it("takes the status its games share", () => {
+    expect(st("backlog", "backlog")).toBe("backlog");
+    expect(st("finished", "finished")).toBe("finished");
+    expect(st("wishlist")).toBe("wishlist");
+  });
+
+  it("is Now Playing while any game is played, else in the Bazaar until all are finished", () => {
+    expect(st("finished", "playing", "backlog")).toBe("playing");
+    expect(st("finished", "backlog")).toBe("backlog");
+  });
+
+  it("puts an empty compilation in the Bazaar", () => {
+    expect(st()).toBe("backlog");
   });
 });

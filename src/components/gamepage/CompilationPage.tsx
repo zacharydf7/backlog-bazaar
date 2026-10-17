@@ -6,8 +6,9 @@ import {
   Banknote,
   BookOpen,
   CheckCircle2,
-  ChevronDown,
   Clock,
+  Database,
+  Gamepad2,
   GripVertical,
   ImagePlus,
   Map as MapIcon,
@@ -15,7 +16,9 @@ import {
   Package,
   Pencil,
   Play,
+  Star,
   Trash2,
+  Users,
   type LucideIcon,
 } from "lucide-react";
 import type { Compilation, Game } from "../../types";
@@ -23,14 +26,14 @@ import { useStore } from "../../store";
 import { gameHash } from "../../lib/route";
 import type { PageNav, PageNavStop } from "../../lib/pageNav";
 import { PageNavControls } from "./PageNavControls";
-import { compilationCoverOf, orderCompilationChildren } from "../../lib/compilationGrouping";
-import { compilationCopiesOf } from "../../lib/compilations";
 import {
-  formatLabel,
-  formatUsd,
-  ownedPlatformSummary,
-  totalCost,
-} from "../../lib/copies";
+  compilationCoverOf,
+  compilationGameOf,
+  compilationStatus,
+  orderCompilationChildren,
+} from "../../lib/compilationGrouping";
+import { compilationCopiesOf } from "../../lib/compilations";
+import { formatLabel, formatUsd, ownedPlatformSummary, totalCost } from "../../lib/copies";
 import { formatPlaytime } from "../../lib/playtime";
 import { effectiveLength } from "../../lib/personalLength";
 import { StatusBadge } from "../StatusBadge";
@@ -50,24 +53,33 @@ import {
   type GameMilestone,
 } from "../../lib/milestones";
 import { GamePriorityBadge } from "../GamePriorityBadge";
-import { BundleGameDrawer } from "./BundleGameDrawer";
 import { TitleWithOrigin } from "../TitleWithOrigin";
+import { LikeButton } from "../LikeButton";
+import { GameSearchBox } from "../GameSearchBox";
+import { SuggestEditButton } from "../GameSubmissionForm";
+import { CatalogCard, CoverControls, PriorityCard } from "./OverviewTab";
+import { ReviewTab } from "./ReviewTab";
+import { CommunityTab } from "./CommunityTab";
 
-type CompilationTabId = "overview" | "journey";
+type CompilationTabId = "overview" | "games" | "journey" | "review" | "community" | "library";
 
+/** The game page's tabs, plus Games (issue 86fc0b4b). Review and Community
+ *  belong to the compilation's own game row, so they appear once it has one;
+ *  Journey and Community are cloud-only, as on the game page. */
 const TABS: { id: CompilationTabId; label: string; icon: LucideIcon }[] = [
   { id: "overview", label: "Overview", icon: BookOpen },
+  { id: "games", label: "Games", icon: Gamepad2 },
   { id: "journey", label: "Journey", icon: MapIcon },
+  { id: "review", label: "Review", icon: Star },
+  { id: "community", label: "Community", icon: Users },
+  { id: "library", label: "Library", icon: Package },
 ];
 
-/** A compilation's own page (routed: "#c/<id>") — the bundle-level counterpart
- *  to GamePage and the bundle card's click-through. A hero identifies the bundle
- *  (cover, progress, aggregate time/spend) and carries Play a game plus its
- *  management actions; Overview lists every bundled game (each linking to its
- *  own page) and Journey breaks out a milestone timeline per game. Owner-only:
- *  visits never render bundle cards, so there is no read-only variant. Like the
- *  bundle card, this is a pure data view over the children — playtime and the
- *  economy live on their pages. */
+/** A compilation's own page (routed: "#c/<id>"), laid out like a game's page
+ *  (issue 86fc0b4b): the compilation is a game in its own right — cover,
+ *  catalog details, priority, review, likes and community stats live on its
+ *  game row — and its games, each a tracker with its own coins and playtime,
+ *  are on the Games tab. Owner-only: visits never render it. */
 export function CompilationPage({
   compilationId,
   onBack,
@@ -83,12 +95,26 @@ export function CompilationPage({
 }) {
   const compilations = useStore((s) => s.compilations);
   const games = useStore((s) => s.games);
+  const compilationGames = useStore((s) => s.compilationGames);
+  const cloud = useStore((s) => s.cloud);
+  const ensureCompilationGame = useStore((s) => s.ensureCompilationGame);
   const compilation = compilations.find((c) => c.id === compilationId);
+  const container = compilationGameOf(compilationId, compilationGames);
 
   // A fresh page starts at the top (Back restores the board's position).
   useEffect(() => {
     window.scrollTo(0, 0);
   }, [compilationId]);
+
+  // A compilation without its game row (one whose creation failed) gets it on
+  // first open — the same owner action that creating a compilation takes.
+  const asked = useRef(false);
+  useEffect(() => {
+    if (cloud && compilation && !container && !asked.current) {
+      asked.current = true;
+      void ensureCompilationGame(compilation.id);
+    }
+  }, [cloud, compilation, container, ensureCompilationGame]);
 
   // If the compilation disappears (deleted), leave the page instead of
   // flashing the not-found panel — same behavior as GamePage.
@@ -117,6 +143,7 @@ export function CompilationPage({
     <CompilationPageBody
       key={compilation.id}
       compilation={compilation}
+      container={container}
       childGames={games.filter((g) => g.compilationId === compilation.id)}
       onBack={onBack}
       pageNav={pageNav}
@@ -139,31 +166,33 @@ function BackButton({ onBack }: { onBack: () => void }) {
 
 function CompilationPageBody({
   compilation,
+  container,
   childGames,
   onBack,
   pageNav,
   onNavigate,
 }: {
   compilation: Compilation;
+  /** The compilation's own game row; absent offline or until it's created. */
+  container: Game | undefined;
   childGames: Game[];
   onBack: () => void;
   pageNav?: PageNav | null;
   onNavigate?: (stop: PageNavStop) => void;
 }) {
-  const {
-    cloud,
-    setCompilationChildOrder,
-    deleteCompilation,
-    setCompilationParentImage,
-    clearCompilationParentImage,
-  } = useStore();
+  const { cloud, setCompilationChildOrder, deleteCompilation, fetchGameScreenshots } = useStore();
+  const targetCostPerHour = useStore((s) => s.targetCostPerHour);
   const [tab, setTab] = useState<CompilationTabId>("overview");
   const [editing, setEditing] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [picking, setPicking] = useState(false);
 
-  // Milestones are cloud-only (matching JourneyTab), so offline gets no Journey.
-  const tabs = cloud ? TABS : TABS.filter((t) => t.id !== "journey");
+  const tabs = TABS.filter(
+    (t) =>
+      (t.id !== "journey" || cloud) &&
+      (t.id !== "review" || container) &&
+      (t.id !== "community" || (cloud && container)),
+  );
   const active = tabs.find((t) => t.id === tab) ?? tabs[0];
 
   // The children in the owner's chosen order (issue 140ac868) — the whole page
@@ -173,7 +202,7 @@ function CompilationPageBody({
     () => orderCompilationChildren(childGames, compilation.childOrder),
     [childGames, compilation.childOrder],
   );
-  const cover = compilationCoverOf(compilation, children);
+  const cover = compilationCoverOf(compilation, children, container);
   const finished = children.filter((g) => g.status === "finished").length;
   const playing = children.filter((g) => g.status === "playing").length;
   const canPlay = children.some((g) => g.status === "backlog");
@@ -182,9 +211,23 @@ function CompilationPageBody({
   // "Money Well Spent" for the whole bundle: its total spend against every
   // game's hours (plus any carryover), at your target rate — the same verdict
   // the game page gives one game. The page is owner-only, so it's always yours.
-  const targetCostPerHour = useStore((s) => s.targetCostPerHour);
   const value = valueStatusOf(compilation.totalCost, totalPlayed, targetCostPerHour);
   const ownedCopySummary = ownedPlatformSummary(compilationCopiesOf(compilation));
+
+  // The catalog's community screenshots for the compilation's linked game.
+  const [screenshots, setScreenshots] = useState<string[]>([]);
+  const ids = { rawgId: container?.rawgId, igdbId: container?.igdbId, catalogId: container?.catalogId };
+  useEffect(() => {
+    let active = true;
+    setScreenshots([]);
+    if (cloud && (ids.rawgId || ids.igdbId || ids.catalogId)) {
+      void fetchGameScreenshots(ids).then((s) => active && setScreenshots(s));
+    }
+    return () => {
+      active = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cloud, ids.rawgId, ids.igdbId, ids.catalogId, fetchGameScreenshots]);
 
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-5">
@@ -199,8 +242,8 @@ function CompilationPageBody({
         )}
       </div>
 
-      {/* Hero: identifies the bundle from every tab and carries its management
-          actions, mirroring the game page's hero. */}
+      {/* Hero: the compilation as a game, like a game page's — cover, title,
+          like — plus what's inside it at a glance and its actions. */}
       <section className="overflow-hidden rounded-2xl border border-line bg-surface shadow-sm">
         <div className="aspect-[16/9] w-full bg-panel">
           {cover ? (
@@ -214,6 +257,11 @@ function CompilationPageBody({
             <h1 className="min-w-0 font-display text-2xl leading-tight tracking-tight text-ink">
               {compilation.title}
             </h1>
+            {container && <LikeButton game={container} size={18} />}
+            {value && <ValueBadge status={value} target={targetCostPerHour!} />}
+          </div>
+          <div className="flex flex-wrap items-center gap-1.5">
+            <StatusBadge status={compilationStatus(children)} />
             <span className="inline-flex items-center gap-1 rounded-full border border-accent/30 bg-accent/5 px-2 py-0.5 text-[11px] font-medium text-accent">
               <Package size={11} /> Compilation · {children.length} game
               {children.length === 1 ? "" : "s"} · {finished} finished
@@ -240,7 +288,6 @@ function CompilationPageBody({
                 {formatUsd(compilation.totalCost)} spent
               </span>
             )}
-            {value && <ValueBadge status={value} target={targetCostPerHour!} />}
             {ownedCopySummary.map((o) => (
               <PlatformBadge key={o.platform} label={o.platform} formats={o.formats} />
             ))}
@@ -276,45 +323,59 @@ function CompilationPageBody({
       </section>
 
       {/* Section tabs (pill pattern shared with the game page). */}
-      {tabs.length > 1 && (
-        <div role="tablist" aria-label="Compilation sections" className="flex flex-wrap gap-1.5">
-          {tabs.map((t) => {
-            const isActive = active.id === t.id;
-            const Icon = t.icon;
-            return (
-              <button
-                key={t.id}
-                role="tab"
-                aria-selected={isActive}
-                onClick={() => setTab(t.id)}
-                className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-medium transition ${
-                  isActive
-                    ? "border-brand bg-brand text-brand-fg shadow-sm"
-                    : "border-line bg-panel text-muted hover:text-ink"
-                }`}
-              >
-                <Icon size={15} /> {t.label}
-              </button>
-            );
-          })}
-        </div>
-      )}
+      <div role="tablist" aria-label="Compilation sections" className="flex flex-wrap gap-1.5">
+        {tabs.map((t) => {
+          const isActive = active.id === t.id;
+          const Icon = t.icon;
+          return (
+            <button
+              key={t.id}
+              role="tab"
+              aria-selected={isActive}
+              onClick={() => setTab(t.id)}
+              className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-medium transition ${
+                isActive
+                  ? "border-brand bg-brand text-brand-fg shadow-sm"
+                  : "border-line bg-panel text-muted hover:text-ink"
+              }`}
+            >
+              <Icon size={15} /> {t.label}
+            </button>
+          );
+        })}
+      </div>
 
-      {active.id === "journey" ? (
-        <JourneyPane children={children} carryover={carryover} />
-      ) : (
-        <OverviewPane
-          compilation={compilation}
+      {active.id === "games" ? (
+        <GamesPane
           children={children}
           carryover={carryover}
+          canPlay={canPlay}
+          onPlay={() => setPicking(true)}
+          onEdit={() => setEditing(true)}
+          onReorder={(order) => void setCompilationChildOrder(compilation.id, order)}
+        />
+      ) : active.id === "journey" ? (
+        <JourneyPane children={children} carryover={carryover} />
+      ) : active.id === "review" && container ? (
+        <ReviewTab game={container} />
+      ) : active.id === "community" && container ? (
+        <CommunityTab game={container} />
+      ) : active.id === "library" ? (
+        <LibraryPane
+          compilation={compilation}
+          container={container}
           totalPlayed={totalPlayed}
           value={value}
           target={targetCostPerHour}
+          onEdit={() => setEditing(true)}
+        />
+      ) : (
+        <OverviewPane
+          compilation={compilation}
+          container={container}
           cover={cover}
+          screenshots={screenshots}
           cloud={cloud}
-          onReorderChildren={(ids) => void setCompilationChildOrder(compilation.id, ids)}
-          onUploadCover={(f) => void setCompilationParentImage(compilation.id, f)}
-          onClearCover={() => void clearCompilationParentImage(compilation.id)}
         />
       )}
 
@@ -359,10 +420,153 @@ function CompilationPageBody({
   );
 }
 
-/** The reorderable "Games in this bundle" checklist. Dragging a row's handle
- *  sets the bundle's child order (persisted); that order carries to the bundle
- *  cards' trays and cover fallback (issue 140ac868). Pointer-based drag, so it
- *  works on touch too. */
+/** The compilation as a game at a glance (issue 86fc0b4b): its cover, its
+ *  catalog details and community screenshots, and your priority — the same
+ *  cards a game's Overview shows, on the compilation's own game row. Without
+ *  that row yet (offline), the cover control works on the compilation itself. */
+function OverviewPane({
+  compilation,
+  container,
+  cover,
+  screenshots,
+  cloud,
+}: {
+  compilation: Compilation;
+  container: Game | undefined;
+  cover: string | undefined;
+  screenshots: string[];
+  cloud: boolean;
+}) {
+  if (container) {
+    return (
+      <div className="flex flex-col gap-4">
+        <CoverControls game={container} />
+        <CatalogCard game={container} screenshots={screenshots} />
+        <PriorityCard game={container} />
+      </div>
+    );
+  }
+  return <CompilationCoverControls compilation={compilation} cover={cover} cloud={cloud} />;
+}
+
+/** The compilation's cover set on the compilation itself — only while it has
+ *  no game row of its own (offline), whose cover controls take over after. */
+function CompilationCoverControls({
+  compilation,
+  cover,
+  cloud,
+}: {
+  compilation: Compilation;
+  cover: string | undefined;
+  cloud: boolean;
+}) {
+  const { setCompilationParentImage, clearCompilationParentImage } = useStore();
+  if (!cloud && !compilation.parentImage) return null;
+  return (
+    <div className="flex items-center gap-3 rounded-xl border border-line bg-panel/50 p-2.5">
+      <div className="h-14 w-10 shrink-0 overflow-hidden rounded-md border border-line bg-panel">
+        {cover ? (
+          <img src={cover} alt="" className="h-full w-full object-cover" />
+        ) : (
+          <div className="flex h-full items-center justify-center text-lg opacity-50">🎮</div>
+        )}
+      </div>
+      <div className="min-w-0 flex-1">
+        <span className="block text-xs font-medium text-ink">Card cover</span>
+        <span className="block text-[11px] text-subtle">
+          Shown on the bundle&apos;s cards across your boards.
+        </span>
+        <div className="mt-1.5 flex flex-wrap items-center gap-2">
+          {cloud && (
+            <label className="inline-flex cursor-pointer items-center gap-1 rounded-md border border-line px-2 py-1 text-[11px] text-muted transition hover:border-brand/50 hover:text-ink">
+              <ImagePlus size={12} className="text-accent" /> Upload image
+              <input
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) void setCompilationParentImage(compilation.id, f);
+                  e.target.value = "";
+                }}
+              />
+            </label>
+          )}
+          {compilation.parentImage && (
+            <button
+              type="button"
+              onClick={() => void clearCompilationParentImage(compilation.id)}
+              className="inline-flex items-center gap-1 rounded-md border border-line px-2 py-1 text-[11px] text-muted transition hover:border-danger/40 hover:text-danger"
+            >
+              <Trash2 size={12} /> Remove — use the first game&apos;s cover
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** The games inside (issue 86fc0b4b): compact rows — status, hours against
+ *  length, cost share — each opening that game's own page, where its playtime
+ *  and coins live. Add, remove and rename go through Edit games. */
+function GamesPane({
+  children,
+  carryover,
+  canPlay,
+  onPlay,
+  onEdit,
+  onReorder,
+}: {
+  children: Game[];
+  carryover: number;
+  canPlay: boolean;
+  onPlay: () => void;
+  onEdit: () => void;
+  onReorder: (orderedIds: string[]) => void;
+}) {
+  return (
+    <div className="flex flex-col gap-3 rounded-xl border border-line bg-panel/30 p-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h3 className="font-display text-base text-ink">Games in this compilation</h3>
+        <div className="flex flex-wrap items-center gap-2">
+          {canPlay && (
+            <button
+              type="button"
+              onClick={onPlay}
+              className="inline-flex items-center gap-1 rounded-lg border border-line bg-panel px-2.5 py-1.5 text-xs text-ink transition hover:border-brand/50"
+            >
+              <Play size={13} className="text-accent" /> Play a game
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={onEdit}
+            className="inline-flex items-center gap-1 rounded-lg border border-line bg-panel px-2.5 py-1.5 text-xs text-ink transition hover:border-brand/50"
+          >
+            <Pencil size={13} className="text-accent" /> Edit games
+          </button>
+        </div>
+      </div>
+      <BundleGames games={children} onReorder={onReorder} />
+      <p className="px-1 text-[11px] text-subtle">
+        Tap a game to open it — log time and finish it there.
+        {children.length > 1 &&
+          " Drag the handle to reorder — the compilation's cards list its games in this order."}
+      </p>
+      {carryover > 0 && (
+        <p className="px-1 text-[11px] text-subtle">
+          Totals include {formatPlaytime(carryover)} logged on the single card before it was
+          expanded.
+        </p>
+      )}
+    </div>
+  );
+}
+
+/** The reorderable games list. Dragging a row's handle sets the compilation's
+ *  game order (persisted); that order carries to the bundle cards' trays and
+ *  cover fallback (issue 140ac868). Pointer-based drag, so it works on touch. */
 function BundleGames({
   games,
   onReorder,
@@ -384,8 +588,6 @@ function BundleGames({
   const byId = useMemo(() => new Map(games.map((g) => [g.id, g])), [games]);
   const ordered = order.map((id) => byId.get(id)).filter((g): g is Game => g != null);
   const draggable = games.length > 1;
-  // One drawer open at a time keeps the list scannable.
-  const [openId, setOpenId] = useState<string | null>(null);
 
   return (
     <Reorder.Group
@@ -398,34 +600,16 @@ function BundleGames({
       className="flex flex-col gap-1"
     >
       {ordered.map((g) => (
-        <BundleRow
-          key={g.id}
-          game={g}
-          draggable={draggable}
-          open={openId === g.id}
-          onToggle={() => setOpenId((id) => (id === g.id ? null : g.id))}
-        />
+        <BundleRow key={g.id} game={g} draggable={draggable} />
       ))}
     </Reorder.Group>
   );
 }
 
-/** One row in the bundle checklist (issue 86fc0b4b): a drag handle (when
- *  reorderable) plus a header that opens the game's drawer — status, priority,
- *  hours against its length, and its share of the cost at a glance; the drawer
- *  manages the game in place. Drag is handle-only (dragListener off) so a tap
- *  still toggles. */
-function BundleRow({
-  game,
-  draggable,
-  open,
-  onToggle,
-}: {
-  game: Game;
-  draggable: boolean;
-  open: boolean;
-  onToggle: () => void;
-}) {
+/** One game row: a drag handle (when reorderable) plus the row itself, which
+ *  opens the game's page. Drag is handle-only (dragListener off) so a tap
+ *  still navigates. */
+function BundleRow({ game, draggable }: { game: Game; draggable: boolean }) {
   const controls = useDragControls();
   const done = game.status === "finished";
   const cost = totalCost(game.copies);
@@ -433,120 +617,88 @@ function BundleRow({
   const length = effectiveLength(game);
   return (
     <Reorder.Item value={game.id} dragListener={false} dragControls={controls} className="list-none">
-      <div
-        className={
-          "overflow-hidden rounded-lg border bg-panel/50 transition " +
-          (open ? "border-brand/50" : "border-line hover:border-brand/50")
-        }
-      >
-        <div className="flex items-stretch gap-1">
-          {draggable && (
-            <span
-              role="button"
-              aria-label={`Drag to reorder ${game.title}`}
-              onPointerDown={(e) => controls.start(e)}
-              className="flex cursor-grab touch-none items-center pl-1.5 text-subtle transition hover:text-ink"
-            >
-              <GripVertical size={16} />
-            </span>
-          )}
-          <button
-            type="button"
-            onClick={onToggle}
-            aria-expanded={open}
-            title={open ? `Close ${game.title}` : `Manage ${game.title}`}
-            className="flex min-w-0 flex-1 items-start justify-between gap-2 px-2.5 py-2 text-left"
+      <div className="flex items-stretch gap-1 rounded-lg border border-line bg-panel/50 transition hover:border-brand/50">
+        {draggable && (
+          <span
+            role="button"
+            aria-label={`Drag to reorder ${game.title}`}
+            onPointerDown={(e) => controls.start(e)}
+            className="flex cursor-grab touch-none items-center pl-1.5 text-subtle transition hover:text-ink"
           >
-            <div className="flex min-w-0 flex-1 items-start gap-2">
-              {done ? (
-                <CheckCircle2 size={16} className="mt-0.5 shrink-0 text-success" />
-              ) : (
-                <span className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
-              )}
-              <div className="min-w-0 flex-1">
-                <span className="block truncate text-sm text-ink">
-                  <TitleWithOrigin game={game} />
-                </span>
-                <div className="mt-0.5 flex flex-wrap items-center gap-1">
-                  <StatusBadge status={game.status} rotation={isInRotation(game)} />
-                  {game.priority && <GamePriorityBadge priority={game.priority} />}
-                </div>
+            <GripVertical size={16} />
+          </span>
+        )}
+        <button
+          type="button"
+          onClick={() => {
+            window.location.hash = gameHash(game.id);
+          }}
+          title={`Open ${game.title}`}
+          className="flex min-w-0 flex-1 items-start justify-between gap-2 px-2.5 py-2 text-left"
+        >
+          <div className="flex min-w-0 flex-1 items-start gap-2">
+            {done ? (
+              <CheckCircle2 size={16} className="mt-0.5 shrink-0 text-success" />
+            ) : (
+              <span className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+            )}
+            <div className="min-w-0 flex-1">
+              <span className="block truncate text-sm text-ink">
+                <TitleWithOrigin game={game} />
+              </span>
+              <div className="mt-0.5 flex flex-wrap items-center gap-1">
+                <StatusBadge status={game.status} rotation={isInRotation(game)} />
+                {game.priority && <GamePriorityBadge priority={game.priority} />}
               </div>
             </div>
-            <div className="mt-0.5 flex shrink-0 items-start gap-1.5">
-              <div className="flex flex-col items-end text-xs">
-                <span className="text-muted">
-                  {played > 0 ? formatPlaytime(played) : "—"}
-                  {length != null && <span className="text-subtle"> / {formatPlaytime(length)}</span>}
-                </span>
-                {cost > 0 && <span className="text-subtle">{formatUsd(cost)}</span>}
-              </div>
-              <ChevronDown
-                size={16}
-                className={"mt-0.5 text-subtle transition-transform " + (open ? "rotate-180" : "")}
-                aria-hidden
-              />
-            </div>
-          </button>
-        </div>
-        {open && <BundleGameDrawer game={game} />}
+          </div>
+          <div className="mt-0.5 flex shrink-0 flex-col items-end text-xs">
+            <span className="text-muted">
+              {played > 0 ? formatPlaytime(played) : "—"}
+              {length != null && <span className="text-subtle"> / {formatPlaytime(length)}</span>}
+            </span>
+            {cost > 0 && <span className="text-subtle">{formatUsd(cost)}</span>}
+          </div>
+        </button>
       </div>
     </Reorder.Item>
   );
 }
 
-/** The bundle at a glance: the checklist of every game inside (each row opens
- *  its drawer), the per-copy spend breakdown, and the card cover controls. */
-function OverviewPane({
+/** What you own and paid, and where the compilation sits in the game database
+ *  (issue 86fc0b4b): its copies with the whole bundle's played time and Money
+ *  Well Spent value, then its database link. */
+function LibraryPane({
   compilation,
-  children,
-  carryover,
+  container,
   totalPlayed,
   value,
   target,
-  cover,
-  cloud,
-  onReorderChildren,
-  onUploadCover,
-  onClearCover,
+  onEdit,
 }: {
   compilation: Compilation;
-  children: Game[];
-  carryover: number;
+  container: Game | undefined;
   totalPlayed: number;
   /** The bundle's Money Well Spent verdict, or null when no target is set or
    *  nothing was spent. */
   value: ValueStatus | null;
   target: number | null;
-  cover: string | undefined;
-  cloud: boolean;
-  onReorderChildren: (orderedIds: string[]) => void;
-  onUploadCover: (file: File) => void;
-  onClearCover: () => void;
+  onEdit: () => void;
 }) {
   const copies = compilationCopiesOf(compilation);
   return (
     <div className="flex flex-col gap-4">
       <div className="rounded-xl border border-line bg-panel/30 p-3">
-        <h3 className="mb-2 font-display text-base text-ink">Games in this bundle</h3>
-        <BundleGames games={children} onReorder={onReorderChildren} />
-        <p className="mt-2 px-1 text-[11px] text-subtle">
-          Tap a game to play, log time, rate or edit it right here.
-          {children.length > 1 &&
-            " Drag the handle to reorder — the bundle's cards list its games in this order."}
-        </p>
-        {carryover > 0 && (
-          <p className="mt-2 px-1 text-[11px] text-subtle">
-            Totals include {formatPlaytime(carryover)} logged on the single card before it was
-            expanded.
-          </p>
-        )}
-      </div>
-
-      {/* Per-copy spend breakdown, like the game page's ownership rollup —
-          with the whole bundle's played time and its Money Well Spent value
-          (issue 86fc0b4b). */}
-      {copies.length > 0 && compilation.totalCost > 0 && (
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+          <h3 className="font-display text-base text-ink">Your copies</h3>
+          <button
+            type="button"
+            onClick={onEdit}
+            className="inline-flex items-center gap-1 rounded-lg border border-line bg-panel px-2.5 py-1.5 text-xs text-ink transition hover:border-brand/50"
+          >
+            <Pencil size={13} className="text-accent" /> Edit compilation
+          </button>
+        </div>
         <div className="rounded-lg bg-panel p-2 text-[11px] text-muted">
           <div className="mb-1 flex flex-wrap items-center justify-between gap-x-2 gap-y-0.5">
             <span className="inline-flex items-center gap-1 text-accent">
@@ -566,50 +718,70 @@ function OverviewPane({
             </div>
           ))}
         </div>
-      )}
+      </div>
+      {container && <DatabaseLink compilation={compilation} container={container} />}
+    </div>
+  );
+}
 
-      {/* The bundle cards' cover (cosmetic and personal — never the catalog). */}
-      {(cloud || compilation.parentImage) && (
-        <div className="flex items-center gap-3 rounded-xl border border-line bg-panel/50 p-2.5">
-          <div className="h-14 w-10 shrink-0 overflow-hidden rounded-md border border-line bg-panel">
-            {cover ? (
-              <img src={cover} alt="" className="h-full w-full object-cover" />
-            ) : (
-              <div className="flex h-full items-center justify-center text-lg opacity-50">🎮</div>
-            )}
-          </div>
-          <div className="min-w-0 flex-1">
-            <span className="block text-xs font-medium text-ink">Card cover</span>
-            <span className="block text-[11px] text-subtle">
-              Shown on the bundle&apos;s cards across your boards.
-            </span>
-            <div className="mt-1.5 flex flex-wrap items-center gap-2">
-              {cloud && (
-                <label className="inline-flex cursor-pointer items-center gap-1 rounded-md border border-line px-2 py-1 text-[11px] text-muted transition hover:border-brand/50 hover:text-ink">
-                  <ImagePlus size={12} className="text-accent" /> Upload image
-                  <input
-                    type="file"
-                    accept="image/*"
-                    className="hidden"
-                    onChange={(e) => {
-                      const f = e.target.files?.[0];
-                      if (f) onUploadCover(f);
-                      e.target.value = "";
-                    }}
-                  />
-                </label>
-              )}
-              {compilation.parentImage && (
-                <button
-                  type="button"
-                  onClick={onClearCover}
-                  className="inline-flex items-center gap-1 rounded-md border border-line px-2 py-1 text-[11px] text-muted transition hover:border-danger/40 hover:text-danger"
-                >
-                  <Trash2 size={12} /> Remove — use the first game&apos;s cover
-                </button>
-              )}
+/** The compilation's link to the shared game database (issue 86fc0b4b) — what
+ *  its community stats, reviews and screenshots hang off. Pick its entry from
+ *  search, or, when it isn't listed, suggest it: once approved, an unlinked
+ *  compilation with the same title links to the new entry by itself. */
+function DatabaseLink({ compilation, container }: { compilation: Compilation; container: Game }) {
+  const ensureCompilationGame = useStore((s) => s.ensureCompilationGame);
+  const linked = container.rawgId != null || container.igdbId != null || container.catalogId != null;
+  const [changing, setChanging] = useState(false);
+  const [query, setQuery] = useState("");
+  const searching = !linked || changing;
+  return (
+    <div className="rounded-xl border border-line bg-panel/30 p-3">
+      <span className="inline-flex items-center gap-1.5 text-[10px] uppercase tracking-wide text-subtle">
+        <Database size={12} className="text-accent/70" /> Game database
+      </span>
+      {!searching ? (
+        <div className="mt-1.5 flex flex-wrap items-center justify-between gap-2">
+          <p className="text-[11px] text-subtle">
+            Linked — its community stats, reviews and screenshots are shared with everyone who
+            owns {compilation.title}.
+          </p>
+          <button
+            type="button"
+            onClick={() => setChanging(true)}
+            className="rounded-lg border border-line bg-panel px-2.5 py-1.5 text-xs text-ink transition hover:border-brand/50"
+          >
+            Change link
+          </button>
+        </div>
+      ) : (
+        <div className="mt-1.5 flex flex-col gap-2">
+          <p className="text-[11px] text-subtle">
+            {linked
+              ? "Pick the database entry this compilation is."
+              : "Not linked yet. Find this compilation in the game database to share its community stats, reviews and screenshots."}
+          </p>
+          <GameSearchBox
+            value={query}
+            onChange={setQuery}
+            onPick={(meta) => {
+              void ensureCompilationGame(compilation.id, {
+                rawgId: meta.rawgId,
+                igdbId: meta.igdbId,
+                catalogId: meta.catalogId,
+              });
+              setChanging(false);
+              setQuery("");
+            }}
+            placeholder="Search the game database"
+            ariaLabel="Find this compilation in the game database"
+            className="w-full rounded-lg border border-line bg-surface px-2 py-1.5 text-sm text-ink outline-none transition placeholder:text-subtle focus:border-brand focus:ring-2 focus:ring-brand/25"
+          />
+          {!linked && (
+            <div className="flex flex-wrap items-center gap-2 text-[11px] text-subtle">
+              Not listed? Add it for everyone:
+              <SuggestEditButton game={container} />
             </div>
-          </div>
+          )}
         </div>
       )}
     </div>

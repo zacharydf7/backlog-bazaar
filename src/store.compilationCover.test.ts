@@ -59,16 +59,41 @@ function compRow(over: Record<string, unknown> = {}) {
   };
 }
 
+/** The compilation's own game row (issue 86fc0b4b), as ensure_compilation_game returns it. */
+const containerRow = childRow({
+  id: "comp-game-1",
+  title: "Remaster Collection",
+  compilation_id: null,
+  compilation_name: null,
+  compilation_game_for: "comp-1",
+  copies: [{ id: "cc1", platform: "Nintendo Switch" }],
+});
+
+/** add_compilation returns the children; ensure_compilation_game, one row via .single(). */
+function mockRpcs(children: unknown[]) {
+  rpc.mockImplementation((name: string) =>
+    name === "ensure_compilation_game"
+      ? { single: async () => ({ data: containerRow, error: null }) }
+      : Promise.resolve({ data: children, error: null }),
+  );
+}
+
 beforeEach(() => {
   rpc.mockReset();
   maybeSingle.mockReset();
   from.mockClear();
-  useStore.setState({ cloud: true, userId: "u1", games: [], compilations: [] });
+  useStore.setState({
+    cloud: true,
+    userId: "u1",
+    games: [],
+    compilations: [],
+    compilationGames: [],
+  });
 });
 
 describe("addCompilation cloud cover hydration (issue 504ca4e3)", () => {
   it("carries the linked template's moderator cover onto the new compilation", async () => {
-    rpc.mockResolvedValue({ data: [childRow()], error: null });
+    mockRpcs([childRow()]);
     // The authoritative re-read returns the embedded template image.
     maybeSingle.mockResolvedValue({
       data: compRow({ compilation_templates: { image: "mod-cover.png" } }),
@@ -90,7 +115,7 @@ describe("addCompilation cloud cover hydration (issue 504ca4e3)", () => {
   });
 
   it("still adds the bundle (hand-built fallback) if the re-read returns nothing", async () => {
-    rpc.mockResolvedValue({ data: [childRow()], error: null });
+    mockRpcs([childRow()]);
     maybeSingle.mockResolvedValue({ data: null });
 
     await store().addCompilation(
@@ -104,5 +129,26 @@ describe("addCompilation cloud cover hydration (issue 504ca4e3)", () => {
     expect(comp).toBeTruthy();
     expect(comp!.templateImage).toBeUndefined();
     expect(store().games.some((g) => g.compilationId === "comp-1")).toBe(true);
+  });
+
+  it("gives the new compilation its own game row, kept out of the games list (86fc0b4b)", async () => {
+    mockRpcs([childRow()]);
+    maybeSingle.mockResolvedValue({ data: compRow() });
+
+    await store().addCompilation(
+      { title: "Remaster Collection", totalCost: 10, copies: [{ platform: "Nintendo Switch", format: "physical", cost: 10 }] },
+      [{ name: "Game A" }],
+      "backlog",
+      "tmpl-1",
+    );
+
+    expect(rpc).toHaveBeenCalledWith("ensure_compilation_game", {
+      p_compilation: "comp-1",
+      p_rawg_id: null,
+      p_igdb_id: null,
+      p_catalog_id: null,
+    });
+    expect(store().compilationGames.map((g) => g.compilationGameFor)).toEqual(["comp-1"]);
+    expect(store().games.some((g) => g.id === "comp-game-1")).toBe(false);
   });
 });

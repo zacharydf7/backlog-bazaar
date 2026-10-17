@@ -125,7 +125,7 @@ function FamilyCoverPicker({ game, members }: { game: Game; members: Game[] }) {
 }
 
 /** Shared catalog metadata — read-only; corrections go through moderation. */
-function CatalogCard({
+export function CatalogCard({
   game,
   screenshots,
   playedStat = false,

@@ -3,7 +3,14 @@ import { act, render, screen, fireEvent, waitFor, within } from "@testing-librar
 import { CompilationPage } from "./CompilationPage";
 import { useStore } from "../../store";
 import type { Compilation, Game } from "../../types";
+import type { GameMeta } from "../../types";
 import type { GameMilestone, MilestoneKind } from "../../lib/milestones";
+
+const searchGamesMock = vi.fn<(q: string) => Promise<GameMeta[]>>();
+vi.mock("../../lib/gamedata", async (importActual) => ({
+  ...(await importActual<typeof import("../../lib/gamedata")>()),
+  searchGames: (q: string) => searchGamesMock(q),
+}));
 
 function game(over: Partial<Game> = {}): Game {
   return {
@@ -45,9 +52,38 @@ beforeEach(() => {
       viewing: null,
       games: children,
       compilations: [comp],
+      compilationGames: [],
     }),
   );
 });
+
+/** The compilation's own game row (issue 86fc0b4b). */
+const container = game({
+  id: "CG",
+  title: "Trilogy Collection",
+  compilationGameFor: "C",
+  image: "box.png",
+  rawgId: 77,
+});
+
+/** Online, with the compilation's own game row loaded. */
+function withContainer(over: Partial<Game> = {}) {
+  act(() =>
+    useStore.setState({
+      cloud: true,
+      compilationGames: [{ ...container, ...over }],
+      fetchGameMilestones: vi.fn(async () => []),
+      fetchGameScreenshots: vi.fn(async () => []),
+      fetchGameReviews: vi.fn(async () => []),
+      fetchCommunityStats: vi.fn(async () => null),
+      ensureCompilationGame: vi.fn(async () => null),
+    }),
+  );
+}
+
+function openTab(name: RegExp) {
+  fireEvent.click(screen.getByRole("tab", { name }));
+}
 
 describe("CompilationPage", () => {
   it("renders the hero rollup: title, badge, progress, and aggregate time/spend", () => {
@@ -61,77 +97,36 @@ describe("CompilationPage", () => {
     expect(screen.getByText("Nintendo Switch")).toBeTruthy();
   });
 
-  it("lists every bundled game; a row opens its drawer, which links to the game's page", () => {
+  it("lists every bundled game on the Games tab; a row opens the game's page (86fc0b4b)", () => {
     render(<CompilationPage compilationId="C" onBack={() => {}} />);
+    openTab(/Games/);
     expect(screen.getByText("Part 1")).toBeTruthy();
-    const row = screen.getByTitle("Manage Part 2");
-    expect(row.getAttribute("aria-expanded")).toBe("false");
-    fireEvent.click(row);
-    expect(row.getAttribute("aria-expanded")).toBe("true");
-    fireEvent.click(screen.getByRole("button", { name: /Open Part 2's page/ }));
+    fireEvent.click(screen.getByTitle("Open Part 2"));
     expect(window.location.hash).toBe("#g/g2");
   });
 
-  it("drawers manage a game in place with its own controls (86fc0b4b)", () => {
+  it("keeps the games lightweight: status, priority and hours, with no drawer (86fc0b4b)", () => {
     act(() =>
       useStore.setState({
-        games: children.map((g) => (g.id === "g2" ? { ...g, hours: 12 } : g)),
+        games: children.map((g) => (g.id === "g2" ? { ...g, hours: 12, priority: "high" as const } : g)),
       }),
     );
     render(<CompilationPage compilationId="C" onBack={() => {}} />);
-    // Collapsed header: hours logged against the game's length.
-    expect(screen.getByText("/ 12h")).toBeTruthy();
-    fireEvent.click(screen.getByTitle("Manage Part 2"));
-    // The game's own economy action, not a free status switch.
-    expect(screen.getByRole("button", { name: /Buy & Start/i })).toBeTruthy();
-    // Priority writes straight to the game record, and the header follows.
-    fireEvent.click(screen.getByRole("button", { name: "High" }));
-    expect(useStore.getState().games.find((g) => g.id === "g2")?.priority).toBe("high");
-    expect(screen.getByText("Your length")).toBeTruthy();
-    expect(screen.getByText("Your score")).toBeTruthy();
-    // One drawer at a time: opening Part 1 closes Part 2.
-    fireEvent.click(screen.getByTitle("Manage Part 1"));
-    expect(screen.getByTitle("Manage Part 2").getAttribute("aria-expanded")).toBe("false");
-  });
-
-  it("lets a bundled game's drawer set that game's own cover (86fc0b4b)", () => {
-    const setGameImage = vi.fn(async () => {});
-    const setCompilationParentImage = vi.fn(async () => {});
-    act(() =>
-      useStore.setState({
-        cloud: true,
-        fetchGameMilestones: vi.fn(async () => []),
-        setGameImage,
-        setCompilationParentImage,
-      }),
-    );
-    render(<CompilationPage compilationId="C" onBack={() => {}} />);
-    fireEvent.click(screen.getByTitle("Manage Part 2"));
-    const coverBlock = screen.getByText(/Your cover image/).closest("div")!.parentElement!;
-    const input = within(coverBlock).getByText(/Upload image/).parentElement!.querySelector("input")!;
-    const file = new File(["x"], "box.png", { type: "image/png" });
-    fireEvent.change(input, { target: { files: [file] } });
-    expect(setGameImage).toHaveBeenCalledWith("g2", file);
-    expect(setCompilationParentImage).not.toHaveBeenCalled();
-  });
-
-  it("keeps one hours control per drawer: the time editor, or GameActions' logger in play", () => {
-    act(() =>
-      useStore.setState({
-        games: children.map((g) => (g.id === "g2" ? { ...g, status: "playing" as const } : g)),
-      }),
-    );
-    render(<CompilationPage compilationId="C" onBack={() => {}} />);
-    fireEvent.click(screen.getByTitle("Manage Part 1")); // finished
-    expect(screen.getByText("Played", { exact: true })).toBeTruthy();
-    fireEvent.click(screen.getByTitle("Manage Part 2")); // playing
-    expect(screen.queryByText("Played", { exact: true })).toBeNull();
-    expect(screen.getByRole("button", { name: "Log" })).toBeTruthy();
+    openTab(/Games/);
+    const row = screen.getByTitle("Open Part 2");
+    // Hours logged against the game's length, its status and its priority.
+    expect(within(row).getByText("/ 12h")).toBeTruthy();
+    expect(within(row).getByText("Bazaar")).toBeTruthy();
+    expect(within(row).getByText(/High/)).toBeTruthy();
+    // Its economy lives on its own page, not in an in-place panel.
+    expect(row.getAttribute("aria-expanded")).toBeNull();
+    expect(screen.queryByRole("button", { name: /Buy & Start/i })).toBeNull();
   });
 
   it("renders the bundle in the saved child order, with a handle per game (140ac868)", () => {
     act(() => useStore.setState({ compilations: [{ ...comp, childOrder: ["g2", "g1"] }] }));
     render(<CompilationPage compilationId="C" onBack={() => {}} />);
+    openTab(/Games/);
     const p1 = screen.getByText("Part 1");
     const p2 = screen.getByText("Part 2");
     // Custom order puts Part 2 first, so it precedes Part 1 in the document.
@@ -139,6 +134,18 @@ describe("CompilationPage", () => {
     // A drag handle per game, and the note explaining where the order shows.
     expect(screen.getAllByRole("button", { name: /Drag to reorder/i })).toHaveLength(2);
     expect(screen.getByText(/cards list its games in this order/i)).toBeTruthy();
+  });
+
+  it("takes its status from its games: Now Playing while any is played (86fc0b4b)", () => {
+    const { unmount } = render(<CompilationPage compilationId="C" onBack={() => {}} />);
+    // One finished, one in the Bazaar: still in the Bazaar.
+    expect(screen.getAllByText("Bazaar").length).toBeGreaterThan(0);
+    unmount();
+    act(() =>
+      useStore.setState({ games: children.map((g) => ({ ...g, status: "finished" as const })) }),
+    );
+    render(<CompilationPage compilationId="C" onBack={() => {}} />);
+    expect(screen.getByText("Finished")).toBeTruthy();
   });
 
   it("offers no Journey tab offline (milestones are cloud-only)", () => {
@@ -210,6 +217,7 @@ describe("CompilationPage", () => {
     // $45 spent; 5h + 2h + 3h carryover = 10h played. At $4.50/hr, 10h pays it off.
     act(() => useStore.setState({ targetCostPerHour: 4.5 }));
     const { unmount } = render(<CompilationPage compilationId="C" onBack={() => {}} />);
+    openTab(/Library/);
     expect(screen.getByText(/· 10h played/)).toBeTruthy();
     expect(screen.getByText(/value played/).textContent).not.toMatch(/to well spent/);
     expect(screen.getByText("Well spent")).toBeTruthy(); // header chip
@@ -218,6 +226,7 @@ describe("CompilationPage", () => {
     // At $1/hr the bundle needs 45h: not yet — the box names the hours to go.
     act(() => useStore.setState({ targetCostPerHour: 1 }));
     render(<CompilationPage compilationId="C" onBack={() => {}} />);
+    openTab(/Library/);
     expect(screen.getByText(/value played/).textContent).toMatch(/35h to well spent/);
     expect(screen.queryByText("Well spent")).toBeNull();
   });
@@ -334,5 +343,102 @@ describe("CompilationPage delete and card cover", () => {
     expect(screen.getByText("Card cover")).toBeTruthy();
     expect(screen.queryByText(/Upload image/i)).toBeNull();
     expect(screen.getByRole("button", { name: /Remove — use the first game/i })).toBeTruthy();
+  });
+});
+
+describe("CompilationPage as a game (86fc0b4b)", () => {
+  it("shows its own game row's cover, and offers Review and Community", () => {
+    withContainer();
+    render(<CompilationPage compilationId="C" onBack={() => {}} />);
+    expect(document.querySelector("img")?.getAttribute("src")).toBe("box.png");
+    for (const name of [/Overview/, /Games/, /Journey/, /Review/, /Community/, /Library/]) {
+      expect(screen.getByRole("tab", { name })).toBeTruthy();
+    }
+    // The legacy card-cover block gives way to the game row's cover controls.
+    expect(screen.queryByText("Card cover")).toBeNull();
+  });
+
+  it("offers no Review or Community without its game row", () => {
+    render(<CompilationPage compilationId="C" onBack={() => {}} />);
+    expect(screen.queryByRole("tab", { name: /Review/ })).toBeNull();
+    expect(screen.queryByRole("tab", { name: /Community/ })).toBeNull();
+  });
+
+  it("likes and covers the compilation's own game row, not a game inside it", () => {
+    const toggleGameLike = vi.fn(async () => {});
+    const setGameImage = vi.fn(async () => {});
+    withContainer();
+    act(() => useStore.setState({ toggleGameLike, setGameImage }));
+    render(<CompilationPage compilationId="C" onBack={() => {}} />);
+    fireEvent.click(screen.getByRole("button", { name: /Like/i }));
+    expect(toggleGameLike).toHaveBeenCalledWith("CG");
+    const input = screen.getByText(/Upload image/).parentElement!.querySelector("input")!;
+    const file = new File(["x"], "box.png", { type: "image/png" });
+    fireEvent.change(input, { target: { files: [file] } });
+    expect(setGameImage).toHaveBeenCalledWith("CG", file);
+  });
+
+  it("creates the game row once when a compilation opens without one", () => {
+    const ensureCompilationGame = vi.fn(async () => null);
+    act(() =>
+      useStore.setState({
+        cloud: true,
+        fetchGameMilestones: vi.fn(async () => []),
+        ensureCompilationGame,
+      }),
+    );
+    const { rerender } = render(<CompilationPage compilationId="C" onBack={() => {}} />);
+    rerender(<CompilationPage compilationId="C" onBack={() => {}} />);
+    expect(ensureCompilationGame).toHaveBeenCalledTimes(1);
+    expect(ensureCompilationGame).toHaveBeenCalledWith("C");
+  });
+
+  it("doesn't create a game row offline or when one exists", () => {
+    const ensureCompilationGame = vi.fn(async () => null);
+    act(() => useStore.setState({ ensureCompilationGame }));
+    const { unmount } = render(<CompilationPage compilationId="C" onBack={() => {}} />);
+    unmount();
+    withContainer();
+    act(() => useStore.setState({ ensureCompilationGame }));
+    render(<CompilationPage compilationId="C" onBack={() => {}} />);
+    expect(ensureCompilationGame).not.toHaveBeenCalled();
+  });
+
+  it("links an unlinked compilation to the database entry picked from search", async () => {
+    vi.useFakeTimers();
+    try {
+      const entry = { title: "Trilogy Collection", igdbId: 4242, genres: [] };
+      searchGamesMock.mockResolvedValue([entry]);
+      withContainer({ rawgId: undefined, igdbId: undefined, catalogId: undefined });
+      const ensureCompilationGame = vi.fn(async () => null);
+      act(() => useStore.setState({ ensureCompilationGame }));
+      render(<CompilationPage compilationId="C" onBack={() => {}} />);
+      openTab(/Library/);
+      expect(screen.getByText(/Not linked yet/)).toBeTruthy();
+      expect(screen.getByRole("button", { name: /Suggest/i })).toBeTruthy();
+      fireEvent.change(screen.getByLabelText(/Find this compilation/), {
+        target: { value: "Trilogy" },
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(350);
+      });
+      fireEvent.mouseDown(screen.getByRole("option"));
+      expect(ensureCompilationGame).toHaveBeenCalledWith("C", {
+        rawgId: undefined,
+        igdbId: 4242,
+        catalogId: undefined,
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("shows a linked compilation's link, with a way to change it", () => {
+    withContainer();
+    render(<CompilationPage compilationId="C" onBack={() => {}} />);
+    openTab(/Library/);
+    expect(screen.queryByLabelText(/Find this compilation/)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Change link" }));
+    expect(screen.getByLabelText(/Find this compilation/)).toBeTruthy();
   });
 });

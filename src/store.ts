@@ -678,6 +678,26 @@ function loadLocal(): {
   };
 }
 
+/** The game with this id from either collection: a playable game, or a
+ *  compilation's own game row (issue 86fc0b4b), whose review, like, priority
+ *  and cover are edited the same way. */
+function findAnyGame(
+  s: { games: Game[]; compilationGames: Game[] },
+  id: string,
+): Game | undefined {
+  return s.games.find((g) => g.id === id) ?? s.compilationGames.find((g) => g.id === id);
+}
+
+/** Patch the game with this id in whichever collection holds it. */
+function patchAnyGame(
+  s: { games: Game[]; compilationGames: Game[] },
+  id: string,
+  patch: (g: Game) => Game,
+): { games: Game[]; compilationGames: Game[] } {
+  const apply = (list: Game[]) => list.map((g) => (g.id === id ? patch(g) : g));
+  return { games: apply(s.games), compilationGames: apply(s.compilationGames) };
+}
+
 function saveLocal(coins: number, games: Game[], ledger?: LedgerEntry[]): void {
   try {
     let led = ledger;
@@ -1234,6 +1254,13 @@ interface BazaarState {
   // Persist the owner's chosen display order for a bundle's child games (an
   // ordered list of games.id). Optimistic; server-authoritative via RPC.
   setCompilationChildOrder: (id: string, orderedIds: string[]) => Promise<void>;
+  // Create or refresh a compilation's own game row (issue 86fc0b4b) — title,
+  // copies and release date follow the compilation — optionally linking it to
+  // a catalog game. Returns the row (null offline or on failure).
+  ensureCompilationGame: (
+    compilationId: string,
+    link?: Pick<Game, "rawgId" | "igdbId" | "catalogId">,
+  ) => Promise<Game | null>;
   // Set / clear the cover on the collapsed rollup card (compilations.
   // parent_image). Uploading needs storage so it's cloud-only (like
   // setGameImage); clearing works offline too and falls back to the first
@@ -4724,6 +4751,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       games: [...newGames, ...get().games],
       compilations: comp ? [comp, ...get().compilations] : get().compilations,
     });
+    if (compId) await get().ensureCompilationGame(compId);
     toast(`Added compilation ${container.title.trim()}`, Package);
   },
 
@@ -4858,6 +4886,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       // The RPC returns rows in the child_order it just saved.
       compilations: patchComp(get().compilations, rows.map((g) => g.id)),
     });
+    await get().ensureCompilationGame(id);
     toast(`Updated ${title}`, Package);
   },
 
@@ -4884,6 +4913,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     set({
       games: get().games.filter((g) => g.compilationId !== id),
       compilations: get().compilations.filter((c) => c.id !== id),
+      compilationGames: get().compilationGames.filter((g) => g.compilationGameFor !== id),
     });
     toast(`Deleted ${comp.title}`, Trash2);
   },
@@ -4965,6 +4995,25 @@ export const useStore = create<BazaarState>((set, get) => ({
     set({
       parentTemplates: ((data ?? []) as unknown as ParentTemplateRow[]).map(rowToParentTemplate),
     });
+  },
+
+  ensureCompilationGame: async (compilationId, link) => {
+    if (!get().cloud || !supabase) return null;
+    const { data, error } = await supabase
+      .rpc("ensure_compilation_game", {
+        p_compilation: compilationId,
+        p_rawg_id: link?.rawgId ?? null,
+        p_igdb_id: link?.igdbId ?? null,
+        p_catalog_id: link?.catalogId ?? null,
+      })
+      .single();
+    if (error || !data) {
+      if (error) set({ error: error.message });
+      return null;
+    }
+    const row = rowToGame(data as GameRow);
+    set({ compilationGames: [row, ...get().compilationGames.filter((g) => g.id !== row.id)] });
+    return row;
   },
 
   setCompilationChildOrder: async (id, orderedIds) => {
@@ -5122,8 +5171,8 @@ export const useStore = create<BazaarState>((set, get) => ({
       saveLocalCompilations(nextComps);
       toast(
         refund > 0
-          ? `Expanded into ${template.title} · +${refund} refunded`
-          : `Expanded into ${template.title}`,
+          ? `Split into ${template.title}'s games · +${refund} refunded`
+          : `Split into ${template.title}'s games`,
         Package,
       );
       return;
@@ -5163,10 +5212,13 @@ export const useStore = create<BazaarState>((set, get) => ({
       compilations: comp ? [comp, ...get().compilations] : get().compilations,
       coins: res.coins,
     });
+    // The card itself is now the compilation's game row (its review, like and
+    // history kept): load it into compilationGames.
+    if (comp) await get().ensureCompilationGame(comp.id);
     toast(
       res.refund > 0
-        ? `Expanded into ${template.title} · +${res.refund} refunded`
-        : `Expanded into ${template.title}`,
+        ? `Split into ${template.title}'s games · +${res.refund} refunded`
+        : `Split into ${template.title}'s games`,
       Package,
     );
   },
@@ -7041,14 +7093,13 @@ export const useStore = create<BazaarState>((set, get) => ({
   },
 
   setGamePriority: async (id, value) => {
-    const { cloud, games, coins } = get();
-    const game = games.find((g) => g.id === id);
+    const { cloud, coins } = get();
+    const game = findAnyGame(get(), id);
     if (!game || (game.priority ?? null) === value) return;
-    const next = games.map((g) => (g.id === id ? { ...g, priority: value } : g));
-    set({ games: next });
+    set(patchAnyGame(get(), id, (g) => ({ ...g, priority: value })));
 
     if (!cloud) {
-      saveLocal(coins, next);
+      saveLocal(coins, get().games);
       return;
     }
     if (!supabase) return;
@@ -7182,21 +7233,20 @@ export const useStore = create<BazaarState>((set, get) => ({
   // No-ops when nothing changed, so an untouched editor never bumps reviewedAt
   // or writes a redundant review_events row.
   setGameReview: async (id, text, score) => {
-    const { cloud, games, coins } = get();
-    const game = games.find((g) => g.id === id);
+    const { cloud, coins } = get();
+    const game = findAnyGame(get(), id);
     if (!game) return;
     const trimmed = text.trim().slice(0, REVIEW_MAX);
     const nextText = trimmed || undefined;
     const nextScore = clampScore(score) ?? undefined;
     if (nextText === game.review && nextScore === game.reviewScore) return;
     const reviewedAt = Date.now();
-    const next = games.map((g) =>
-      g.id === id ? { ...g, review: nextText, reviewScore: nextScore, reviewedAt } : g,
+    set(
+      patchAnyGame(get(), id, (g) => ({ ...g, review: nextText, reviewScore: nextScore, reviewedAt })),
     );
-    set({ games: next });
 
     if (!cloud) {
-      saveLocal(coins, next);
+      saveLocal(coins, get().games);
       return;
     }
     if (!supabase) return;
@@ -7236,17 +7286,16 @@ export const useStore = create<BazaarState>((set, get) => ({
   },
 
   toggleGameLike: async (id) => {
-    const { cloud, games, coins } = get();
-    const game = games.find((g) => g.id === id);
+    const { cloud, coins } = get();
+    const game = findAnyGame(get(), id);
     if (!game) return;
     const liking = game.likedAt == null;
     const likedAt = liking ? Date.now() : null;
     // Optimistic — the thumbs-up fills instantly; roll back on a cloud error.
-    const next = games.map((g) => (g.id === id ? { ...g, likedAt } : g));
-    set({ games: next });
+    set(patchAnyGame(get(), id, (g) => ({ ...g, likedAt })));
 
     if (!cloud) {
-      saveLocal(coins, next);
+      saveLocal(coins, get().games);
       return;
     }
     if (!supabase) return;
@@ -7257,7 +7306,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     if (error) {
       set({
         error: error.message,
-        games: get().games.map((g) => (g.id === id ? { ...g, likedAt: game.likedAt ?? null } : g)),
+        ...patchAnyGame(get(), id, (g) => ({ ...g, likedAt: game.likedAt ?? null })),
       });
       return;
     }
@@ -8606,9 +8655,9 @@ export const useStore = create<BazaarState>((set, get) => ({
   // only (mirrors setAvatar — storage needs an account). The ?v= cache-buster
   // makes a replacement show immediately.
   setGameImage: async (id, file) => {
-    const { cloud, userId, games } = get();
+    const { cloud, userId } = get();
     if (!cloud || !supabase || !userId) return;
-    const game = games.find((g) => g.id === id);
+    const game = findAnyGame(get(), id);
     if (!game) return;
     try {
       const blob = await downscaleImage(file, 1000);
@@ -8621,7 +8670,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       const url = `${data.publicUrl}?v=${Date.now()}`;
       const { error: dbErr } = await supabase.from("games").update({ image: url }).eq("id", id);
       if (dbErr) throw dbErr;
-      set({ games: get().games.map((g) => (g.id === id ? { ...g, image: url } : g)) });
+      set(patchAnyGame(get(), id, (g) => ({ ...g, image: url })));
       toast("Cover image updated", ImagePlus);
     } catch (e) {
       set({ error: e instanceof Error ? e.message : "Couldn't update that cover." });
@@ -8684,9 +8733,9 @@ export const useStore = create<BazaarState>((set, get) => ({
 
   // Remove a game's custom cover (best-effort storage delete) and clear the image.
   clearGameImage: async (id) => {
-    const { cloud, userId, games } = get();
+    const { cloud, userId } = get();
     if (!cloud || !supabase || !userId) return;
-    const game = games.find((g) => g.id === id);
+    const game = findAnyGame(get(), id);
     if (!game) return;
     await supabase.storage.from("covers").remove([`${userId}/${id}.jpg`]);
     const { error } = await supabase.from("games").update({ image: null }).eq("id", id);
@@ -8694,7 +8743,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       set({ error: error.message });
       return;
     }
-    set({ games: get().games.map((g) => (g.id === id ? { ...g, image: undefined } : g)) });
+    set(patchAnyGame(get(), id, (g) => ({ ...g, image: undefined })));
     toast("Cover image removed", Trash2);
   },
 
@@ -8702,9 +8751,9 @@ export const useStore = create<BazaarState>((set, get) => ({
   // upload or removal. Best-effort deletes the custom cover blob since it's no
   // longer referenced. No-op if there's no stock image to restore.
   restoreGameImage: async (id) => {
-    const { cloud, userId, games } = get();
+    const { cloud, userId } = get();
     if (!cloud || !supabase || !userId) return;
-    const game = games.find((g) => g.id === id);
+    const game = findAnyGame(get(), id);
     if (!game?.stockImage) return;
     await supabase.storage.from("covers").remove([`${userId}/${id}.jpg`]);
     const { error } = await supabase.from("games").update({ image: game.stockImage }).eq("id", id);
@@ -8712,7 +8761,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       set({ error: error.message });
       return;
     }
-    set({ games: get().games.map((g) => (g.id === id ? { ...g, image: game.stockImage } : g)) });
+    set(patchAnyGame(get(), id, (g) => ({ ...g, image: game.stockImage })));
     toast("Default cover restored", ImagePlus);
   },
 
@@ -8728,7 +8777,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       set({ error: error.message });
       return;
     }
-    set({ games: get().games.map((g) => (g.id === id ? { ...g, image: url } : g)) });
+    set(patchAnyGame(get(), id, (g) => ({ ...g, image: url })));
     toast("Original cover restored", ImagePlus);
   },
 

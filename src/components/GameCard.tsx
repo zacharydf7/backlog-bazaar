@@ -86,6 +86,7 @@ export function GameCard({
   const { readOnly } = useViewing();
   const viewing = useStore((s) => s.viewing);
   const storeGames = useStore((s) => s.games);
+  const compilationGames = useStore((s) => s.compilationGames);
   const cloud = useStore((s) => s.cloud);
   const economyEnabled = useStore((s) => s.economyEnabled);
   const can = useStore((s) => s.can);
@@ -143,7 +144,7 @@ export function GameCard({
   // 86fc0b4b); a visited library's bundles aren't loaded, so it keeps its own.
   const cover =
     (fam ? familyCoverImage(fam.members) : undefined) ??
-    inheritedCover(game, viewing ? [] : compilations, storeGames);
+    inheritedCover(game, viewing ? [] : compilations, storeGames, compilationGames);
   // This card's own membership drives the ⋮ menu (a compilation child gets the
   // compilation-piece options; a standalone master keeps the normal ones).
   const inCompilation = game.compilationId != null;

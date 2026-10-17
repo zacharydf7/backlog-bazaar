@@ -1933,6 +1933,9 @@ declare
   v_rawg    integer := p_rawg_id;
   v_igdb    integer := p_igdb_id;
   v_cat     uuid := p_catalog_id;
+  -- An explicit link (the owner picked a catalog game) replaces all three ids;
+  -- the template's default only fills an unlinked row.
+  v_explicit boolean := p_rawg_id is not null or p_igdb_id is not null or p_catalog_id is not null;
   v_copies  jsonb;
   v_id      uuid;
 begin
@@ -1968,9 +1971,9 @@ begin
        set title = c.title,
            copies = v_copies,
            released = coalesce(released, c.released),
-           rawg_id = coalesce(v_rawg, rawg_id),
-           igdb_id = coalesce(v_igdb, igdb_id),
-           catalog_id = coalesce(v_cat, catalog_id)
+           rawg_id = case when v_explicit then v_rawg else coalesce(rawg_id, v_rawg) end,
+           igdb_id = case when v_explicit then v_igdb else coalesce(igdb_id, v_igdb) end,
+           catalog_id = case when v_explicit then v_cat else coalesce(catalog_id, v_cat) end
      where id = v_id;
   end if;
   perform set_config('app.compilation_game', '', true);

@@ -58,10 +58,26 @@ export const RELEASES: Release[] = [
   {
     id: "2026-10-17-cleaner-search-and-split",
     date: "2026-10-17",
-    title: "Cleaner game search",
+    title: "Compilations are games too",
     items: [
       {
-        text: "A collection you own as a single game now offers \"Split into games\" from its ⋮ menu, and the Add Game hint says what happens: its games stay together on one compilation card.",
+        text: "A compilation now has a page like any game's: its own cover, details, review, likes and community stats, shared with everyone who owns it, plus a Games tab listing what's inside.",
+        tag: "feature",
+      },
+      {
+        text: "Link a compilation to its entry in the game database from its Library tab, or suggest it for everyone if it isn't listed yet.",
+        tag: "feature",
+      },
+      {
+        text: "The games inside a compilation are simple rows now: tap one to open its own page to play it, log time or review it.",
+        tag: "improvement",
+      },
+      {
+        text: "A compilation's status follows its games: Now Playing while you're playing one, Bazaar while any are waiting, and Finished once they're all done.",
+        tag: "improvement",
+      },
+      {
+        text: "A collection you own as a single game now offers \"Split into games\" from its ⋮ menu. It keeps its review and likes as the compilation, with its games added inside, and the Add Game hint says what happens.",
         tag: "improvement",
       },
       {

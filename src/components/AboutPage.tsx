@@ -437,7 +437,7 @@ export function AboutPage() {
             cover and release date from the compilation rather than the game database, and an{" "}
             <strong className="text-ink">original platform</strong> label tells same-named versions
             apart (a bundle with both the PlayStation and Game Boy Color Buzz Lightyear). Give any
-            of them your own cover art and screenshots, right from the compilation&apos;s page. Each game
+            of them your own cover art and screenshots on its page. Each game
             inside is still bought, played and finished on its own; every copy&apos;s platform shows
             on every game, and each copy&apos;s price is split across them (evenly, by length, or
             however you choose). The split is just for your records — like other costs, it never
@@ -452,15 +452,20 @@ export function AboutPage() {
             card the ones you&apos;ve cleared — so one bundle can sit in both at once. Tap{" "}
             <strong className="text-ink">Play a Game</strong> to pick which one to start; it&apos;s
             bought like any other game and gets its own card in Now Playing, marked with the
-            bundle&apos;s name. Open the compilation to see every game inside, what you spent, and
-            your total time — tap any game there to play, log time, rate or edit it in place, and
-            its Journey tab tells the whole bundle&apos;s story in one timeline. Your collection
+            bundle&apos;s name. Open the compilation and it reads like any game&apos;s page — its
+            own cover, details, review, likes and community stats, shared with everyone who owns it
+            once you link it to the game database from its Library tab — with a{" "}
+            <strong className="text-ink">Games</strong> tab listing every game inside. Tap one to
+            open its own page to play, log time or review it. The compilation&apos;s status follows
+            its games (Now Playing while you play one, Bazaar while any wait, Finished once all
+            are done), and its Journey tab tells the whole bundle&apos;s story in one timeline. Your collection
             counts (games owned, the platform bars) count a compilation once — it&apos;s one item
             on your shelf — while every game you finish still counts as a clear. And when a
             collection you own as a <em>single</em> card is linked in
             the catalog, its ⋮ menu offers &ldquo;Split into games&rdquo; — the card becomes the
-            bundle&apos;s games with the cost split evenly, your logged hours kept on the bundle
-            total, and any activation fee you paid refunded.
+            compilation itself, keeping its review and likes, with the bundle&apos;s games added
+            inside, the cost split evenly, your logged hours kept on the bundle total, and any
+            activation fee you paid refunded.
           </Section>
 
           <Section icon={Link2} title="Game Families">

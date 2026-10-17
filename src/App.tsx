@@ -147,6 +147,7 @@ export default function App() {
     userId,
     games,
     compilations,
+    compilationGames,
     error,
     clearMessages,
     init,
@@ -366,8 +367,8 @@ export default function App() {
   // see children individually — their compilation containers aren't shared.
   // Another pure view transform, layered after the ownership fold above.
   const grouping = useMemo(
-    () => groupCollapsedCompilations(boardGames, viewing ? [] : compilations),
-    [boardGames, compilations, viewing],
+    () => groupCollapsedCompilations(boardGames, viewing ? [] : compilations, compilationGames),
+    [boardGames, compilations, compilationGames, viewing],
   );
 
   // Game Families fold into ONE focused card on the board of the most-active

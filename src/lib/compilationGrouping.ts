@@ -56,17 +56,27 @@ export function orderCompilationChildren<T extends Pick<Game, "id">>(
     .map((x) => x.c);
 }
 
-/** The cover the bundle card shows: the owner's custom/expand-time parent cover
- *  first, else the moderator-set cover on the shared template, else the first
- *  child's (in the bundle's chosen order — pass children already ordered so
- *  every surface previewing this fallback agrees with the card). */
+/** The cover the bundle card shows: the compilation's own game row's (issue
+ *  86fc0b4b) when it has one, else the owner's custom/expand-time parent cover,
+ *  else the moderator-set cover on the shared template, else the first child's
+ *  (in the bundle's chosen order — pass children already ordered so every
+ *  surface previewing this fallback agrees with the card). */
 export function compilationCoverOf(
   compilation: Pick<Compilation, "parentImage" | "templateImage">,
   children: Pick<Game, "image">[],
+  compilationGame?: Pick<Game, "image">,
 ): string | undefined {
   return (
-    compilation.parentImage ?? compilation.templateImage ?? children.find((g) => g.image)?.image
+    compilationGame?.image ??
+    compilation.parentImage ??
+    compilation.templateImage ??
+    children.find((g) => g.image)?.image
   );
+}
+
+/** The compilation's own game row (issue 86fc0b4b), when it's loaded. */
+export function compilationGameOf(compilationId: string, compilationGames: Game[]): Game | undefined {
+  return compilationGames.find((g) => g.compilationGameFor === compilationId);
 }
 
 /** The cover a bundled game shows (issue 86fc0b4b): its own art when it has
@@ -77,12 +87,17 @@ export function inheritedCover(
   game: Pick<Game, "image" | "compilationId">,
   compilations: Compilation[],
   games: Game[],
+  compilationGames: Game[] = [],
 ): string | undefined {
   if (game.image) return game.image;
   const compilation = compilations.find((c) => c.id === game.compilationId);
   if (!compilation) return undefined;
   const siblings = games.filter((g) => g.compilationId === compilation.id);
-  return compilationCoverOf(compilation, orderCompilationChildren(siblings, compilation.childOrder));
+  return compilationCoverOf(
+    compilation,
+    orderCompilationChildren(siblings, compilation.childOrder),
+    compilationGameOf(compilation.id, compilationGames),
+  );
 }
 
 /** Build one board's bundle card, with every child in the owner's chosen order
@@ -91,6 +106,7 @@ export function compilationRollup(
   compilation: Compilation,
   children: Game[],
   board: BundleBoard,
+  compilationGame?: Pick<Game, "image">,
 ): CollapsedCompilation {
   const ordered = orderCompilationChildren(children, compilation.childOrder);
   const played = ordered.reduce((sum, g) => sum + (g.playedHours ?? 0), 0);
@@ -102,7 +118,7 @@ export function compilationRollup(
     totalPlayedHours: played + (compilation.carryoverHours ?? 0),
     finishedCount: ordered.filter((g) => g.status === "finished").length,
     playingCount: ordered.filter((g) => g.status === "playing").length,
-    image: compilationCoverOf(compilation, ordered),
+    image: compilationCoverOf(compilation, ordered, compilationGame),
   };
 }
 
@@ -114,6 +130,7 @@ export function compilationRollup(
 export function groupCollapsedCompilations(
   games: Game[],
   compilations: Compilation[],
+  compilationGames: Game[] = [],
 ): { boardGames: Game[]; collapsed: CollapsedCompilation[] } {
   if (compilations.length === 0) return { boardGames: games, collapsed: [] };
   const byId = new Map(compilations.map((c) => [c.id, c]));
@@ -132,7 +149,14 @@ export function groupCollapsedCompilations(
   for (const [compId, children] of childrenByComp) {
     for (const board of BUNDLE_BOARDS) {
       if (children.some((g) => g.status === board)) {
-        collapsed.push(compilationRollup(byId.get(compId)!, children, board));
+        collapsed.push(
+          compilationRollup(
+            byId.get(compId)!,
+            children,
+            board,
+            compilationGameOf(compId, compilationGames),
+          ),
+        );
       }
     }
     for (const g of children) if (g.status !== "playing") hidden.add(g.id);
@@ -182,8 +206,18 @@ export function ownershipUnits(games: Game[]): Game[] {
 
 const STATUS_PRECEDENCE: GameStatus[] = ["playing", "backlog", "finished", "wishlist"];
 
+/** The status a compilation shows, from its games (issue 86fc0b4b): when they
+ *  all share one, that one — all in the Bazaar is in the Bazaar, all finished
+ *  is finished (the requester's rule). Mixed: Now Playing while any game is
+ *  being played, otherwise in the Bazaar until every game is finished. An
+ *  empty compilation is in the Bazaar. The compilation's own stored status
+ *  never changes; this is what boards, stats and its page show. */
+export function compilationStatus(games: Pick<Game, "status">[]): GameStatus {
+  return STATUS_PRECEDENCE.find((s) => games.some((g) => g.status === s)) ?? "backlog";
+}
+
 function foldBundle(members: Game[]): Game {
-  const status = STATUS_PRECEDENCE.find((s) => members.some((m) => m.status === s)) ?? "backlog";
+  const status = compilationStatus(members);
   const clears = members.filter((m) => m.status === "finished" && m.finishTag !== "retired");
   const allTagged = (tag: Game["finishTag"]) =>
     clears.length > 0 && clears.every((m) => m.finishTag === tag);
