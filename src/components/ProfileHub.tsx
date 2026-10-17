@@ -32,6 +32,7 @@ import { isPresent, lastSeenLabel, presenceActivity } from "../lib/presence";
 import { visibleLibrary } from "../lib/families";
 import { formatPlaytime } from "../lib/playtime";
 import { profileSummary } from "../lib/profileSummary";
+import { ownershipUnits } from "../lib/compilationGrouping";
 import { platformSummary, PLATFORM_SEGMENTS, type PlatformStatusRow } from "../lib/platformSummary";
 import {
   localActivityFallback,
@@ -255,8 +256,10 @@ export function ProfileHub({
   }, [cloud, visitedUserId, fetchUserLists, fetchMyLists]);
   const profileLists = visiting ? visitedLists : (myLists ?? []);
   const owned = useMemo(() => library.filter((g) => g.status !== "wishlist"), [library]);
-  const summary = useMemo(() => profileSummary(owned), [owned]);
-  const platforms = useMemo(() => platformSummary(library), [library]);
+  // Ownership views count each compilation once — one item on the shelf
+  // (issue 86fc0b4b); the Finished shelf and clear counts stay per game.
+  const summary = useMemo(() => profileSummary(ownershipUnits(owned)), [owned]);
+  const platforms = useMemo(() => platformSummary(ownershipUnits(library)), [library]);
   // Recent Activity: the player's milestone feed from the server (own or
   // visited), with a local Added+Finished derivation as the fallback while
   // offline or before the fetch lands, so the section is never needlessly empty.

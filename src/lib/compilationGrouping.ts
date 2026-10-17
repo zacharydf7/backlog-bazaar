@@ -128,6 +128,68 @@ export function groupCollapsedCompilations(
   };
 }
 
+/** The library as COLLECTION entries (issue 86fc0b4b): every compilation's
+ *  games fold into one entry — you own the Kingdom Hearts collection, one item
+ *  on the shelf — while standalone games pass through. For ownership stats
+ *  only (owned counts, the platform bars, the ledger's collection block);
+ *  clears, hours and coins keep counting each game, since each is a real
+ *  playthrough. Keys off `compilationId` alone, so a visited library folds too.
+ *
+ *  The entry is the bundle's first game in library order, standing in with:
+ *  a derived status (Now Playing if any game is, else Bazaar if any waits,
+ *  else Finished, else Wishlist), every game's copies (so it lands on each
+ *  platform the bundle is owned on), and, when finished, a derived finish tag
+ *  (Completed or Endless only if every clear was, Retired if nothing was
+ *  cleared, else Beaten). */
+export function ownershipUnits(games: Game[]): Game[] {
+  const byComp = new Map<string, Game[]>();
+  const out: Game[] = [];
+  for (const g of games) {
+    if (g.compilationId == null) {
+      out.push(g);
+      continue;
+    }
+    const list = byComp.get(g.compilationId);
+    if (list) list.push(g);
+    else {
+      const fresh = [g];
+      byComp.set(g.compilationId, fresh);
+      out.push(g); // placeholder, replaced below, keeps library order
+    }
+  }
+  if (byComp.size === 0) return games;
+  return out.map((g) => {
+    const members = g.compilationId != null ? byComp.get(g.compilationId) : undefined;
+    return members ? foldBundle(members) : g;
+  });
+}
+
+const STATUS_PRECEDENCE: GameStatus[] = ["playing", "backlog", "finished", "wishlist"];
+
+function foldBundle(members: Game[]): Game {
+  const status = STATUS_PRECEDENCE.find((s) => members.some((m) => m.status === s)) ?? "backlog";
+  const clears = members.filter((m) => m.status === "finished" && m.finishTag !== "retired");
+  const allTagged = (tag: Game["finishTag"]) =>
+    clears.length > 0 && clears.every((m) => m.finishTag === tag);
+  const finishTag =
+    status !== "finished"
+      ? undefined
+      : clears.length === 0
+        ? ("retired" as const)
+        : allTagged("completed")
+          ? ("completed" as const)
+          : allTagged("endless")
+            ? ("endless" as const)
+            : ("beaten" as const);
+  return {
+    ...members[0],
+    id: `bundle:${members[0].compilationId}`,
+    status,
+    finishTag,
+    copies: members.flatMap((m) => m.copies ?? []),
+  };
+}
+
 /** How many games a bundle card's tray lists before "+N more". */
 export const TRAY_LIMIT = 3;
 

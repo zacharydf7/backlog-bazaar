@@ -14,7 +14,7 @@ import { orderedFormats } from "./copies";
 import { STATUS_LABEL, OWNED_STATUS_ORDER } from "./status";
 import { visibleLibrary } from "./families";
 import { filterByQuery } from "./librarySearch";
-import { orderCompilationChildren } from "./compilationGrouping";
+import { orderCompilationChildren, ownershipUnits } from "./compilationGrouping";
 
 /** True for any game the player owns (everything except Wishlist). */
 export function isOwned(game: Pick<Game, "status">): boolean {
@@ -175,6 +175,11 @@ export function clearYear(g: Game): number | null {
   return g.finishedAt != null ? new Date(g.finishedAt).getFullYear() : null;
 }
 
+/** The header's numbers. The collection block (games owned, playing / Bazaar /
+ *  finished and their percentages, how they finished) counts each compilation
+ *  as one entry — one item on the shelf (issue 86fc0b4b) — while the activity
+ *  line (hours, clears this year, coins) counts every game, since each bundled
+ *  game is its own playthrough. */
 export function ledgerStats(owned: Game[], now: number = Date.now()): LedgerStats {
   const thisYear = new Date(now).getFullYear();
   let playing = 0;
@@ -189,6 +194,10 @@ export function ledgerStats(owned: Game[], now: number = Date.now()): LedgerStat
   for (const g of owned) {
     hoursPlayed += g.playedHours ?? 0;
     coinsEarned += g.reward ?? 0;
+    if (clearYear(g) === thisYear) finishedThisYear++;
+  }
+  const units = ownershipUnits(owned);
+  for (const g of units) {
     if (g.status === "playing") playing++;
     else if (g.status === "backlog") backlog++;
     else if (g.status === "finished") {
@@ -196,10 +205,9 @@ export function ledgerStats(owned: Game[], now: number = Date.now()): LedgerStat
       if (g.finishTag === "beaten") beaten++;
       else if (g.finishTag === "completed") completed++;
       else if (g.finishTag === "endless") endless++;
-      if (clearYear(g) === thisYear) finishedThisYear++;
     }
   }
-  const total = owned.length;
+  const total = units.length;
   const pct = (n: number) => (total === 0 ? 0 : Math.round((n / total) * 100));
   return {
     total,

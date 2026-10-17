@@ -57,6 +57,29 @@ describe("ownedGames", () => {
 });
 
 describe("ledgerStats", () => {
+  it("counts a compilation once in the collection block, every game in the activity line (86fc0b4b)", () => {
+    const now = Date.UTC(2026, 5, 1);
+    const kh = (over: Partial<Game>) => game({ compilationId: "KH", ...over });
+    const s = ledgerStats(
+      [
+        kh({ status: "finished", finishTag: "beaten", playedHours: 30, reward: 40, finishedAt: now }),
+        kh({ status: "finished", finishTag: "beaten", playedHours: 40, reward: 50, finishedAt: now }),
+        kh({ status: "backlog" }),
+        game({ status: "finished", finishTag: "completed", playedHours: 10, reward: 20, finishedAt: now }),
+      ],
+      now,
+    );
+    // Collection: the KH bundle (a game still waits → Bazaar) + one standalone.
+    expect(s.total).toBe(2);
+    expect(s.backlog).toBe(1);
+    expect(s.finished).toBe(1);
+    expect(s.finishedPct).toBe(50);
+    // Activity: each playthrough still counts.
+    expect(s.finishedThisYear).toBe(3);
+    expect(s.hoursPlayed).toBe(80);
+    expect(s.coinsEarned).toBe(110);
+  });
+
   it("counts each status and computes completion percentage", () => {
     const owned = ownedGames([
       game({ status: "finished" }),

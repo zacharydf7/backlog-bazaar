@@ -10,6 +10,7 @@ import {
   compilationTray,
   findExpandTemplate,
   groupCollapsedCompilations,
+  ownershipUnits,
   orderCompilationChildren,
 } from "./compilationGrouping";
 
@@ -312,5 +313,46 @@ describe("compilationMatchesFilters / compilationMatchesQuery", () => {
     expect(compilationMatchesQuery(collapsed, "bundle")).toBe(true); // own title
     expect(compilationMatchesQuery(collapsed, "pikmin 2")).toBe(true); // child title
     expect(compilationMatchesQuery(collapsed, "zelda")).toBe(false);
+  });
+});
+
+describe("ownershipUnits (86fc0b4b)", () => {
+  const kh = (id: string, over: Partial<Game> = {}) =>
+    game({ id, compilationId: "KH", copies: [{ id: `c-${id}`, platform: "PlayStation 4" }], ...over });
+
+  it("folds a compilation's games into one entry, standalone games untouched, library order kept", () => {
+    const solo = game({ id: "s", title: "Solo" });
+    const units = ownershipUnits([kh("1"), solo, kh("2"), kh("3")]);
+    expect(units.map((u) => u.id)).toEqual(["bundle:KH", "s"]);
+    expect(units[1]).toBe(solo);
+  });
+
+  it("derives the entry's status: playing, else Bazaar, else finished, else wishlist", () => {
+    const status = (...ss: Game["status"][]) =>
+      ownershipUnits(ss.map((st, i) => kh(String(i), { status: st })))[0].status;
+    expect(status("finished", "playing", "backlog")).toBe("playing");
+    expect(status("finished", "backlog")).toBe("backlog");
+    expect(status("finished", "wishlist")).toBe("finished");
+    expect(status("wishlist")).toBe("wishlist");
+  });
+
+  it("derives a finished entry's tag from its clears", () => {
+    const tag = (...tags: Game["finishTag"][]) =>
+      ownershipUnits(tags.map((t, i) => kh(String(i), { status: "finished", finishTag: t })))[0]
+        .finishTag;
+    expect(tag("completed", "completed")).toBe("completed");
+    expect(tag("completed", "beaten")).toBe("beaten");
+    expect(tag("endless", "endless", "retired")).toBe("endless");
+    expect(tag("retired", "retired")).toBe("retired");
+  });
+
+  it("carries every game's copies so the entry lands on each platform", () => {
+    const [unit] = ownershipUnits([kh("1"), kh("2", { copies: [{ id: "x", platform: "PC" }] })]);
+    expect(unit.copies?.map((c) => c.platform)).toEqual(["PlayStation 4", "PC"]);
+  });
+
+  it("returns the input untouched when nothing is bundled", () => {
+    const games = [game({ id: "a" }), game({ id: "b" })];
+    expect(ownershipUnits(games)).toBe(games);
   });
 });

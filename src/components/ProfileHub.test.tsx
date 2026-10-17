@@ -328,6 +328,26 @@ describe("ProfileHub — platform breakdown", () => {
     expect(module.getByText("1/2 cleared")).toBeTruthy();
   });
 
+  it("counts a compilation once on its platform — one item on the shelf (86fc0b4b)", () => {
+    const kh = (over: Partial<Game>) =>
+      game({ compilationId: "KH", copies: [{ id: "kh", platform: "PlayStation 4" }], ...over });
+    act(() =>
+      useStore.setState({
+        viewing: null,
+        cloud: true,
+        games: [
+          kh({ status: "finished", finishTag: "beaten" }),
+          kh({ status: "finished", finishTag: "beaten" }),
+          kh({ status: "backlog" }),
+        ],
+      }),
+    );
+    render(<ProfileHub onOpenTab={() => {}} />);
+    const module = within(screen.getByText("Platforms").closest("section") as HTMLElement);
+    // Three games, one collection — still waiting on a game, so in the Bazaar.
+    expect(module.getByText(/1 in the Bazaar · 1 total/)).toBeTruthy();
+  });
+
   it("gives a fully-finished platform the 100% treatment", () => {
     act(() =>
       useStore.setState({
