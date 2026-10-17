@@ -108,7 +108,7 @@ describe("release style", () => {
       "backlog", "playing", "finished", "wishlist", "market", "profile", "lists", "subscriptions",
       "master-ledger", "transaction-ledger", "community", "community-activity", "community-messages",
       "community-recs", "community-discover", "cosmetics", "shop", "achievements", "challenges",
-      "account", "about",
+      "account", "about", "calendar",
     ]);
     for (const r of RELEASES) if (r.link) expect(playerPages.has(r.link.view), r.id).toBe(true);
   });

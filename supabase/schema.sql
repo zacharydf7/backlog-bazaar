@@ -20653,23 +20653,56 @@ create table if not exists public.bonus_events (
   -- Repeats (owner, 2026-10-17): the starts_at–ends_at window recurs every
   -- week or month (in the site timezone) until repeat_until, if set. The
   -- per-player cap and the start notice apply to each run.
-  repeat             text check (repeat in ('weekly', 'monthly')),
+  repeat             text,
   repeat_until       timestamptz,
   created_by         uuid references auth.users (id) on delete set null,
   created_at         timestamptz not null default now(),
   updated_at         timestamptz not null default now(),
   archived_at        timestamptz,
-  check (ends_at > starts_at),
-  check (bounty_mult > 1 or session_mult > 1 or rewards_mult > 1 or start_discount_pct > 0),
-  check (repeat is null
-      or (repeat = 'weekly' and ends_at - starts_at <= interval '7 days')
-      or (repeat = 'monthly' and ends_at - starts_at <= interval '28 days'))
+  check (ends_at > starts_at)
 );
 create index if not exists bonus_events_window_idx on public.bonus_events (starts_at, ends_at);
 -- How many discounted starts each player gets per run (owner, 2026-10-17);
 -- null = no limit. A discounted start counts once bought: shelving refunds
 -- what was paid but doesn't give the start back.
 alter table public.bonus_events add column if not exists discount_limit integer check (discount_limit > 0);
+
+-- The event schedule and calendar (owner, 2026-10-17): events can repeat on a
+-- monthly pattern, fixed so players can plan ahead: days of the month
+-- (repeat_from..repeat_to, 1-based, or counted back from the month's end when
+-- negative: -7..-1 is the last 7 days) or the Nth weekend (repeat_week 1-4,
+-- -1 = last; Saturday and Sunday). Boosts are optional: an event with none
+-- is a calendar note (a holiday week) that pays nothing. prep_tip tells
+-- players how to get ready.
+alter table public.bonus_events add column if not exists repeat_from integer;
+alter table public.bonus_events add column if not exists repeat_to   integer;
+alter table public.bonus_events add column if not exists repeat_week integer;
+alter table public.bonus_events add column if not exists prep_tip    text not null default '';
+-- The original checks were unnamed (repeat kinds; at least one boost):
+-- replace them with named ones.
+do $$
+declare c record;
+begin
+  for c in
+    select conname from pg_constraint
+     where conrelid = 'public.bonus_events'::regclass and contype = 'c'
+       and conname not in ('bonus_events_repeat_shape', 'bonus_events_prep_tip_len')
+       and (pg_get_constraintdef(oid) ilike '%repeat%' or pg_get_constraintdef(oid) ilike '%start_discount_pct > 0%')
+  loop
+    execute format('alter table public.bonus_events drop constraint %I', c.conname);
+  end loop;
+end $$;
+alter table public.bonus_events drop constraint if exists bonus_events_repeat_shape;
+alter table public.bonus_events add constraint bonus_events_repeat_shape check (
+  repeat is null
+  or (repeat = 'weekly' and ends_at - starts_at <= interval '7 days')
+  or (repeat = 'monthly' and ends_at - starts_at <= interval '28 days')
+  or (repeat = 'month_days'
+      and ((repeat_from between 1 and 28 and repeat_to between repeat_from and 28)
+        or (repeat_from between -28 and -1 and repeat_to between repeat_from and -1)))
+  or (repeat = 'month_weekend' and repeat_week in (1, 2, 3, 4, -1)));
+alter table public.bonus_events drop constraint if exists bonus_events_prep_tip_len;
+alter table public.bonus_events add constraint bonus_events_prep_tip_len check (char_length(prep_tip) <= 200);
 
 create table if not exists public.bonus_event_payouts (
   id         uuid primary key default gen_random_uuid(),
@@ -20682,6 +20715,23 @@ create table if not exists public.bonus_event_payouts (
   created_at timestamptz not null default now()
 );
 create index if not exists bonus_event_payouts_user_idx on public.bonus_event_payouts (user_id, event_id);
+
+create table if not exists public.bonus_event_skips (
+  id         uuid primary key default gen_random_uuid(),
+  event_id   uuid not null references public.bonus_events (id) on delete cascade,
+  run_start  timestamptz not null,
+  created_by uuid references auth.users (id) on delete set null,
+  created_at timestamptz not null default now(),
+  removed_at timestamptz,
+  removed_by uuid references auth.users (id) on delete set null
+);
+create unique index if not exists bonus_event_skips_run_idx
+  on public.bonus_event_skips (event_id, run_start) where removed_at is null;
+alter table public.bonus_event_skips enable row level security;
+revoke insert, update, delete on public.bonus_event_skips from anon, authenticated;
+drop policy if exists "bonus_event_skips_select_admin" on public.bonus_event_skips;
+create policy "bonus_event_skips_select_admin" on public.bonus_event_skips
+  for select to authenticated using (public.has_permission('economy.events'));
 
 alter table public.bonus_events        enable row level security;
 alter table public.bonus_event_payouts enable row level security;
@@ -20767,12 +20817,28 @@ end;
 $$;
 revoke execute on function public.bonus_event_applies(public.bonus_events, uuid, uuid) from public, anon, authenticated;
 
--- The run of an event that's live at p_at, or else its next run (for the
--- "coming up" list); nothing once a one-off has ended or a repeat is past its
--- repeat_until. Repeats step in the site timezone, so a weekend event starts
--- at local midnight all year.
-create or replace function public.bonus_event_occurrence(p_event public.bonus_events, p_at timestamptz)
-returns table (occ_start timestamptz, occ_end timestamptz, live boolean)
+-- Is this run of an event skipped (an admin left it out)?
+create or replace function public.bonus_event_run_skipped(p_event uuid, p_start timestamptz)
+returns boolean
+language sql
+stable
+set search_path = public
+as $$
+  select exists (select 1 from public.bonus_event_skips k
+                  where k.event_id = p_event and k.run_start = p_start and k.removed_at is null);
+$$;
+revoke execute on function public.bonus_event_run_skipped(uuid, timestamptz) from public, anon, authenticated;
+
+-- Every run of an event overlapping [p_from, p_to), oldest first, skipped
+-- runs left out unless p_with_skipped. A one-off has its one window. Repeats
+-- step in the site timezone, so a weekend event starts at local midnight all
+-- year: weekly/monthly ones from the first run (starts_at..ends_at), monthly
+-- patterns from their rule (never before starts_at); none at or after
+-- repeat_until.
+create or replace function public.bonus_event_runs(
+  p_event public.bonus_events, p_from timestamptz, p_to timestamptz, p_with_skipped boolean default false
+)
+returns table (run_start timestamptz, run_end timestamptz, skipped boolean)
 language plpgsql
 stable
 set search_path = public
@@ -20783,38 +20849,96 @@ declare
   v_step  interval;
   v_local timestamp;
   v_k     integer;
+  v_month timestamp;
+  v_day   timestamp;
   v_s     timestamptz;
+  v_e     timestamptz;
+  v_skip  boolean;
 begin
   if p_event.repeat is null then
-    if p_at < p_event.ends_at then
-      return query select p_event.starts_at, p_event.ends_at, p_event.starts_at <= p_at;
+    if p_event.ends_at > p_from and p_event.starts_at < p_to then
+      return query select p_event.starts_at, p_event.ends_at, false;
     end if;
     return;
   end if;
   select coalesce(nullif(btrim(c.rotation_reset_tz), ''), 'UTC') into v_tz from public.app_config c where c.id = 1;
-  v_step  := case p_event.repeat when 'weekly' then interval '7 days' else interval '1 month' end;
-  v_local := p_event.starts_at at time zone v_tz;
-  if p_at <= p_event.starts_at then
-    v_k := 0;
-  elsif p_event.repeat = 'weekly' then
-    v_k := floor(extract(epoch from (p_at at time zone v_tz) - v_local) / 604800)::integer;
-  else
-    v_k := (extract(year from age(p_at at time zone v_tz, v_local)) * 12
-            + extract(month from age(p_at at time zone v_tz, v_local)))::integer;
-  end if;
-  -- The run that started at or before p_at, else the one after it.
-  for i in greatest(v_k - 1, 0) .. v_k + 1 loop
-    v_s := (v_local + i * v_step) at time zone v_tz;
-    exit when p_event.repeat_until is not null and v_s >= p_event.repeat_until;
-    if v_s <= p_at and p_at < v_s + v_len then
-      return query select v_s, v_s + v_len, true;
-      return;
-    elsif v_s > p_at then
-      return query select v_s, v_s + v_len, false;
-      return;
+
+  if p_event.repeat in ('weekly', 'monthly') then
+    v_step  := case p_event.repeat when 'weekly' then interval '7 days' else interval '1 month' end;
+    v_local := p_event.starts_at at time zone v_tz;
+    -- Start a run early so one still going at p_from is included.
+    if p_from - v_len <= p_event.starts_at then
+      v_k := 0;
+    elsif p_event.repeat = 'weekly' then
+      v_k := greatest(floor(extract(epoch from ((p_from - v_len) at time zone v_tz) - v_local) / 604800)::integer - 1, 0);
+    else
+      v_k := greatest((extract(year from age((p_from - v_len) at time zone v_tz, v_local)) * 12
+                       + extract(month from age((p_from - v_len) at time zone v_tz, v_local)))::integer - 1, 0);
     end if;
+    for i in 0 .. 600 loop
+      v_s := (v_local + (v_k + i) * v_step) at time zone v_tz;
+      exit when v_s >= p_to or (p_event.repeat_until is not null and v_s >= p_event.repeat_until);
+      v_e := v_s + v_len;
+      if v_e > p_from then
+        v_skip := public.bonus_event_run_skipped(p_event.id, v_s);
+        if p_with_skipped or not v_skip then
+          return query select v_s, v_e, v_skip;
+        end if;
+      end if;
+    end loop;
+    return;
+  end if;
+
+  -- Monthly patterns: walk the months from the one before p_from.
+  v_month := date_trunc('month', p_from at time zone v_tz) - interval '1 month';
+  for i in 0 .. 600 loop
+    if p_event.repeat = 'month_days' then
+      if p_event.repeat_from > 0 then
+        v_s := (v_month + (p_event.repeat_from - 1) * interval '1 day') at time zone v_tz;
+        v_e := (v_month + p_event.repeat_to * interval '1 day') at time zone v_tz;
+      else
+        v_s := (v_month + interval '1 month' + p_event.repeat_from * interval '1 day') at time zone v_tz;
+        v_e := (v_month + interval '1 month' + (p_event.repeat_to + 1) * interval '1 day') at time zone v_tz;
+      end if;
+    else
+      -- The Nth Saturday (or the last), through Sunday.
+      if p_event.repeat_week > 0 then
+        v_day := v_month + ((6 - extract(dow from v_month)::integer + 7) % 7
+                            + 7 * (p_event.repeat_week - 1)) * interval '1 day';
+      else
+        v_day := v_month + interval '1 month' - interval '1 day';
+        v_day := v_day - ((extract(dow from v_day)::integer + 1) % 7) * interval '1 day';
+      end if;
+      v_s := v_day at time zone v_tz;
+      v_e := (v_day + interval '2 days') at time zone v_tz;
+    end if;
+    exit when v_s >= p_to or (p_event.repeat_until is not null and v_s >= p_event.repeat_until);
+    if v_e > p_from and v_s >= p_event.starts_at then
+      v_skip := public.bonus_event_run_skipped(p_event.id, v_s);
+      if p_with_skipped or not v_skip then
+        return query select v_s, v_e, v_skip;
+      end if;
+    end if;
+    v_month := v_month + interval '1 month';
   end loop;
 end;
+$$;
+revoke execute on function public.bonus_event_runs(public.bonus_events, timestamptz, timestamptz, boolean) from public, anon, authenticated;
+
+-- The run of an event that's live at p_at, or else its next run (for the
+-- "coming up" list): nothing once a one-off has ended or a repeat has no run
+-- left in the next two months (past its repeat_until, or every run skipped).
+create or replace function public.bonus_event_occurrence(p_event public.bonus_events, p_at timestamptz)
+returns table (occ_start timestamptz, occ_end timestamptz, live boolean)
+language sql
+stable
+set search_path = public
+as $$
+  select r.run_start, r.run_end, r.run_start <= p_at
+    from public.bonus_event_runs(p_event, p_at,
+           case when p_event.repeat is null then 'infinity'::timestamptz else p_at + interval '62 days' end) r
+   order by r.run_start
+   limit 1;
 $$;
 revoke execute on function public.bonus_event_occurrence(public.bonus_events, timestamptz) from public, anon, authenticated;
 
@@ -20967,7 +21091,7 @@ begin
   return coalesce((
     select jsonb_agg(jsonb_build_object(
              'id', e.id, 'name', e.name, 'description', e.description,
-             'starts_at', o.occ_start, 'ends_at', o.occ_end, 'repeat', e.repeat,
+             'starts_at', o.occ_start, 'ends_at', o.occ_end, 'repeat', e.repeat, 'prep_tip', e.prep_tip,
              'bounty_mult', e.bounty_mult, 'session_mult', e.session_mult,
              'rewards_mult', e.rewards_mult, 'start_discount_pct', e.start_discount_pct,
              'genres', to_jsonb(e.genres), 'platforms', to_jsonb(e.platforms),
@@ -21049,19 +21173,21 @@ declare
   v_tz text := public.player_tz(p_user);
   r    record;
 begin
-  if not public.economy_enabled(p_user) then return; end if;
   for r in
     select b as ev, o.occ_start, o.occ_end, o.live,
+           (b.bounty_mult > 1 or b.session_mult > 1 or b.rewards_mult > 1 or b.start_discount_pct > 0) as boosted,
            'bonus:' || b.id || ':' || floor(extract(epoch from o.occ_start))::bigint as link
       from public.bonus_events b
       cross join lateral public.bonus_event_occurrence(b, now()) o
      where b.archived_at is null and (o.live or o.occ_start <= now() + interval '2 days')
   loop
+    continue when r.boosted and not public.economy_enabled(p_user);
     continue when exists (select 1 from public.notifications n where n.user_id = p_user and n.link = r.link);
     continue when not public.bonus_event_relevant(r.ev, p_user);
     insert into public.notifications (user_id, type, title, body, link)
     values (p_user, 'bonus_event',
-            case when r.live then 'Coin event: ' else 'Coming up: ' end || (r.ev).name,
+            case when not r.live then 'Coming up: ' when r.boosted then 'Coin event: ' else 'Now on: ' end
+              || (r.ev).name,
             concat_ws(' ', nullif(btrim((r.ev).description), ''),
                       case when r.live
                            then 'Ends ' || to_char(r.occ_end at time zone v_tz, 'FMDay, FMMonth FMDD') || '.'
@@ -21072,47 +21198,77 @@ end;
 $$;
 revoke execute on function public.bonus_event_notices(uuid) from public, anon, authenticated;
 
--- Admin (economy.events): create (p_id null) or edit an event; audited.
+-- Admin (economy.events): create (p_id null) or edit an event from one jsonb
+-- of its fields; audited. A monthly pattern's starts_at is when the series may
+-- begin; its first run (by the rule) becomes starts_at..ends_at.
 drop function if exists public.admin_save_bonus_event(uuid, text, text, timestamptz, timestamptz, numeric, numeric, numeric, integer, text[], text[], boolean, numeric, numeric, integer, text, timestamptz);
-create or replace function public.admin_save_bonus_event(
-  p_id uuid, p_name text, p_description text, p_starts_at timestamptz, p_ends_at timestamptz,
-  p_bounty_mult numeric, p_session_mult numeric, p_rewards_mult numeric, p_start_discount_pct integer,
-  p_genres text[], p_platforms text[], p_off_main_platform boolean,
-  p_min_hours numeric, p_max_hours numeric, p_player_cap integer,
-  p_repeat text default null, p_repeat_until timestamptz default null,
-  p_discount_limit integer default null
-)
+drop function if exists public.admin_save_bonus_event(uuid, text, text, timestamptz, timestamptz, numeric, numeric, numeric, integer, text[], text[], boolean, numeric, numeric, integer, text, timestamptz, integer);
+create or replace function public.admin_save_bonus_event(p_id uuid, p_event jsonb)
 returns uuid
 language plpgsql security definer set search_path = public
 as $$
 declare
   v_old public.bonus_events%rowtype;
   v_new public.bonus_events%rowtype;
+  v_row public.bonus_events%rowtype;
+  v_s   timestamptz;
+  v_e   timestamptz;
 begin
   if not public.has_permission('economy.events') then raise exception 'Not authorized'; end if;
+  v_row.name               := btrim(p_event->>'name');
+  v_row.description        := coalesce(p_event->>'description', '');
+  v_row.prep_tip           := coalesce(btrim(p_event->>'prep_tip'), '');
+  v_row.starts_at          := (p_event->>'starts_at')::timestamptz;
+  v_row.ends_at            := (p_event->>'ends_at')::timestamptz;
+  v_row.bounty_mult        := coalesce((p_event->>'bounty_mult')::numeric, 1);
+  v_row.session_mult       := coalesce((p_event->>'session_mult')::numeric, 1);
+  v_row.rewards_mult       := coalesce((p_event->>'rewards_mult')::numeric, 1);
+  v_row.start_discount_pct := coalesce((p_event->>'start_discount_pct')::integer, 0);
+  v_row.discount_limit     := (p_event->>'discount_limit')::integer;
+  v_row.genres             := coalesce(array(select jsonb_array_elements_text(coalesce(p_event->'genres', '[]'))), '{}');
+  v_row.platforms          := coalesce(array(select jsonb_array_elements_text(coalesce(p_event->'platforms', '[]'))), '{}');
+  v_row.off_main_platform  := coalesce((p_event->>'off_main_platform')::boolean, false);
+  v_row.min_hours          := (p_event->>'min_hours')::numeric;
+  v_row.max_hours          := (p_event->>'max_hours')::numeric;
+  v_row.player_cap         := (p_event->>'player_cap')::integer;
+  v_row.repeat             := nullif(p_event->>'repeat', '');
+  v_row.repeat_until       := (p_event->>'repeat_until')::timestamptz;
+  v_row.repeat_from        := (p_event->>'repeat_from')::integer;
+  v_row.repeat_to          := (p_event->>'repeat_to')::integer;
+  v_row.repeat_week        := (p_event->>'repeat_week')::integer;
+
+  if v_row.repeat in ('month_days', 'month_weekend') then
+    select r.run_start, r.run_end into v_s, v_e
+      from public.bonus_event_runs(v_row, v_row.starts_at, v_row.starts_at + interval '62 days', true) r
+     order by r.run_start limit 1;
+    if v_s is null then raise exception 'No run in the two months after the start date'; end if;
+    v_row.starts_at := v_s;
+    v_row.ends_at   := v_e;
+  end if;
+
   if p_id is null then
     insert into public.bonus_events
-      (name, description, starts_at, ends_at, bounty_mult, session_mult, rewards_mult, start_discount_pct,
-       genres, platforms, off_main_platform, min_hours, max_hours, player_cap, repeat, repeat_until,
-       discount_limit, created_by)
-    values (btrim(p_name), coalesce(p_description, ''), p_starts_at, p_ends_at,
-            coalesce(p_bounty_mult, 1), coalesce(p_session_mult, 1), coalesce(p_rewards_mult, 1),
-            coalesce(p_start_discount_pct, 0), coalesce(p_genres, '{}'), coalesce(p_platforms, '{}'),
-            coalesce(p_off_main_platform, false), p_min_hours, p_max_hours, p_player_cap,
-            nullif(p_repeat, ''), p_repeat_until, p_discount_limit, auth.uid())
+      (name, description, prep_tip, starts_at, ends_at, bounty_mult, session_mult, rewards_mult,
+       start_discount_pct, discount_limit, genres, platforms, off_main_platform, min_hours, max_hours,
+       player_cap, repeat, repeat_until, repeat_from, repeat_to, repeat_week, created_by)
+    values (v_row.name, v_row.description, v_row.prep_tip, v_row.starts_at, v_row.ends_at,
+            v_row.bounty_mult, v_row.session_mult, v_row.rewards_mult, v_row.start_discount_pct,
+            v_row.discount_limit, v_row.genres, v_row.platforms, v_row.off_main_platform,
+            v_row.min_hours, v_row.max_hours, v_row.player_cap, v_row.repeat, v_row.repeat_until,
+            v_row.repeat_from, v_row.repeat_to, v_row.repeat_week, auth.uid())
     returning * into v_new;
   else
     select * into v_old from public.bonus_events where id = p_id for update;
     if not found then raise exception 'Event not found'; end if;
     update public.bonus_events
-       set name = btrim(p_name), description = coalesce(p_description, ''), starts_at = p_starts_at,
-           ends_at = p_ends_at, bounty_mult = coalesce(p_bounty_mult, 1), session_mult = coalesce(p_session_mult, 1),
-           rewards_mult = coalesce(p_rewards_mult, 1), start_discount_pct = coalesce(p_start_discount_pct, 0),
-           genres = coalesce(p_genres, '{}'), platforms = coalesce(p_platforms, '{}'),
-           off_main_platform = coalesce(p_off_main_platform, false), min_hours = p_min_hours,
-           max_hours = p_max_hours, player_cap = p_player_cap,
-           repeat = nullif(p_repeat, ''), repeat_until = p_repeat_until,
-           discount_limit = p_discount_limit, updated_at = now()
+       set name = v_row.name, description = v_row.description, prep_tip = v_row.prep_tip,
+           starts_at = v_row.starts_at, ends_at = v_row.ends_at, bounty_mult = v_row.bounty_mult,
+           session_mult = v_row.session_mult, rewards_mult = v_row.rewards_mult,
+           start_discount_pct = v_row.start_discount_pct, discount_limit = v_row.discount_limit,
+           genres = v_row.genres, platforms = v_row.platforms, off_main_platform = v_row.off_main_platform,
+           min_hours = v_row.min_hours, max_hours = v_row.max_hours, player_cap = v_row.player_cap,
+           repeat = v_row.repeat, repeat_until = v_row.repeat_until, repeat_from = v_row.repeat_from,
+           repeat_to = v_row.repeat_to, repeat_week = v_row.repeat_week, updated_at = now()
      where id = p_id
     returning * into v_new;
   end if;
@@ -21120,6 +21276,31 @@ begin
   values (auth.uid(), 'bonus_event', v_new.id::text, case when p_id is null then 'create' else 'update' end,
           case when p_id is null then null else to_jsonb(v_old) end, to_jsonb(v_new));
   return v_new.id;
+end;
+$$;
+
+-- Admin (economy.events): skip one run of a repeating event (a holiday special
+-- in its place), or bring it back; audited.
+create or replace function public.admin_skip_bonus_event_run(p_event uuid, p_run_start timestamptz, p_skip boolean default true)
+returns void
+language plpgsql security definer set search_path = public
+as $$
+begin
+  if not public.has_permission('economy.events') then raise exception 'Not authorized'; end if;
+  if not exists (select 1 from public.bonus_events where id = p_event and repeat is not null) then
+    raise exception 'Not a repeating event';
+  end if;
+  if p_skip then
+    insert into public.bonus_event_skips (event_id, run_start, created_by)
+    values (p_event, p_run_start, auth.uid())
+    on conflict (event_id, run_start) where removed_at is null do nothing;
+  else
+    update public.bonus_event_skips set removed_at = now(), removed_by = auth.uid()
+     where event_id = p_event and run_start = p_run_start and removed_at is null;
+  end if;
+  insert into public.audit_events (actor_id, entity, entity_id, action, detail)
+  values (auth.uid(), 'bonus_event', p_event::text, case when p_skip then 'skip_run' else 'unskip_run' end,
+          jsonb_build_object('run_start', p_run_start));
 end;
 $$;
 
@@ -21147,7 +21328,8 @@ returns table (
   genres text[], platforms text[], off_main_platform boolean, min_hours numeric, max_hours numeric,
   player_cap integer, archived_at timestamptz, paid_coins bigint, players bigint,
   repeat text, repeat_until timestamptz, next_start timestamptz, next_end timestamptz, live boolean,
-  discount_limit integer
+  discount_limit integer, repeat_from integer, repeat_to integer, repeat_week integer, prep_tip text,
+  runs jsonb
 )
 language plpgsql security definer set search_path = public
 as $$
@@ -21160,23 +21342,102 @@ begin
          e.player_cap, e.archived_at,
          (select coalesce(sum(p.amount), 0) from public.bonus_event_payouts p where p.event_id = e.id),
          (select count(distinct p.user_id) from public.bonus_event_payouts p where p.event_id = e.id),
-         e.repeat, e.repeat_until, o.occ_start, o.occ_end, coalesce(o.live, false), e.discount_limit
+         e.repeat, e.repeat_until, o.occ_start, o.occ_end, coalesce(o.live, false), e.discount_limit,
+         e.repeat_from, e.repeat_to, e.repeat_week, e.prep_tip,
+         case when e.repeat is null then '[]'::jsonb else coalesce((
+           select jsonb_agg(jsonb_build_object('start', r.run_start, 'end', r.run_end, 'skipped', r.skipped)
+                            order by r.run_start)
+             from (select * from public.bonus_event_runs(e, now(), now() + interval '150 days', true)
+                    order by run_start limit 4) r), '[]'::jsonb) end
     from public.bonus_events e
     left join lateral public.bonus_event_occurrence(e, now()) o on true
    order by e.starts_at desc;
 end;
 $$;
 
+-- The site calendar (owner, 2026-10-17): every event run and seasonal
+-- challenge overlapping [p_from, p_to), for every player (for_you says whether
+-- an event fits their games). Resets and a player's own dates (pre-orders,
+-- renewals) are worked out in the app.
+create or replace function public.calendar_feed(p_from timestamptz, p_to timestamptz)
+returns jsonb
+language plpgsql
+stable
+security definer set search_path = public
+as $$
+declare v_me uuid := auth.uid();
+begin
+  if v_me is null then raise exception 'Not authenticated'; end if;
+  if p_to <= p_from or p_to - p_from > interval '400 days' then raise exception 'Bad range'; end if;
+  return coalesce((
+    select jsonb_agg(x.item order by x.at)
+      from (
+        select r.run_start as at, jsonb_build_object(
+                 'kind', 'event', 'id', e.id, 'name', e.name, 'description', e.description,
+                 'prep_tip', e.prep_tip, 'starts_at', r.run_start, 'ends_at', r.run_end, 'repeat', e.repeat,
+                 'bounty_mult', e.bounty_mult, 'session_mult', e.session_mult,
+                 'rewards_mult', e.rewards_mult, 'start_discount_pct', e.start_discount_pct,
+                 'discount_limit', e.discount_limit,
+                 'genres', to_jsonb(e.genres), 'platforms', to_jsonb(e.platforms),
+                 'off_main_platform', e.off_main_platform, 'min_hours', e.min_hours, 'max_hours', e.max_hours,
+                 'for_you', public.bonus_event_relevant(e, v_me)) as item
+          from public.bonus_events e
+          cross join lateral public.bonus_event_runs(e, p_from, p_to) r
+         where e.archived_at is null
+        union all
+        select c.starts_at, jsonb_build_object(
+                 'kind', 'challenge', 'id', c.id, 'name', c.name, 'description', c.description,
+                 'starts_at', c.starts_at, 'ends_at', c.ends_at, 'reward', c.reward)
+          from public.seasonal_challenges c
+         where c.archived_at is null and c.ends_at > p_from and c.starts_at < p_to
+      ) x), '[]'::jsonb);
+end;
+$$;
+
+-- The monthly schedule (owner, 2026-10-17): Fresh Start Week (1st-7th),
+-- Bounty Weekend (3rd weekend) and Collector's Week (last 7 days), with the
+-- 2nd week left quiet; modest boosts, from November 2026. Seeded once; admins
+-- edit, skip runs or archive them like any event.
+insert into public.bonus_events
+  (id, name, description, prep_tip, starts_at, ends_at, start_discount_pct, discount_limit,
+   repeat, repeat_from, repeat_to)
+values ('00000000-0000-4000-8000-0000000ee001', 'Fresh Start Week',
+        '25% off your first 2 game starts of the month.',
+        'Free up a Now Playing slot before the 1st.',
+        '2026-11-01 00:00 America/New_York', '2026-11-08 00:00 America/New_York', 25, 2,
+        'month_days', 1, 7)
+on conflict (id) do nothing;
+insert into public.bonus_events
+  (id, name, description, prep_tip, starts_at, ends_at, bounty_mult, repeat, repeat_week)
+values ('00000000-0000-4000-8000-0000000ee002', 'Bounty Weekend',
+        'Finish bounties pay ×1.5 all weekend.',
+        'Get a game close to done and keep your time logged.',
+        '2026-11-21 00:00 America/New_York', '2026-11-23 00:00 America/New_York', 1.5,
+        'month_weekend', 3)
+on conflict (id) do nothing;
+insert into public.bonus_events
+  (id, name, description, prep_tip, starts_at, ends_at, rewards_mult, repeat, repeat_from, repeat_to)
+values ('00000000-0000-4000-8000-0000000ee003', 'Collector''s Week',
+        'Goal and medal rewards pay ×1.5 when you claim them.',
+        'Finish your monthly goals, and claim your rewards this week.',
+        '2026-11-24 00:00 America/New_York', '2026-12-01 00:00 America/New_York', 1.5,
+        'month_days', -7, -1)
+on conflict (id) do nothing;
+
 revoke execute on function public.preview_start_price(uuid, integer) from public, anon;
 revoke execute on function public.list_bonus_events() from public, anon;
 revoke execute on function public.my_bonus_event_perks() from public, anon;
 grant execute on function public.my_bonus_event_perks() to authenticated;
-revoke execute on function public.admin_save_bonus_event(uuid, text, text, timestamptz, timestamptz, numeric, numeric, numeric, integer, text[], text[], boolean, numeric, numeric, integer, text, timestamptz, integer) from public, anon;
+revoke execute on function public.admin_save_bonus_event(uuid, jsonb) from public, anon;
+revoke execute on function public.admin_skip_bonus_event_run(uuid, timestamptz, boolean) from public, anon;
+revoke execute on function public.calendar_feed(timestamptz, timestamptz) from public, anon;
 revoke execute on function public.admin_archive_bonus_event(uuid, boolean) from public, anon;
 revoke execute on function public.admin_list_bonus_events() from public, anon;
 grant execute on function public.preview_start_price(uuid, integer) to authenticated;
 grant execute on function public.list_bonus_events() to authenticated;
-grant execute on function public.admin_save_bonus_event(uuid, text, text, timestamptz, timestamptz, numeric, numeric, numeric, integer, text[], text[], boolean, numeric, numeric, integer, text, timestamptz, integer) to authenticated;
+grant execute on function public.admin_save_bonus_event(uuid, jsonb) to authenticated;
+grant execute on function public.admin_skip_bonus_event_run(uuid, timestamptz, boolean) to authenticated;
+grant execute on function public.calendar_feed(timestamptz, timestamptz) to authenticated;
 grant execute on function public.admin_archive_bonus_event(uuid, boolean) to authenticated;
 grant execute on function public.admin_list_bonus_events() to authenticated;
 

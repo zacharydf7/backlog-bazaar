@@ -92,6 +92,16 @@ function tzOffsetMs(date: Date, tz: string): number {
   return wall - instantSec;
 }
 
+/** The instant a wall-clock time (month 1-12) happens in `tz`. The offset is
+ *  read at that moment, then once more in case the first guess sat on the
+ *  other side of a clock change. */
+export function wallTimeInTz(year: number, month: number, day: number, hour: number, tz: string): number {
+  const zone = safeTz(tz);
+  const wall = Date.UTC(year, month - 1, day, hour);
+  const guess = wall - tzOffsetMs(new Date(wall), zone);
+  return wall - tzOffsetMs(new Date(guess), zone);
+}
+
 /** Start of the current weekly Rotation period: the most recent reset boundary
  *  (configured weekday + hour, in the configured tz) that is not in the future. */
 export function rotationPeriodStart(now: Date, cfg: RotationResetConfig): Date {

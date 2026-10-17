@@ -14,6 +14,7 @@ function ev(over: Partial<BonusEvent> = {}): BonusEvent {
     startsAt: Date.now() - H,
     endsAt: Date.now() + 30 * H,
     repeat: null,
+    prepTip: "",
     bountyMult: 2,
     sessionMult: 1,
     rewardsMult: 1,

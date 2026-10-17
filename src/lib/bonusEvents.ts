@@ -1,8 +1,10 @@
 // Coin events: admin-run, time-limited boosts (a double bounty weekend, bonus
 // Daily Session coins, boosted challenge and medal rewards, cheaper starts),
 // optionally aimed at genres, lengths, named platforms or "off your main
-// platform", run once or repeated weekly/monthly. The server applies every
-// boost (see the Coin events section of
+// platform", run once or on a schedule (weekly, monthly, or a monthly pattern
+// like the 1st to 7th or the 3rd weekend). An event with no boost is a
+// calendar note, like a holiday week. The server applies every boost (see the
+// Coin events section of
 // supabase/schema.sql); this module coerces the event lists and words them
 // for the board banner and the admin page, unit-tested without React.
 
@@ -23,7 +25,25 @@ export interface BonusEventBoosts {
   discountLimit: number | null;
 }
 
-export type BonusEventRepeat = "weekly" | "monthly";
+export type BonusEventRepeat = "weekly" | "monthly" | "month_days" | "month_weekend";
+
+/** How an event repeats. month_days runs from day repeatFrom to repeatTo of
+ *  each month (negative counts back from the month's end: -7..-1 is the last
+ *  7 days); month_weekend runs the repeatWeek-th weekend (-1 = last). */
+export interface BonusEventSchedule {
+  repeat: BonusEventRepeat | null;
+  repeatUntil: number | null;
+  repeatFrom: number | null;
+  repeatTo: number | null;
+  repeatWeek: number | null;
+}
+
+/** One run of a repeating event, as the admin list shows the next few. */
+export interface BonusEventRun {
+  start: number;
+  end: number;
+  skipped: boolean;
+}
 
 /** A running or upcoming event, as the player sees it. For a repeating
  *  event, the times are this run's (or the next run's). */
@@ -34,6 +54,8 @@ export interface BonusEvent extends BonusEventBoosts, BonusEventTargets {
   startsAt: number;
   endsAt: number;
   repeat: BonusEventRepeat | null;
+  /** How to get ready for it ("" when none). */
+  prepTip: string;
   playerCap: number | null;
   capUsed: number;
   /** Discounted starts used this run. */
@@ -43,14 +65,15 @@ export interface BonusEvent extends BonusEventBoosts, BonusEventTargets {
 /** An event as the admin list shows it (archived included). startsAt/endsAt
  *  are the first run; nextStart/nextEnd the running or next one (null once
  *  it's over for good). */
-export interface AdminBonusEvent extends BonusEventBoosts, BonusEventTargets {
+export interface AdminBonusEvent extends BonusEventBoosts, BonusEventTargets, BonusEventSchedule {
   id: string;
   name: string;
   description: string;
+  prepTip: string;
   startsAt: number;
   endsAt: number;
-  repeat: BonusEventRepeat | null;
-  repeatUntil: number | null;
+  /** The next few runs of a repeating event, skipped ones included. */
+  runs: BonusEventRun[];
   nextStart: number | null;
   nextEnd: number | null;
   live: boolean;
@@ -61,14 +84,14 @@ export interface AdminBonusEvent extends BonusEventBoosts, BonusEventTargets {
 }
 
 /** The admin form's values; `id` null creates a new event. */
-export interface BonusEventDraft extends BonusEventBoosts, BonusEventTargets {
+export interface BonusEventDraft extends BonusEventBoosts, BonusEventTargets, BonusEventSchedule {
   id: string | null;
   name: string;
   description: string;
+  prepTip: string;
+  /** For a monthly pattern, when the series may begin (the end is worked out). */
   startsAt: number;
   endsAt: number;
-  repeat: BonusEventRepeat | null;
-  repeatUntil: number | null;
   playerCap: number | null;
 }
 
@@ -98,7 +121,7 @@ function rows(v: unknown): Record<string, unknown>[] {
 }
 
 function repeatOf(v: unknown): BonusEventRepeat | null {
-  return v === "weekly" || v === "monthly" ? v : null;
+  return v === "weekly" || v === "monthly" || v === "month_days" || v === "month_weekend" ? v : null;
 }
 
 function common(r: Record<string, unknown>) {
@@ -109,6 +132,7 @@ function common(r: Record<string, unknown>) {
     startsAt: time(r.starts_at) ?? 0,
     endsAt: time(r.ends_at) ?? 0,
     repeat: repeatOf(r.repeat),
+    prepTip: typeof r.prep_tip === "string" ? r.prep_tip : "",
     bountyMult: num(r.bounty_mult, 1),
     sessionMult: num(r.session_mult, 1),
     rewardsMult: num(r.rewards_mult, 1),
@@ -134,6 +158,12 @@ export function coerceAdminBonusEvents(raw: unknown): AdminBonusEvent[] {
     .map((r) => ({
       ...common(r),
       repeatUntil: time(r.repeat_until),
+      repeatFrom: maybeNum(r.repeat_from),
+      repeatTo: maybeNum(r.repeat_to),
+      repeatWeek: maybeNum(r.repeat_week),
+      runs: rows(r.runs)
+        .map((x) => ({ start: time(x.start) ?? 0, end: time(x.end) ?? 0, skipped: x.skipped === true }))
+        .filter((x) => x.start > 0),
       nextStart: time(r.next_start),
       nextEnd: time(r.next_end),
       live: r.live === true,
@@ -174,6 +204,11 @@ export function targetLabel(e: BonusEventTargets): string | null {
   return parts.length > 0 ? parts.join(" · ") : null;
 }
 
+/** Does the event boost anything? (One without boosts is a calendar note.) */
+export function hasBoost(e: BonusEventBoosts): boolean {
+  return e.bountyMult > 1 || e.sessionMult > 1 || e.rewardsMult > 1 || e.startDiscountPct > 0;
+}
+
 /** Running now (false while it has yet to start). */
 export function eventIsLive(e: Pick<BonusEvent, "startsAt" | "endsAt">, now: number): boolean {
   return e.startsAt <= now && now < e.endsAt;
@@ -187,18 +222,31 @@ export function bonusEventDraftProblem(d: BonusEventDraft): string | null {
   if (!d.name.trim()) return "Give the event a name.";
   if (d.name.trim().length > 80) return "Keep the name to 80 characters.";
   if (d.description.length > 500) return "Keep the description to 500 characters.";
-  if (!Number.isFinite(d.startsAt) || !Number.isFinite(d.endsAt)) return "Pick a start and an end.";
-  if (d.endsAt <= d.startsAt) return "The end must come after the start.";
+  if (d.prepTip.length > 200) return "Keep the prep tip to 200 characters.";
+  const pattern = d.repeat === "month_days" || d.repeat === "month_weekend";
+  if (!Number.isFinite(d.startsAt)) return pattern ? "Pick when the schedule starts." : "Pick a start and an end.";
+  if (!pattern) {
+    if (!Number.isFinite(d.endsAt)) return "Pick a start and an end.";
+    if (d.endsAt <= d.startsAt) return "The end must come after the start.";
+  }
   if (d.repeat === "weekly" && d.endsAt - d.startsAt > 7 * DAY) return "A weekly event can run at most 7 days.";
   if (d.repeat === "monthly" && d.endsAt - d.startsAt > 28 * DAY) return "A monthly event can run at most 28 days.";
+  if (d.repeat === "month_days") {
+    const f = d.repeatFrom;
+    const t = d.repeatTo;
+    const ok =
+      f != null && t != null && Number.isInteger(f) && Number.isInteger(t) &&
+      ((f >= 1 && f <= 28 && t >= f && t <= 28) || (f >= -28 && f <= -1 && t >= f && t <= -1));
+    if (!ok) return "Pick days 1 to 28 of the month, or a number of days at the end.";
+  }
+  if (d.repeat === "month_weekend" && ![1, 2, 3, 4, -1].includes(d.repeatWeek ?? 0)) {
+    return "Pick which weekend of the month.";
+  }
   if (d.repeat && d.repeatUntil != null && d.repeatUntil <= d.startsAt) return "Stop repeating after the first run starts.";
   for (const m of [d.bountyMult, d.sessionMult, d.rewardsMult]) {
     if (!(m >= 1 && m <= 5)) return "Multipliers go from ×1 (off) to ×5.";
   }
   if (!(d.startDiscountPct >= 0 && d.startDiscountPct <= 90)) return "The start discount goes from 0% to 90%.";
-  if (d.bountyMult <= 1 && d.sessionMult <= 1 && d.rewardsMult <= 1 && d.startDiscountPct <= 0) {
-    return "Boost at least one thing.";
-  }
   if (d.minHours != null && d.maxHours != null && d.minHours > d.maxHours) return "The shortest length is longer than the longest.";
   if (d.playerCap != null && !(d.playerCap > 0)) return "A cap must be more than 0 (or leave it empty).";
   if (d.discountLimit != null && !(Number.isInteger(d.discountLimit) && d.discountLimit > 0)) {
@@ -219,12 +267,46 @@ export function eventWhenLabel(e: Pick<BonusEvent, "startsAt" | "endsAt">, now: 
   return `${live ? "Ends" : "Starts"} in ${spanUntil(live ? e.endsAt : e.startsAt, now)}`;
 }
 
-/** "Every week until Dec 31" / "Every month" / null for a one-off. */
-export function repeatLabel(repeat: BonusEventRepeat | null, repeatUntil: number | null = null): string | null {
-  if (!repeat) return null;
-  const every = repeat === "weekly" ? "Every week" : "Every month";
-  if (repeatUntil == null) return every;
-  return `${every} until ${new Date(repeatUntil).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}`;
+/** "1st", "2nd", "3rd", "21st"... */
+export function ordinal(n: number): string {
+  const tens = n % 100;
+  const suffix = tens >= 11 && tens <= 13 ? "th" : ["th", "st", "nd", "rd"][n % 10] ?? "th";
+  return `${n}${suffix}`;
+}
+
+/** "Every week until Dec 31", "The 1st to 7th of every month", "The 3rd
+ *  weekend of every month", "The last 7 days of every month"; null for a
+ *  one-off. */
+export function repeatLabel(s: BonusEventSchedule): string | null {
+  let every: string;
+  switch (s.repeat) {
+    case "weekly":
+      every = "Every week";
+      break;
+    case "monthly":
+      every = "Every month";
+      break;
+    case "month_days": {
+      const f = s.repeatFrom ?? 1;
+      const t = s.repeatTo ?? f;
+      every =
+        f < 0
+          ? t === -1
+            ? `The last ${-f} ${f === -1 ? "day" : "days"} of every month`
+            : `Days ${-f} to ${-t} before the end of every month`
+          : f === t
+            ? `The ${ordinal(f)} of every month`
+            : `The ${ordinal(f)} to ${ordinal(t)} of every month`;
+      break;
+    }
+    case "month_weekend":
+      every = s.repeatWeek === -1 ? "The last weekend of every month" : `The ${ordinal(s.repeatWeek ?? 1)} weekend of every month`;
+      break;
+    default:
+      return null;
+  }
+  if (s.repeatUntil == null) return every;
+  return `${every} until ${new Date(s.repeatUntil).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}`;
 }
 
 /** What running events do for one of your games (my_bonus_event_perks). */

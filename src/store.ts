@@ -174,6 +174,7 @@ import { coerceAchievements, earnToastMessage } from "./lib/achievements";
 import { trackEvent } from "./lib/appEvents";
 import { coerceWeeklyRecap, type WeeklyRecap } from "./lib/weeklyRecap";
 import { browserTimeZone } from "./lib/timeZone";
+import { coerceCalendarFeed, type CalendarFeedItem } from "./lib/calendar";
 import {
   coerceAdminBonusEvents,
   coerceBonusEvents,
@@ -1697,6 +1698,10 @@ interface BazaarState {
   saveBonusEvent: (draft: BonusEventDraft) => Promise<boolean>;
   // Admin: archive or restore a coin event.
   archiveBonusEvent: (id: string, archived: boolean) => Promise<boolean>;
+  // Admin: skip one run of a repeating event, or bring it back.
+  skipBonusEventRun: (id: string, runStart: number, skip: boolean) => Promise<boolean>;
+  // The site calendar's events and seasonal challenges between two times.
+  fetchCalendar: (from: number, to: number) => Promise<CalendarFeedItem[] | null>;
   // Admin (challenges.manage): every seasonal event, archived included.
   fetchSeasonalChallengesAdmin: () => Promise<AdminSeasonalChallenge[]>;
   // Admin: create (id null) or edit a seasonal event. Resolves true on success.
@@ -8497,26 +8502,35 @@ export const useStore = create<BazaarState>((set, get) => ({
 
   saveBonusEvent: async (d) => {
     if (!supabase || !get().cloud) return false;
+    const pattern = d.repeat === "month_days" || d.repeat === "month_weekend";
     const { error } = await supabase.rpc("admin_save_bonus_event", {
       p_id: d.id,
-      p_name: d.name.trim(),
-      p_description: d.description,
-      p_starts_at: new Date(d.startsAt).toISOString(),
-      p_ends_at: new Date(d.endsAt).toISOString(),
-      p_bounty_mult: d.bountyMult,
-      p_session_mult: d.sessionMult,
-      p_rewards_mult: d.rewardsMult,
-      p_start_discount_pct: d.startDiscountPct,
-      p_genres: d.genres,
-      p_platforms: d.platforms,
-      p_off_main_platform: d.offMainPlatform,
-      p_min_hours: d.minHours,
-      p_max_hours: d.maxHours,
-      p_player_cap: d.playerCap,
-      p_repeat: d.repeat,
-      p_repeat_until: d.repeat && d.repeatUntil != null ? new Date(d.repeatUntil).toISOString() : null,
-      // Only meaningful with a discount; cleared otherwise so it can't linger.
-      p_discount_limit: d.startDiscountPct > 0 ? d.discountLimit : null,
+      p_event: {
+        name: d.name.trim(),
+        description: d.description,
+        prep_tip: d.prepTip.trim(),
+        starts_at: new Date(d.startsAt).toISOString(),
+        // A monthly pattern's first run is worked out server-side; any later
+        // end keeps the row valid until then.
+        ends_at: new Date(pattern ? d.startsAt + 86_400_000 : d.endsAt).toISOString(),
+        bounty_mult: d.bountyMult,
+        session_mult: d.sessionMult,
+        rewards_mult: d.rewardsMult,
+        start_discount_pct: d.startDiscountPct,
+        // Only meaningful with a discount; cleared otherwise so it can't linger.
+        discount_limit: d.startDiscountPct > 0 ? d.discountLimit : null,
+        genres: d.genres,
+        platforms: d.platforms,
+        off_main_platform: d.offMainPlatform,
+        min_hours: d.minHours,
+        max_hours: d.maxHours,
+        player_cap: d.playerCap,
+        repeat: d.repeat,
+        repeat_until: d.repeat && d.repeatUntil != null ? new Date(d.repeatUntil).toISOString() : null,
+        repeat_from: d.repeat === "month_days" ? d.repeatFrom : null,
+        repeat_to: d.repeat === "month_days" ? d.repeatTo : null,
+        repeat_week: d.repeat === "month_weekend" ? d.repeatWeek : null,
+      },
     });
     if (error) {
       toast(error.message, AlertTriangle);
@@ -8525,6 +8539,32 @@ export const useStore = create<BazaarState>((set, get) => ({
     toast(d.id ? "Coin event updated" : "Coin event created", Sparkles);
     void get().fetchBonusEvents();
     return true;
+  },
+
+  skipBonusEventRun: async (id, runStart, skip) => {
+    if (!supabase || !get().cloud) return false;
+    const { error } = await supabase.rpc("admin_skip_bonus_event_run", {
+      p_event: id,
+      p_run_start: new Date(runStart).toISOString(),
+      p_skip: skip,
+    });
+    if (error) {
+      toast(error.message, AlertTriangle);
+      return false;
+    }
+    toast(skip ? "Run skipped" : "Run brought back", Sparkles);
+    void get().fetchBonusEvents();
+    return true;
+  },
+
+  fetchCalendar: async (from, to) => {
+    if (!supabase || !get().cloud) return null;
+    const { data, error } = await supabase.rpc("calendar_feed", {
+      p_from: new Date(from).toISOString(),
+      p_to: new Date(to).toISOString(),
+    });
+    if (error) return null;
+    return coerceCalendarFeed(data);
   },
 
   archiveBonusEvent: async (id, archived) => {

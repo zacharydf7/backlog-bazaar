@@ -82,6 +82,7 @@ import { MySubmissions } from "./components/MySubmissions";
 import { MasterLedger } from "./components/MasterLedger";
 import { PreorderStrip } from "./components/PreorderStrip";
 import { BonusEventStrip } from "./components/BonusEventStrip";
+import { CalendarPage } from "./components/CalendarPage";
 import { PactInviteStrip, PactJoinModal } from "./components/CoOpPact";
 import { LoanRequestStrip } from "./components/Loans";
 import { pinPreorderedCards } from "./lib/preorders";
@@ -1348,6 +1349,8 @@ export default function App() {
           <AdminPage view={view} onNavigate={navigate} />
         ) : view === "mysubmissions" ? (
           <MySubmissions initialId={mySubmissionId} />
+        ) : view === "calendar" ? (
+          <CalendarPage />
         ) : view === "whatsnew" ? (
           WHATS_NEW_ENABLED ? <ReleaseNotes onNavigate={navigate} /> : <AboutPage />
         ) : view === "about" ? (

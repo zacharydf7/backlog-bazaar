@@ -41,6 +41,20 @@ export interface Release {
 export const RELEASES: Release[] = [
   // ── October 2026 ──────────────────────────────────────────────────────────
   {
+    id: "2026-10-17-event-calendar",
+    date: "2026-10-17",
+    title: "An event calendar and a monthly rhythm",
+    summary: "Coin events now follow a set monthly pattern, and a new Calendar shows what's coming.",
+    tag: "feature",
+    items: [
+      "Fresh Start Week: 25% off your first two starts, the 1st to 7th.",
+      "Bounty Weekend: bigger finish bounties on the 3rd weekend.",
+      "Collector's Week: boosted goal and medal rewards in the month's last 7 days.",
+      "The Calendar adds goal resets, holidays, your pre-orders and renewals.",
+    ],
+    link: { label: "Open the Calendar", view: "calendar" },
+  },
+  {
     id: "2026-10-17-coin-events",
     date: "2026-10-17",
     title: "Coin events",

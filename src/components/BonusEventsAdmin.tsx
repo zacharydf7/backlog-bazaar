@@ -4,8 +4,10 @@ import {
   Pencil,
   Archive,
   ArchiveRestore,
-  Coins,
+  CalendarDays,
   Play,
+  SkipForward,
+  Undo2,
 } from "lucide-react";
 import { useStore } from "../store";
 import {
@@ -37,6 +39,11 @@ function blankDraft(): BonusEventDraft {
     endsAt: end.getTime(),
     repeat: null,
     repeatUntil: null,
+    // Used once a monthly pattern is picked: the 1st to 7th, or the 3rd weekend.
+    repeatFrom: 1,
+    repeatTo: 7,
+    repeatWeek: 3,
+    prepTip: "",
     bountyMult: 2,
     sessionMult: 1,
     rewardsMult: 1,
@@ -61,6 +68,10 @@ function toDraft(e: AdminBonusEvent): BonusEventDraft {
     endsAt: e.endsAt,
     repeat: e.repeat,
     repeatUntil: e.repeatUntil,
+    repeatFrom: e.repeatFrom ?? 1,
+    repeatTo: e.repeatTo ?? 7,
+    repeatWeek: e.repeatWeek ?? 3,
+    prepTip: e.prepTip,
     bountyMult: e.bountyMult,
     sessionMult: e.sessionMult,
     rewardsMult: e.rewardsMult,
@@ -134,7 +145,21 @@ function ChipPicker({
   );
 }
 
-/** Create or edit one coin event. */
+const WEEKENDS: { value: number; label: string }[] = [
+  { value: 1, label: "1st weekend" },
+  { value: 2, label: "2nd weekend" },
+  { value: 3, label: "3rd weekend" },
+  { value: 4, label: "4th weekend" },
+  { value: -1, label: "Last weekend" },
+];
+
+/** A whole number from a box, or null while it's empty or not a number. */
+function wholeNumber(v: string): number | null {
+  const n = Math.round(Number(v));
+  return v.trim() === "" || !Number.isFinite(n) ? null : n;
+}
+
+/** Create or edit one event. */
 function EventForm({
   initial,
   onDone,
@@ -150,6 +175,9 @@ function EventForm({
   const patch = (p: Partial<BonusEventDraft>) =>
     setDraft((d) => ({ ...d, ...p }));
   const problem = bonusEventDraftProblem(draft);
+  const pattern =
+    draft.repeat === "month_days" || draft.repeat === "month_weekend";
+  const fromEnd = draft.repeat === "month_days" && (draft.repeatFrom ?? 1) < 0;
 
   // Start right away, keeping the length the form already has.
   const startNow = () => {
@@ -184,7 +212,7 @@ function EventForm({
   return (
     <div className="flex flex-col gap-3 rounded-2xl border border-brand/40 bg-surface p-4 shadow-sm">
       <h3 className="font-display text-lg text-ink">
-        {draft.id ? "Edit coin event" : "New coin event"}
+        {draft.id ? "Edit event" : "New event"}
       </h3>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <Field label="Name">
@@ -208,9 +236,88 @@ function EventForm({
           >
             <option value="">Once</option>
             <option value="weekly">Every week</option>
-            <option value="monthly">Every month</option>
+            <option value="monthly">Every month, same dates</option>
+            <option value="month_days">Days of every month</option>
+            <option value="month_weekend">A weekend of every month</option>
           </select>
         </Field>
+        {draft.repeat === "month_days" && (
+          <div className="grid grid-cols-2 gap-3 sm:col-span-2 sm:grid-cols-3">
+            <Field label="Count days from">
+              <select
+                className={inputClass}
+                value={fromEnd ? "end" : "start"}
+                onChange={(e) =>
+                  patch(
+                    e.target.value === "end"
+                      ? { repeatFrom: -7, repeatTo: -1 }
+                      : { repeatFrom: 1, repeatTo: 7 },
+                  )
+                }
+              >
+                <option value="start">The 1st</option>
+                <option value="end">The month's end</option>
+              </select>
+            </Field>
+            {fromEnd ? (
+              <Field label="Last how many days">
+                <input
+                  type="number"
+                  min={1}
+                  max={28}
+                  className={inputClass}
+                  value={draft.repeatFrom == null ? "" : -draft.repeatFrom}
+                  onChange={(e) => {
+                    const n = wholeNumber(e.target.value);
+                    patch({ repeatFrom: n == null ? null : -n, repeatTo: -1 });
+                  }}
+                />
+              </Field>
+            ) : (
+              <>
+                <Field label="From day">
+                  <input
+                    type="number"
+                    min={1}
+                    max={28}
+                    className={inputClass}
+                    value={draft.repeatFrom ?? ""}
+                    onChange={(e) =>
+                      patch({ repeatFrom: wholeNumber(e.target.value) })
+                    }
+                  />
+                </Field>
+                <Field label="To day">
+                  <input
+                    type="number"
+                    min={1}
+                    max={28}
+                    className={inputClass}
+                    value={draft.repeatTo ?? ""}
+                    onChange={(e) =>
+                      patch({ repeatTo: wholeNumber(e.target.value) })
+                    }
+                  />
+                </Field>
+              </>
+            )}
+          </div>
+        )}
+        {draft.repeat === "month_weekend" && (
+          <Field label="Which weekend (Saturday and Sunday)">
+            <select
+              className={inputClass}
+              value={String(draft.repeatWeek ?? 3)}
+              onChange={(e) => patch({ repeatWeek: Number(e.target.value) })}
+            >
+              {WEEKENDS.map((w) => (
+                <option key={w.value} value={w.value}>
+                  {w.label}
+                </option>
+              ))}
+            </select>
+          </Field>
+        )}
         <div className="sm:col-span-2">
           <Field label="Description (optional)">
             <textarea
@@ -218,11 +325,30 @@ function EventForm({
               value={draft.description}
               maxLength={500}
               onChange={(e) => patch({ description: e.target.value })}
-              placeholder="Shown on the board banner and in the bell notice."
+              placeholder="Shown on the board banner, the calendar and in the bell notice."
             />
           </Field>
         </div>
-        <Field label={draft.repeat ? "First run starts" : "Starts"}>
+        <div className="sm:col-span-2">
+          <Field label="How to prepare (optional)">
+            <input
+              className={inputClass}
+              value={draft.prepTip}
+              maxLength={200}
+              onChange={(e) => patch({ prepTip: e.target.value })}
+              placeholder="Free up a Now Playing slot before it starts."
+            />
+          </Field>
+        </div>
+        <Field
+          label={
+            pattern
+              ? "Schedule starts"
+              : draft.repeat
+                ? "First run starts"
+                : "Starts"
+          }
+        >
           <div className="flex gap-1.5">
             <input
               type="datetime-local"
@@ -243,18 +369,20 @@ function EventForm({
             </button>
           </div>
         </Field>
-        <Field label={draft.repeat ? "First run ends" : "Ends"}>
-          <input
-            type="datetime-local"
-            className={inputClass}
-            value={toLocalDateTime(
-              Number.isFinite(draft.endsAt) ? draft.endsAt : null,
-            )}
-            onChange={(e) =>
-              patch({ endsAt: fromLocalDateTime(e.target.value) ?? NaN })
-            }
-          />
-        </Field>
+        {!pattern && (
+          <Field label={draft.repeat ? "First run ends" : "Ends"}>
+            <input
+              type="datetime-local"
+              className={inputClass}
+              value={toLocalDateTime(
+                Number.isFinite(draft.endsAt) ? draft.endsAt : null,
+              )}
+              onChange={(e) =>
+                patch({ endsAt: fromLocalDateTime(e.target.value) ?? NaN })
+              }
+            />
+          </Field>
+        )}
         {draft.repeat && (
           <Field label="Stop repeating after (optional)">
             <input
@@ -270,6 +398,10 @@ function EventForm({
       </div>
 
       <p className="text-sm font-semibold text-ink">Boosts</p>
+      <p className="-mt-2 text-xs text-muted">
+        Optional. With every boost off, the event is a calendar note, like a
+        holiday week, and pays nothing.
+      </p>
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         {multiplier("Finish bounty", draft.bountyMult, (v) =>
           patch({ bountyMult: v }),
@@ -385,9 +517,9 @@ function EventForm({
 
       <p className="text-xs text-muted">
         Times use {Intl.DateTimeFormat().resolvedOptions().timeZone}. Repeats
-        start at the same local site time each week or month, and the cap resets
-        each run. Players get one bell notice per run: a heads-up in the two
-        days before it starts, or a “now on” once it&apos;s running.
+        run in the site timezone, starting at midnight on pattern days, and the
+        cap resets each run. Players get one bell notice per run: a heads-up in
+        the two days before it starts, or a “now on” once it&apos;s running.
       </p>
       {problem && <p className="text-xs text-danger">{problem}</p>}
       <div className="flex flex-wrap justify-end gap-2">
@@ -435,6 +567,7 @@ function statusLabel(e: AdminBonusEvent): string {
 export function BonusEventsAdmin() {
   const fetchList = useStore((s) => s.fetchBonusEventsAdmin);
   const archive = useStore((s) => s.archiveBonusEvent);
+  const skipRun = useStore((s) => s.skipBonusEventRun);
   const [list, setList] = useState<AdminBonusEvent[] | null>(null);
   const [editing, setEditing] = useState<BonusEventDraft | null>(null);
 
@@ -452,11 +585,11 @@ export function BonusEventsAdmin() {
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <h3 className="inline-flex items-center gap-2 font-display text-lg text-ink">
-            <Coins size={18} className="text-accent" /> Coin events
+            <CalendarDays size={18} className="text-accent" /> Events
           </h3>
           <p className="text-sm text-muted">
-            Time-limited boosts: bigger bounties, Daily Session or reward coins,
-            or cheaper starts.
+            Coin boosts and calendar notes, once or on a schedule. Skip a run to
+            make room for a special.
           </p>
         </div>
         {!editing && (
@@ -485,13 +618,14 @@ export function BonusEventsAdmin() {
         <p className="text-sm text-muted">Loading…</p>
       ) : list.length === 0 ? (
         <p className="rounded-2xl border border-dashed border-line px-6 py-10 text-center text-sm text-muted">
-          No coin events yet.
+          No events yet.
         </p>
       ) : (
         <div className="flex flex-col gap-2">
           {list.map((e) => {
             const target = targetLabel(e);
-            const repeat = repeatLabel(e.repeat, e.repeatUntil);
+            const repeat = repeatLabel(e);
+            const boosts = boostLabels(e);
             return (
               <div
                 key={e.id}
@@ -514,12 +648,57 @@ export function BonusEventsAdmin() {
                     {repeat && ` · ${repeat}`}
                   </p>
                   <p className="text-xs text-muted">
-                    {boostLabels(e).join(" · ")}
+                    {boosts.length > 0
+                      ? boosts.join(" · ")
+                      : "Calendar note, no boosts"}
                     {target && ` · for ${target}`}
                     {e.playerCap != null && ` · cap ${e.playerCap}`} · paid{" "}
                     {e.paidCoins} coins to {e.players}{" "}
                     {e.players === 1 ? "player" : "players"}
                   </p>
+                  {!e.archivedAt && e.runs.length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {e.runs.map((r) => {
+                        const day = new Date(r.start).toLocaleDateString(
+                          undefined,
+                          { month: "short", day: "numeric" },
+                        );
+                        return (
+                          <button
+                            key={r.start}
+                            type="button"
+                            aria-label={
+                              r.skipped
+                                ? `Bring back the ${day} run`
+                                : `Skip the ${day} run`
+                            }
+                            title={
+                              r.skipped
+                                ? "Bring this run back"
+                                : "Skip this run"
+                            }
+                            onClick={async () => {
+                              if (await skipRun(e.id, r.start, !r.skipped))
+                                void reload();
+                            }}
+                            className={
+                              "inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] transition " +
+                              (r.skipped
+                                ? "border-dashed border-line text-subtle line-through hover:text-ink"
+                                : "border-line text-ink hover:border-brand")
+                            }
+                          >
+                            {r.skipped ? (
+                              <Undo2 size={11} />
+                            ) : (
+                              <SkipForward size={11} />
+                            )}
+                            {day}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
                 <div className="flex shrink-0 gap-1.5">
                   <button

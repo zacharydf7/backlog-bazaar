@@ -1,23 +1,26 @@
-import { Coins, PartyPopper } from "lucide-react";
+import { CalendarDays, Coins, Lightbulb, PartyPopper } from "lucide-react";
 import { useStore } from "../store";
 import { useNow } from "../lib/useNow";
-import { boostLabels, eventIsLive, eventWhenLabel, targetLabel } from "../lib/bonusEvents";
+import { routeToHash } from "../lib/route";
+import { boostLabels, eventIsLive, eventWhenLabel, hasBoost, targetLabel } from "../lib/bonusEvents";
 
-/** The coin event banner on the Bazaar and Now Playing boards: events running
- *  now and any starting within the week that apply to you (the server filters
- *  both), each with what it boosts, for which games, and when it ends or
- *  starts. Own boards only, and hidden with the economy off. */
+/** The event banner on the Bazaar and Now Playing boards: events running now
+ *  and any starting within the week that apply to you (the server filters
+ *  both), each with what it boosts, for which games, when it ends or starts,
+ *  and how to get ready, plus a way into the Calendar. Own boards only; coin
+ *  boosts hide with the economy off, holiday notes don't. */
 export function BonusEventStrip() {
   const events = useStore((s) => s.bonusEvents);
   const viewing = useStore((s) => s.viewing);
   const economyOn = useStore((s) => s.economyEnabled);
   const now = useNow(events.length > 0, 60_000);
-  const shown = events.filter((e) => e.endsAt > now);
-  if (viewing || !economyOn || shown.length === 0) return null;
+  const shown = events.filter((e) => e.endsAt > now && (economyOn || !hasBoost(e)));
+  if (viewing || shown.length === 0) return null;
   return (
     <div className="mb-4 flex flex-col gap-2">
       {shown.map((e) => {
         const live = eventIsLive(e, now);
+        const boosted = hasBoost(e);
         const target = targetLabel(e);
         const capLeft = e.playerCap != null ? Math.max(0, e.playerCap - e.capUsed) : null;
         const startsLeft =
@@ -36,12 +39,17 @@ export function BonusEventStrip() {
                 ) : (
                   <Coins size={15} className="text-accent" />
                 )}
-                {live ? "Coin event" : "Coming up"}: {e.name}
+                {live ? (boosted ? "Coin event" : "Now on") : "Coming up"}: {e.name}
               </p>
               <span className="text-xs text-subtle">{eventWhenLabel(e, now)}</span>
             </div>
             {e.description && <p className="mt-1 text-xs text-muted">{e.description}</p>}
-            <div className="mt-2 flex flex-wrap gap-1.5">
+            {!live && e.prepTip && (
+              <p className="mt-1 inline-flex items-start gap-1 text-xs font-medium text-ink">
+                <Lightbulb size={13} className="mt-0.5 shrink-0 text-accent" /> Get ready: {e.prepTip}
+              </p>
+            )}
+            <div className="mt-2 flex flex-wrap items-center gap-1.5">
               {boostLabels(e).map((b) => (
                 <span key={b} className="rounded-full border border-line bg-panel px-2.5 py-1 text-xs font-medium text-ink">
                   {b}
@@ -66,6 +74,12 @@ export function BonusEventStrip() {
           </div>
         );
       })}
+      <a
+        href={routeToHash({ kind: "view", view: "calendar" })}
+        className="inline-flex w-fit items-center gap-1 text-xs font-medium text-accent hover:underline"
+      >
+        <CalendarDays size={13} /> See the calendar
+      </a>
     </div>
   );
 }

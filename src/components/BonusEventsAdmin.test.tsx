@@ -14,6 +14,11 @@ const EVENT: AdminBonusEvent = {
   endsAt: NOW + 86_400_000,
   repeat: "weekly",
   repeatUntil: null,
+  repeatFrom: null,
+  repeatTo: null,
+  repeatWeek: null,
+  prepTip: "",
+  runs: [],
   nextStart: NOW - 86_400_000,
   nextEnd: NOW + 86_400_000,
   live: true,
@@ -42,6 +47,7 @@ beforeEach(() => {
       fetchBonusEventsAdmin: vi.fn(async () => [EVENT]),
       saveBonusEvent: vi.fn(async () => true),
       archiveBonusEvent: vi.fn(async () => true),
+      skipBonusEventRun: vi.fn(async () => true),
     }),
   );
 });
@@ -101,5 +107,46 @@ describe("BonusEventsAdmin", () => {
     expect(screen.queryByText(/aren't tied to a game/)).toBeNull();
     fireEvent.change(screen.getByRole("combobox", { name: "Goal & medal rewards" }), { target: { value: "2" } });
     expect(screen.getByText(/aren't tied to a game/)).toBeTruthy();
+  });
+
+  it("schedules an event on a monthly pattern, with no end date to pick", async () => {
+    render(<BonusEventsAdmin />);
+    await screen.findByText("Weekend Bounties");
+    fireEvent.click(screen.getByRole("button", { name: /New event/ }));
+    fireEvent.change(screen.getByPlaceholderText("Double Bounty Weekend"), { target: { value: "Collector's Week" } });
+    fireEvent.change(screen.getByRole("combobox", { name: "Repeats" }), { target: { value: "month_days" } });
+    expect(screen.queryByLabelText("Ends")).toBeNull();
+    fireEvent.change(screen.getByRole("combobox", { name: "Count days from" }), { target: { value: "end" } });
+    fireEvent.change(screen.getByLabelText("Last how many days"), { target: { value: "7" } });
+    fireEvent.change(screen.getByLabelText("How to prepare (optional)"), { target: { value: "Save your claims." } });
+    fireEvent.click(screen.getByRole("button", { name: "Create event" }));
+    await waitFor(() =>
+      expect(useStore.getState().saveBonusEvent).toHaveBeenCalledWith(
+        expect.objectContaining({ repeat: "month_days", repeatFrom: -7, repeatTo: -1, prepTip: "Save your claims." }),
+      ),
+    );
+  });
+
+  it("skips one run of a repeating event, and brings a skipped one back", async () => {
+    const start = Date.now() + 7 * 86_400_000;
+    act(() =>
+      useStore.setState({
+        fetchBonusEventsAdmin: vi.fn(async () => [
+          {
+            ...EVENT,
+            runs: [
+              { start, end: start + 2 * 86_400_000, skipped: false },
+              { start: start + 7 * 86_400_000, end: start + 9 * 86_400_000, skipped: true },
+            ],
+          },
+        ]),
+      }),
+    );
+    render(<BonusEventsAdmin />);
+    await screen.findByText("Weekend Bounties");
+    fireEvent.click(screen.getByRole("button", { name: /^Skip the .* run$/ }));
+    expect(useStore.getState().skipBonusEventRun).toHaveBeenCalledWith("e1", start, true);
+    fireEvent.click(screen.getByRole("button", { name: /^Bring back the .* run$/ }));
+    expect(useStore.getState().skipBonusEventRun).toHaveBeenCalledWith("e1", start + 7 * 86_400_000, false);
   });
 });

@@ -83,6 +83,7 @@ describe("Sidebar coin event chip", () => {
     startsAt: Date.now() - 3_600_000,
     endsAt: Date.now() + 5 * 3_600_000,
     repeat: null,
+    prepTip: "",
     bountyMult: 2,
     sessionMult: 1,
     rewardsMult: 1,
@@ -98,14 +99,14 @@ describe("Sidebar coin event chip", () => {
     discountUsed: 0,
   };
 
-  it("announces a live event on every page and opens the Bazaar", () => {
+  it("announces a live event on every page and opens the Calendar", () => {
     const setView = vi.fn();
     act(() => useStore.setState({ viewing: null, economyEnabled: true, bonusEvents: [live] }));
     render(<Sidebar {...chromeProps()} view="playing" setView={setView} />);
     const chips = screen.getAllByRole("button", { name: /Double Everything Weekend is on · 5h left/ });
     expect(chips.length).toBeGreaterThan(0);
     fireEvent.click(chips[0]);
-    expect(setView).toHaveBeenCalledWith("backlog");
+    expect(setView).toHaveBeenCalledWith("calendar");
     act(() => useStore.setState({ bonusEvents: [] }));
   });
 

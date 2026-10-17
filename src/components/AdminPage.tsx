@@ -14,7 +14,7 @@ import {
   Tags,
   Flag,
   Target,
-  Sparkles,
+  CalendarDays,
   type LucideIcon,
 } from "lucide-react";
 import { useStore } from "../store";
@@ -58,7 +58,7 @@ const TABS: { view: View; label: string; icon: LucideIcon; perms: Permission[] }
   { view: "reports", label: "Reports", icon: Flag, perms: ["reports.moderate"] },
   { view: "stats", label: "Stats", icon: BarChart3, perms: ["stats.view", "economy.insights"] },
   { view: "challengeadmin", label: "Challenges", icon: Target, perms: ["challenges.manage"] },
-  { view: "eventsadmin", label: "Coin events", icon: Sparkles, perms: ["economy.events"] },
+  { view: "eventsadmin", label: "Events", icon: CalendarDays, perms: ["economy.events"] },
   { view: "roles", label: "Roles", icon: UserCog, perms: ["roles.assign"] },
   { view: "admin", label: "Settings", icon: SlidersHorizontal, perms: ["site.maintenance"] },
 ];

@@ -98,6 +98,7 @@ describe("ActivationModal", () => {
             startsAt: 0,
             endsAt: Date.now() + 86_400_000,
             repeat: null,
+            prepTip: "",
             bountyMult: 1,
             sessionMult: 1,
             rewardsMult: 1,

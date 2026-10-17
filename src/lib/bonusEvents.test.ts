@@ -10,6 +10,7 @@ import {
   rewardsBoost,
   eventStartPrice,
   eventWhenLabel,
+  hasBoost,
   spanUntil,
   repeatLabel,
   targetLabel,
@@ -27,6 +28,10 @@ const DRAFT: BonusEventDraft = {
   endsAt: 2 * D,
   repeat: null,
   repeatUntil: null,
+  repeatFrom: null,
+  repeatTo: null,
+  repeatWeek: null,
+  prepTip: "",
   bountyMult: 2,
   sessionMult: 1,
   rewardsMult: 1,
@@ -109,9 +114,20 @@ describe("labels", () => {
   });
 
   it("describes a repeat", () => {
-    expect(repeatLabel(null)).toBeNull();
-    expect(repeatLabel("weekly")).toBe("Every week");
-    expect(repeatLabel("monthly", Date.UTC(2026, 11, 31, 12))).toMatch(/^Every month until /);
+    const sched = { repeat: null, repeatUntil: null, repeatFrom: null, repeatTo: null, repeatWeek: null };
+    expect(repeatLabel(sched)).toBeNull();
+    expect(repeatLabel({ ...sched, repeat: "weekly" })).toBe("Every week");
+    expect(repeatLabel({ ...sched, repeat: "monthly", repeatUntil: Date.UTC(2026, 11, 31, 12) })).toMatch(
+      /^Every month until /,
+    );
+    expect(repeatLabel({ ...sched, repeat: "month_days", repeatFrom: 1, repeatTo: 7 })).toBe(
+      "The 1st to 7th of every month",
+    );
+    expect(repeatLabel({ ...sched, repeat: "month_days", repeatFrom: -7, repeatTo: -1 })).toBe(
+      "The last 7 days of every month",
+    );
+    expect(repeatLabel({ ...sched, repeat: "month_weekend", repeatWeek: 3 })).toBe("The 3rd weekend of every month");
+    expect(repeatLabel({ ...sched, repeat: "month_weekend", repeatWeek: -1 })).toBe("The last weekend of every month");
   });
 });
 
@@ -123,7 +139,9 @@ describe("bonusEventDraftProblem", () => {
   it("explains each problem the database would reject", () => {
     expect(bonusEventDraftProblem({ ...DRAFT, name: " " })).toMatch(/name/);
     expect(bonusEventDraftProblem({ ...DRAFT, endsAt: 0 })).toMatch(/after the start/);
-    expect(bonusEventDraftProblem({ ...DRAFT, bountyMult: 1 })).toMatch(/at least one/);
+    // No boost is fine: that's a calendar note, like a holiday week.
+    expect(bonusEventDraftProblem({ ...DRAFT, bountyMult: 1 })).toBeNull();
+    expect(bonusEventDraftProblem({ ...DRAFT, prepTip: "x".repeat(201) })).toMatch(/prep tip/);
     expect(bonusEventDraftProblem({ ...DRAFT, bountyMult: 6 })).toMatch(/×5/);
     expect(bonusEventDraftProblem({ ...DRAFT, startDiscountPct: 95 })).toMatch(/90%/);
     expect(bonusEventDraftProblem({ ...DRAFT, minHours: 20, maxHours: 10 })).toMatch(/shortest/);
@@ -195,6 +213,7 @@ describe("rewards boost", () => {
       startsAt: 0,
       endsAt: 10 * D,
       repeat: null,
+      prepTip: "",
       bountyMult: 1,
       sessionMult: 1,
       rewardsMult: 2,
@@ -230,5 +249,29 @@ describe("rewards boost", () => {
     expect(boostedReward(25, { mult: 1.5, capLeft: null })).toBe(37);
     expect(boostedReward(25, { mult: 2, capLeft: 10 })).toBe(35);
     expect(boostedReward(25, null)).toBe(25);
+  });
+});
+
+describe("monthly pattern drafts", () => {
+  const pattern = (over: Partial<BonusEventDraft>) => ({ ...DRAFT, endsAt: NaN, ...over });
+
+  it("needs only a start date, since the rule sets each run's days", () => {
+    expect(bonusEventDraftProblem(pattern({ repeat: "month_days", repeatFrom: 1, repeatTo: 7 }))).toBeNull();
+    expect(bonusEventDraftProblem(pattern({ repeat: "month_weekend", repeatWeek: -1 }))).toBeNull();
+    expect(bonusEventDraftProblem(pattern({ repeat: "month_days", repeatFrom: 1, repeatTo: 7, startsAt: NaN }))).toMatch(
+      /schedule starts/,
+    );
+  });
+
+  it("checks the days and the weekend, mirroring the database", () => {
+    expect(bonusEventDraftProblem(pattern({ repeat: "month_days", repeatFrom: 8, repeatTo: 3 }))).toMatch(/days 1 to 28/);
+    expect(bonusEventDraftProblem(pattern({ repeat: "month_days", repeatFrom: 1, repeatTo: 31 }))).toMatch(/days 1 to 28/);
+    expect(bonusEventDraftProblem(pattern({ repeat: "month_days", repeatFrom: -7, repeatTo: -1 }))).toBeNull();
+    expect(bonusEventDraftProblem(pattern({ repeat: "month_weekend", repeatWeek: 5 }))).toMatch(/which weekend/);
+  });
+
+  it("knows an event with no boost", () => {
+    expect(hasBoost({ ...DRAFT, bountyMult: 1 })).toBe(false);
+    expect(hasBoost(DRAFT)).toBe(true);
   });
 });

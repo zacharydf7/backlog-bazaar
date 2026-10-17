@@ -11,6 +11,7 @@ const EVENT: BonusEvent = {
   startsAt: Date.now() - 3_600_000,
   endsAt: Date.now() + 86_400_000,
   repeat: null,
+  prepTip: "",
   bountyMult: 2,
   sessionMult: 2,
   rewardsMult: 2,

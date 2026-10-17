@@ -41,9 +41,10 @@ import {
   type LucideIcon,
   CreditCard,
   PartyPopper,
+  CalendarDays,
 } from "lucide-react";
 import { useNow } from "../lib/useNow";
-import { boostLabels, eventIsLive, spanUntil } from "../lib/bonusEvents";
+import { boostLabels, eventIsLive, hasBoost, spanUntil } from "../lib/bonusEvents";
 import { useStore, selectCoachTarget } from "../store";
 import { isClearStreakActive } from "../lib/pricing";
 import { CoinIcon } from "./CoinIcon";
@@ -78,6 +79,7 @@ export type View =
   | "shop"
   | "achievements"
   | "challenges"
+  | "calendar"
   | "requests"
   | "account"
   | "admin"
@@ -296,15 +298,15 @@ function WalletChips({
   );
 }
 
-/** A live coin event, on every page while it runs: its name and time left,
- *  opening the Bazaar, where the banner spells out what it boosts. Hidden
- *  with the economy off or when nothing is running. */
+/** A live event, on every page while it runs: its name and time left,
+ *  opening the Calendar. Hidden when nothing is running, and for coin boosts
+ *  with the economy off. */
 function EventChip({ compact = false, onOpen }: { compact?: boolean; onOpen: () => void }) {
   const events = useStore((s) => s.bonusEvents);
   const economyEnabled = useStore((s) => s.economyEnabled);
   const now = useNow(events.length > 0, 60_000);
-  const live = events.filter((e) => eventIsLive(e, now));
-  if (!economyEnabled || live.length === 0) return null;
+  const live = events.filter((e) => eventIsLive(e, now) && (economyEnabled || !hasBoost(e)));
+  if (live.length === 0) return null;
   const first = live[0];
   return (
     <button
@@ -318,7 +320,7 @@ function EventChip({ compact = false, onOpen }: { compact?: boolean; onOpen: () 
     >
       <PartyPopper size={compact ? 13 : 15} className="shrink-0" />
       <span className="truncate">
-        {live.length > 1 ? `${live.length} coin events on` : `${first.name} is on`}
+        {live.length > 1 ? `${live.length} events on` : `${first.name} is on`}
       </span>
       <span className="shrink-0 font-normal opacity-80">· {spanUntil(first.endsAt, now)} left</span>
     </button>
@@ -707,6 +709,14 @@ function UtilityActions(
       )}
       {cloud && (
         <UtilRow
+          icon={CalendarDays}
+          label="Calendar"
+          active={props.view === "calendar"}
+          onClick={run(() => props.setView("calendar"))}
+        />
+      )}
+      {cloud && (
+        <UtilRow
           icon={ListOrdered}
           label="My Lists"
           active={props.view === "lists"}
@@ -986,7 +996,7 @@ export function Sidebar(props: ChromeProps) {
           </p>
         </button>
         {!visiting && <WalletChips onLedger={props.onTransactionLedger} />}
-        {!visiting && <EventChip onOpen={() => props.setView("backlog")} />}
+        {!visiting && <EventChip onOpen={() => props.setView("calendar")} />}
         {!visiting && (
           <AddMenu onAdd={props.onAdd} onAddCompilation={props.onAddCompilation} onImportCsv={props.onImportCsv} variant="sidebar" />
         )}
@@ -1149,7 +1159,7 @@ export function MobileNav(props: ChromeProps) {
           </div>
         </div>
         {!visiting && <WalletChips compact full onLedger={props.onTransactionLedger} />}
-        {!visiting && <EventChip compact onOpen={() => props.setView("backlog")} />}
+        {!visiting && <EventChip compact onOpen={() => props.setView("calendar")} />}
         {/* The wallet's row doubles as the whose-pages marker while visiting,
             with the visit's actions compacted into icon buttons beside it. */}
         {visiting && (

@@ -20,15 +20,17 @@ function fn(name: string): string {
   return schema.slice(start, schema.indexOf("\n$$;", start) + 4);
 }
 
-/** The real bonus_events table, minus its auth.users reference, plus the
- *  columns added after it. */
-function bonusEventsTable(): string {
+/** The real bonus_events table with everything added after it (columns and
+ *  the named checks), and the skips table, minus auth.users references. */
+function bonusEventsTables(): string {
   const start = schema.indexOf("create table if not exists public.bonus_events (");
-  const table = schema
-    .slice(start, schema.indexOf("\n);", start) + 3)
-    .replace(/ references auth\.users \(id\) on delete set null/, "");
-  const added = schema.match(/^alter table public\.bonus_events add column if not exists .*;$/gm) ?? [];
-  return [table, ...added].join("\n");
+  const end = schema.indexOf("create table if not exists public.bonus_event_payouts (");
+  const skipsStart = schema.indexOf("create table if not exists public.bonus_event_skips (");
+  const skipsEnd = schema.indexOf("alter table public.bonus_event_skips enable row level security;");
+  return (schema.slice(start, end) + schema.slice(skipsStart, skipsEnd)).replace(
+    / references auth\.users \(id\) on delete set null/g,
+    "",
+  );
 }
 
 const U = "00000000-0000-4000-8000-0000000000a1";
@@ -53,7 +55,10 @@ beforeAll(async () => {
       created_at timestamptz not null default now());
     create table public.coin_events (user_id uuid, kind text, delta integer, label text);
     create table public.notifications (user_id uuid, type text, title text, body text, link text);
-    ${bonusEventsTable()}
+    create table public.seasonal_challenges (id uuid primary key default gen_random_uuid(), name text,
+      description text not null default '', starts_at timestamptz, ends_at timestamptz,
+      reward integer not null default 0, archived_at timestamptz);
+    ${bonusEventsTables()}
     create table public.bonus_event_payouts (event_id uuid, event_name text, user_id uuid, game_id uuid,
       kind text, amount integer, created_at timestamptz not null default now());
     create function public.economy_enabled(p_user uuid) returns boolean language sql
@@ -72,6 +77,8 @@ beforeAll(async () => {
     "is_live_play",
     "player_main_platform",
     "bonus_event_applies",
+    "bonus_event_run_skipped",
+    "bonus_event_runs",
     "bonus_event_occurrence",
     "best_bonus_event",
     "bonus_event_pay",
@@ -79,6 +86,7 @@ beforeAll(async () => {
     "bonus_event_relevant",
     "bonus_event_notices",
     "my_bonus_event_perks",
+    "calendar_feed",
   ]) {
     await db.exec(fn(name));
   }
@@ -90,7 +98,8 @@ afterAll(async () => {
 
 beforeEach(async () => {
   await db.exec(`
-    delete from public.bonus_event_payouts; delete from public.bonus_events; delete from public.notifications;
+    delete from public.bonus_event_payouts; delete from public.bonus_event_skips; delete from public.bonus_events;
+    delete from public.notifications; delete from public.seasonal_challenges;
     delete from public.coin_events; delete from public.playtime_events; delete from public.games;
     delete from public.profiles;
     insert into public.profiles (id, coins) values ('${U}', 1000);
@@ -378,5 +387,107 @@ describe("my_bonus_event_perks", () => {
     await event();
     await db.exec("update public.profiles set economy = false");
     expect(await perks()).toEqual({});
+  });
+});
+
+describe("monthly patterns", () => {
+  async function runs(id: string, from: string, to: string, withSkipped = false) {
+    const r = await db.query<{ run_start: Date; run_end: Date; skipped: boolean }>(
+      "select r.* from public.bonus_events e cross join lateral public.bonus_event_runs(e, $2::timestamptz, $3::timestamptz, $4) r where e.id = $1",
+      [id, from, to, withSkipped],
+    );
+    return r.rows.map((x) => [x.run_start.toISOString(), x.run_end.toISOString(), ...(withSkipped ? [x.skipped] : [])]);
+  }
+  const pattern = (cols: Record<string, string>) =>
+    event({
+      starts_at: "'2026-11-01 00:00 America/New_York'",
+      ends_at: "'2026-11-02 00:00 America/New_York'",
+      ...cols,
+    });
+
+  it("runs the 1st to 7th of each month at local midnight, across the clock change", async () => {
+    const id = await pattern({ repeat: "'month_days'", repeat_from: "1", repeat_to: "7" });
+    expect(await runs(id, "2026-10-15Z", "2027-01-01Z")).toEqual([
+      ["2026-11-01T04:00:00.000Z", "2026-11-08T05:00:00.000Z"],
+      ["2026-12-01T05:00:00.000Z", "2026-12-08T05:00:00.000Z"],
+    ]);
+  });
+
+  it("runs the last 7 days of each month, February included", async () => {
+    const id = await pattern({ repeat: "'month_days'", repeat_from: "-7", repeat_to: "-1" });
+    expect(await runs(id, "2027-02-02Z", "2027-03-01Z")).toEqual([
+      ["2027-02-22T05:00:00.000Z", "2027-03-01T05:00:00.000Z"],
+    ]);
+  });
+
+  it("runs the 3rd weekend and the last weekend, Saturday through Sunday", async () => {
+    const third = await pattern({ repeat: "'month_weekend'", repeat_week: "3" });
+    const last = await pattern({ repeat: "'month_weekend'", repeat_week: "-1" });
+    expect(await runs(third, "2026-11-01Z", "2026-12-01Z")).toEqual([
+      ["2026-11-21T05:00:00.000Z", "2026-11-23T05:00:00.000Z"],
+    ]);
+    // October 2026 ends on a Saturday: its last weekend runs into November.
+    await db.exec(`update public.bonus_events set starts_at = '2026-10-01 00:00 America/New_York' where id = '${last}'`);
+    expect(await runs(last, "2026-10-01Z", "2026-11-01Z")).toEqual([
+      ["2026-10-31T04:00:00.000Z", "2026-11-02T05:00:00.000Z"],
+    ]);
+  });
+
+  it("never runs before its start date", async () => {
+    const id = await pattern({ repeat: "'month_days'", repeat_from: "1", repeat_to: "7" });
+    expect(await runs(id, "2026-09-01Z", "2026-11-01Z")).toEqual([]);
+  });
+
+  it("rejects days past the 28th or out of order", async () => {
+    await expect(pattern({ repeat: "'month_days'", repeat_from: "1", repeat_to: "31" })).rejects.toThrow();
+    await expect(pattern({ repeat: "'month_days'", repeat_from: "8", repeat_to: "3" })).rejects.toThrow();
+    await expect(pattern({ repeat: "'month_weekend'", repeat_week: "5" })).rejects.toThrow();
+  });
+
+  it("allows an event with no boost, a calendar note", async () => {
+    await expect(event({ bounty_mult: "1" })).resolves.toBeTruthy();
+  });
+
+  it("leaves out a skipped run, and the next run takes its place", async () => {
+    const id = await pattern({ repeat: "'month_days'", repeat_from: "1", repeat_to: "7" });
+    await db.query(
+      "insert into public.bonus_event_skips (event_id, run_start) values ($1, '2026-12-01 00:00 America/New_York')",
+      [id],
+    );
+    expect(await runs(id, "2026-11-15Z", "2027-02-01Z")).toEqual([
+      ["2027-01-01T05:00:00.000Z", "2027-01-08T05:00:00.000Z"],
+    ]);
+    expect((await runs(id, "2026-11-15Z", "2027-02-01Z", true)).map((r) => r[2])).toEqual([true, false]);
+    const occ = await db.query<{ occ_start: Date }>(
+      "select o.occ_start from public.bonus_events e cross join lateral public.bonus_event_occurrence(e, '2026-11-15Z') o where e.id = $1",
+      [id],
+    );
+    expect(occ.rows[0].occ_start.toISOString()).toBe("2027-01-01T05:00:00.000Z");
+  });
+});
+
+describe("calendar_feed", () => {
+  it("lists every run and seasonal challenge in the window, marking events that don't fit your games", async () => {
+    await event({
+      name: "'Fresh Start Week'",
+      starts_at: "'2026-11-01 00:00 America/New_York'",
+      ends_at: "'2026-11-02 00:00 America/New_York'",
+      repeat: "'month_days'",
+      repeat_from: "1",
+      repeat_to: "7",
+    });
+    await event({ name: "'Puzzle Party'", genres: "'{Puzzle}'", starts_at: "'2026-11-10Z'", ends_at: "'2026-11-12Z'" });
+    await db.exec(`insert into public.seasonal_challenges (name, starts_at, ends_at, reward)
+                   values ('Winter Push', '2026-11-15Z', '2026-12-15Z', 100)`);
+    await db.query("select set_config('test.uid', $1, false)", [U]);
+    const r = await db.query<{ f: { kind: string; name: string; for_you?: boolean }[] }>(
+      "select public.calendar_feed('2026-10-25Z', '2027-01-01Z') as f",
+    );
+    expect(r.rows[0].f.map((x) => [x.kind, x.name, x.for_you ?? null])).toEqual([
+      ["event", "Fresh Start Week", true],
+      ["event", "Puzzle Party", false],
+      ["challenge", "Winter Push", null],
+      ["event", "Fresh Start Week", true],
+    ]);
   });
 });
