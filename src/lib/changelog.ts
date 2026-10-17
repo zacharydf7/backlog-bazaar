@@ -1,2659 +1,880 @@
-// Backlog Bazaar release notes.
+// Backlog Bazaar release notes: the "What's new" page.
 //
-// HOW TO ADD A RELEASE: when you deploy a meaningful update, prepend a new entry
-// to RELEASES (newest first) with a fresh, unique `id` and a few short,
-// user-facing bullet points. The `id` doubles as the "seen" marker — a new top
-// entry makes the "What's new" dot light up for everyone until they open the
-// panel. Keep items benefit-focused; skip pure refactors/infra.
-//
-// An item can be a plain string, or `{ text, tag }` to show a small category
-// badge ("Feature" / "Fix" / "Improvement") next to it. Untagged items render
-// without a badge — both forms can be mixed freely in one release.
+// HOW TO WRITE A RELEASE (owner rules, 2026-10-17; changelog.test.ts checks
+// the mechanical ones):
+// - One release per FEATURE or theme, not per date or commit. Follow-up fixes
+//   to a feature fold into its release. A busy day can have several releases.
+// - High bar: big user-facing features and changes most players would want to
+//   know about. Skip edge-case fixes, internal mechanics, tiny polish, admin
+//   tools and anything only moderators see. When unsure, leave it out.
+// - Title: names the thing, 8 words or fewer.
+// - Summary: one plain sentence on why a player cares, 24 words or fewer.
+// - Items: 0 to 4 bullets, 15 words or fewer each. Plain words, no em dashes,
+//   no jargon, American spelling.
+// - Tag: exactly one per release (feature, improvement or fix).
+// - Link: optional "Try it" button to the page where the feature lives. Only
+//   pages every player can open, and only for features that still exist.
+// - Newest first. `id` is `${date}-short-slug`, unique; a new top entry
+//   re-lights the "What's new" dot for everyone.
 
-/** Category badge for a release item. Add a new kind here + in ReleaseNotes. */
-export type ReleaseTag = "feature" | "fix" | "improvement";
+import type { View } from "../components/Sidebar";
 
-export interface ReleaseItem {
-  text: string;
-  tag?: ReleaseTag;
-}
+/** One tag per release. Add a kind here and in ReleaseNotes' TAG_META. */
+export type ReleaseTag = "feature" | "improvement" | "fix";
 
 export interface Release {
-  /** Stable, unique slug. Also used to track which release a user has seen. */
+  /** Stable, unique `${date}-slug`. Also the "seen" marker. */
   id: string;
   /** ISO date the release went out, e.g. "2026-06-21". */
   date: string;
   title: string;
-  /** Short, user-facing bullet points. A string = no badge; an object adds one. */
-  items: (string | ReleaseItem)[];
-}
-
-/** Coerce an item to its object form, so the UI can render strings and tagged
- *  items uniformly. */
-export function normalizeReleaseItem(item: string | ReleaseItem): ReleaseItem {
-  return typeof item === "string" ? { text: item } : item;
-}
-
-// Display order of the category groups within a release: untagged intro lines
-// first, then Features, Improvements, and Fixes.
-const TAG_RANK: Record<ReleaseTag, number> = { feature: 1, improvement: 2, fix: 3 };
-
-/** A release's items grouped by category for display — untagged first, then
- *  feature / improvement / fix — keeping the authored order within each group.
- *  Entries can then be WRITTEN in whatever order tells the story best while
- *  always RENDERING with like items together. */
-export function orderReleaseItems(items: (string | ReleaseItem)[]): ReleaseItem[] {
-  return items
-    .map((raw, i) => ({ item: normalizeReleaseItem(raw), i }))
-    .sort((a, b) => {
-      const ra = a.item.tag ? TAG_RANK[a.item.tag] : 0;
-      const rb = b.item.tag ? TAG_RANK[b.item.tag] : 0;
-      return ra - rb || a.i - b.i;
-    })
-    .map(({ item }) => item);
+  /** One sentence: why a player cares. */
+  summary: string;
+  tag: ReleaseTag;
+  /** Up to four short bullets. */
+  items?: string[];
+  /** A "Try it" button to where the feature lives. */
+  link?: { label: string; view: View };
 }
 
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
+  // ── October 2026 ──────────────────────────────────────────────────────────
   {
     id: "2026-10-17-coin-events",
     date: "2026-10-17",
     title: "Coin events",
+    summary: "Limited-time events boost what you earn, like double bounty weekends and half-price starts.",
+    tag: "feature",
     items: [
-      { text: "Watch for coin events like double bounty weekends and cheaper starts.", tag: "feature" },
-      { text: "A banner on your Bazaar shows what's on now and what's coming up.", tag: "feature" },
-      { text: "Your game cards show event discounts and finish bonuses while an event runs.", tag: "feature" },
-      { text: "You'll get a notification before an event that fits your games starts.", tag: "feature" },
+      "A banner and a header chip show what's on and how long it lasts.",
+      "Cards mark discounted starts and boosted bounties while an event runs.",
+      "Claim buttons show boosted goal and medal rewards.",
+      "You'll get a notification when an event that fits your games is coming.",
     ],
+    link: { label: "See what's on", view: "backlog" },
   },
   {
-    id: "2026-10-17-cleaner-search-and-split",
+    id: "2026-10-17-challenges",
     date: "2026-10-17",
-    title: "Compilations are games too, and bounties follow your time",
+    title: "Challenges: daily, weekly and monthly goals",
+    summary: "Fresh goals every day, week and month give you bonus coins for playing your way.",
+    tag: "feature",
     items: [
-      {
-        text: "Daily and weekly goals: a new goal every day and three every Monday, chosen for you on the Challenges page. Each daily pays 10 coins and each weekly 25, with 25 more for all three. Don't like one? Swap it, once a day and once a week.",
-        tag: "feature",
-      },
-      {
-        text: "New Routine medals for completing daily and weekly goals.",
-        tag: "feature",
-      },
-      {
-        text: "My Cosmetics is now a dressing room: your preview stays in view while you browse titles, frames, stalls and coins one at a time, and tapping anything you own wears it right away, with Undo. Saved looks switch your whole outfit in one tap.",
-        tag: "improvement",
-      },
-      {
-        text: "Your week, at a glance: the first time you open the app each week, a recap shows what you played, what you finished, the coins you earned and spent, the medals you earned and the ones you're close to. Reopen it from its notification any time.",
-        tag: "feature",
-      },
-      {
-        text: "The weekly Rotation check-in now resets on Mondays instead of Tuesdays, in step with your weekly recap. Daily, weekly and monthly resets now happen at midnight Eastern time.",
-        tag: "improvement",
-      },
-      {
-        text: "Your weekly recap and challenges now count only the time you actually played that week, not hours you entered for play from before, and an abandoned replay no longer shows up as a clear.",
-        tag: "fix",
-      },
-      {
-        text: "Your weekly recap no longer pops up again after you've closed it.",
-        tag: "fix",
-      },
-      {
-        text: "What you paid for a game imported from your wishlist as a pre-order is now saved.",
-        tag: "fix",
-      },
-      {
-        text: "Challenges count more fairly: replaying a game no longer erases its clear, two platform copies of one game count once, and only a new review completes a review goal (editing an old one doesn't).",
-        tag: "fix",
-      },
-      {
-        text: "Secret medals stay secret until you earn them.",
-        tag: "fix",
-      },
-      {
-        text: "Goals now count what you do after you pick them (monthly) or receive them (daily and weekly). This first month and this first week still count from the start, since they arrived part-way through.",
-        tag: "improvement",
-      },
-      {
-        text: "Fresh Start now also gives up any unclaimed medal and challenge rewards, so a fresh start really starts fresh. Your medals stay.",
-        tag: "improvement",
-      },
-      {
-        text: "Night Owl and \"days played\" now use your own timezone, so midnight means your midnight.",
-        tag: "fix",
-      },
-      {
-        text: "Can't decide what to play? Mystery Pull now has Help me choose: say how long a game you want, on which platform, in what mood and what you're after, and get three games you can start right now, with why each one fits.",
-        tag: "feature",
-      },
-      {
-        text: "New Challenges page: pick three goals each month, like finishing 2 games or playing on 10 different days. Each goal you complete pays 25 coins, with 50 more for all three. A notification lets you know when a new month's goals open.",
-        tag: "feature",
-      },
-      {
-        text: "Seasonal challenges: time-limited goals for coins, and sometimes a badge. You'll get a notification when one starts, and find it on the Challenges page.",
-        tag: "feature",
-      },
-      {
-        text: "Achievements have a new look: every medal is a wax seal with its own crest, in bronze wax, silver foil or gold leaf.",
-        tag: "feature",
-      },
-      {
-        text: "11 new medal families: Verified clears, Clear Streaks, days played, stopwatch sessions, long games, old backlog clears, genres, Co-op Pacts, story order, Rotation check-ins and catalog contributions. There are also a few secret medals to discover.",
-        tag: "feature",
-      },
-      {
-        text: "Every medal now pays coins: 10, 25 or 50 by tier, and 25 for a secret one. Claim them on the Achievements page, including the medals you've already earned.",
-        tag: "feature",
-      },
-      {
-        text: "Your achievement score adds up your medals. You'll see it on the Achievements page and on your profile.",
-        tag: "feature",
-      },
-      {
-        text: "Bounties now follow the time you log. Finish a game with little of it logged and your activation coins come straight back; the rest of the bounty unlocks as you log your time, all of it once you've logged a quarter of the game's length.",
-        tag: "feature",
-      },
-      {
-        text: "Mark Finished checks in when there's little time logged: add the time you played, file a game you beat before joining under Finished, or finish anyway.",
-        tag: "feature",
-      },
-      {
-        text: "Finished games are marked Verified once you've logged enough of their length, or Unverified until then.",
-        tag: "improvement",
-      },
-      {
-        text: "A game you set to its completionist length but finish without going for 100% now pays on its main story + extras length, with the extra activation cost refunded.",
-        tag: "improvement",
-      },
-      {
-        text: "Shortening a game's length while playing it no longer refunds that part of the fee a second time if you later shelve or retire it.",
-        tag: "fix",
-      },
-      {
-        text: "The × in library search clears what you typed (tap it again to close).",
-        tag: "improvement",
-      },
-      {
-        text: "The Finished board has a Hide retired button, so it can show only the games you played through. It remembers your choice.",
-        tag: "feature",
-      },
-      {
-        text: "Show just your Verified or Unverified clears with the new picker on the Finished board.",
-        tag: "feature",
-      },
-      {
-        text: "Your Clear Streak now grows with Verified clears. A finish with too little time logged won't add to it, but won't break it either.",
-        tag: "improvement",
-      },
-      {
-        text: "Every time you log play — with the Log button, the stopwatch, or by adding time in a game's Played editor — earns a 5-coin Daily Session bonus, up to 3 times a day. Any length counts.",
-        tag: "improvement",
-      },
-      {
-        text: "A Family's cover picker names each edition's platform, so editions with the same name are easy to tell apart.",
-        tag: "fix",
-      },
-      {
-        text: "A compilation now has a page like any game's: its own cover, details, review, likes and community stats, shared with everyone who owns it, plus a Games tab listing what's inside.",
-        tag: "feature",
-      },
-      {
-        text: "Link a compilation to its entry in the game database from its Library tab, or suggest it for everyone if it isn't listed yet.",
-        tag: "feature",
-      },
-      {
-        text: "The games inside a compilation are simple rows now. Tap one to open its own page, just for that compilation's copy, to play it and log time. Your review lives on the compilation.",
-        tag: "improvement",
-      },
-      {
-        text: "A compilation's status follows its games: Now Playing while you're playing one, Bazaar while any are waiting, and Finished once they're all done.",
-        tag: "improvement",
-      },
-      {
-        text: "Searching your library shows each compilation once instead of every game inside it. Search for a game in a compilation and you get the compilation, with the matching game named.",
-        tag: "improvement",
-      },
-      {
-        text: "A collection you own as a single game now offers \"Split into games\" from its ⋮ menu. It keeps its review and likes as the compilation, with its games added inside, and the Add Game hint says what happens.",
-        tag: "improvement",
-      },
-      {
-        text: "Game search no longer lists the same game several times, and a game no longer flips between a \"community\" and a plain version as you type.",
-        tag: "fix",
-      },
-      {
-        text: "When you own a game on several platforms, its Owned On section lists the platforms once instead of repeating the game's name for each.",
-        tag: "improvement",
-      },
-      {
-        text: "When a Co-op Pact is dissolved, a Player 2 copy you joined on your friend's console now leaves your collection along with its playtime (a finished one stays), and the \"pact was dissolved\" note no longer lingers on either player's game.",
-        tag: "improvement",
-      },
+      "Pick three monthly goals: 25 coins each, plus 50 for all three.",
+      "A daily goal pays 10 coins, and three weekly goals pay 25 each.",
+      "Don't like a daily or weekly goal? Swap it once.",
+      "Seasonal challenges run for a limited time and can award a badge.",
+    ],
+    link: { label: "Open Challenges", view: "challenges" },
+  },
+  {
+    id: "2026-10-17-wax-seal-medals",
+    date: "2026-10-17",
+    title: "Medals become wax seals, and pay coins",
+    summary: "Every medal is now a wax seal with its own crest, and every medal pays coins.",
+    tag: "feature",
+    items: [
+      "11 new medal families, plus a few secret medals to find.",
+      "Claim 10, 25 or 50 coins per medal on the Achievements page.",
+      "Your achievement score shows on your profile.",
+    ],
+    link: { label: "Open Achievements", view: "achievements" },
+  },
+  {
+    id: "2026-10-17-weekly-recap",
+    date: "2026-10-17",
+    title: "Your week in review",
+    summary: "Once a week, a recap shows what you played, finished and earned.",
+    tag: "feature",
+    items: [
+      "See your hours, clears, coins and the medals you're close to.",
+      "Reopen it any time from its notification.",
+      "Weekly resets now happen Monday at midnight Eastern.",
     ],
   },
   {
-    id: "2026-10-16-compilations-stay-together",
+    id: "2026-10-17-help-me-choose",
+    date: "2026-10-17",
+    title: "Help me choose what to play",
+    summary: "Answer four quick questions in Mystery Pull and get three games you can start now.",
+    tag: "feature",
+    items: [
+      "Pick a length, a platform, a mood and what you're after.",
+      "Each suggestion says why it fits.",
+    ],
+    link: { label: "Open your Bazaar", view: "backlog" },
+  },
+  {
+    id: "2026-10-17-dressing-room",
+    date: "2026-10-17",
+    title: "My Cosmetics is a dressing room",
+    summary: "Tap anything you own to wear it, with your whole look always in view.",
+    tag: "improvement",
+    items: ["Undo puts your last outfit back.", "Saved looks switch your whole outfit in one tap."],
+    link: { label: "Open My Cosmetics", view: "cosmetics" },
+  },
+  {
+    id: "2026-10-17-bounties-follow-time",
+    date: "2026-10-17",
+    title: "Bounties follow the time you log",
+    summary: "Finish with little time logged and you get your start coins back now, the rest as you log.",
+    tag: "improvement",
+    items: [
+      "The full bounty unlocks once you've logged a quarter of the game's length.",
+      "Mark Finished offers to log your time first.",
+      "Clears with enough time logged are marked Verified.",
+      "Filter Finished by Verified clears, or hide retired games.",
+    ],
+  },
+  {
+    id: "2026-10-16-compilations",
     date: "2026-10-16",
     title: "Compilations stay together",
+    summary: "A compilation is now one card and one page, just like any other game.",
+    tag: "feature",
     items: [
-      {
-        text: "A compilation is now always one card. It shows up on every board it has games on: the Bazaar card lists the games still waiting (highest priority first, with their length), and the Finished card lists the ones you've cleared with their finish badges.",
-        tag: "feature",
-      },
-      {
-        text: "Tap Play a Game on a compilation's card or page to pick which game to start. It's bought just like any other game, with the same price and lane choice.",
-        tag: "feature",
-      },
-      {
-        text: "A game you're playing from a compilation is marked with the compilation's name and progress on Now Playing. Tap the name to open the compilation.",
-        tag: "feature",
-      },
-      {
-        text: "Manage every game in a compilation without leaving it: tap a game on the compilation's page to start or finish it, log time, set its priority and length, or rate and review it.",
-        tag: "feature",
-      },
-      {
-        text: "A compilation's Journey tab now opens with one timeline of every game's starts and finishes, in date order.",
-        tag: "feature",
-      },
-      {
-        text: "Games in a compilation are now simply typed by name and take their cover and release date from the compilation, instead of each being matched to the game database.",
-        tag: "improvement",
-      },
-      {
-        text: "Give each game in a compilation an original platform — handy when one bundle holds two versions with the same name, like the PlayStation and Game Boy Color Buzz Lightyear.",
-        tag: "feature",
-      },
-      {
-        text: "Set a compilation game's own cover art right from the compilation's page: tap the game and use Your cover image. Until you do, it wears the compilation's cover.",
-        tag: "feature",
-      },
-      {
-        text: "Add your own screenshots to games inside a compilation. They show on the game's page and its compilation panel, only you see them, and each version of a game keeps its own.",
-        tag: "feature",
-      },
-      {
-        text: "Your collection counts — games owned, your profile's platform bars and the Master Ledger's totals — now count a compilation once, as the one item on your shelf it is. Every game you finish still counts as a clear.",
-        tag: "improvement",
-      },
-      {
-        text: "A compilation's spending box now shows the whole compilation's played time and its Money Well Spent value, and the compilation's card and page wear the Well spent badge once your hours have paid it off.",
-        tag: "improvement",
-      },
-      {
-        text: "The compilation progress bar now shows games in play alongside finished ones. Expand / Collapse is gone, because compilations no longer split into separate cards.",
-        tag: "improvement",
-      },
-      {
-        text: "A game's compilation badge and its \"Open compilation\" menu item now open the compilation's full page instead of a small pop-up.",
-        tag: "improvement",
-      },
+      "Tap Play a Game to pick which game in it to start.",
+      "Its page has its own cover, review, likes and community stats.",
+      "Library search shows each compilation once and names the matching game.",
+      "Add your own cover and screenshots for the games inside.",
     ],
   },
   {
-    id: "2026-10-15-hot-this-week-real-clears",
+    id: "2026-10-15-bonus-coins",
     date: "2026-10-15",
     title: "Bonus coins for going the extra mile",
+    summary: "Earn extra coins for playing in story order, keeping records, reviewing and playing daily.",
+    tag: "feature",
     items: [
-      {
-        text: "Story-lock a sequel behind its prequel and play them in order: each game you finish that way earns a Story Order bonus.",
-        tag: "feature",
-      },
-      {
-        text: "Record what you paid for a game, or the subscription or friend you play it through, and its first finish adds a Collector's Record bonus.",
-        tag: "feature",
-      },
-      {
-        text: "Write a real review (100+ characters) of a game you cleared and earn a one-time Reviewer bonus for it.",
-        tag: "feature",
-      },
-      {
-        text: "Your first play session of the day, 20 minutes or more, earns a small Daily Session bonus, whether you use the stopwatch or type the time in.",
-        tag: "feature",
-      },
-      {
-        text: "Cards show which bonuses a game is lined up for before you finish it.",
-        tag: "improvement",
-      },
-      {
-        text: "The fast-scroll control on phones is now a single handle you drag, with a bubble beside your finger showing where you are. It only appears when you're scrolling through a long list, and taps near the edge of the screen now reach your game cards instead of jumping the list.",
-        tag: "improvement",
-      },
-      {
-        text: "When you're playing one edition of a linked game family, its Now Playing card shows that edition's own playtime and highlights the platform you're playing on.",
-        tag: "improvement",
-      },
-      {
-        text: "A linked game family's Journey tab now shows one edition at a time, starting with the primary. Pick any other edition from the dropdown, and its hours and milestones are no longer mixed together.",
-        tag: "improvement",
-      },
-      {
-        text: "A full Focus lane no longer blocks Buy & Start. You can still start a game straight into your Completionist lane, and a game you're playing in a Co-op Pact always goes to your Co-op lane.",
-        tag: "fix",
-      },
-      {
-        text: "Hot This Week no longer counts a game as finished when someone retires it, cancels a replay, or gives up a 100% run. Only real clears, the ones that show up in Fresh Clears, count as finishes.",
-        tag: "fix",
-      },
+      "Story Order: finish a story-locked sequel after its prequel.",
+      "Collector's Record: note what you paid, or how you play it.",
+      "Reviewer: review a game you cleared in 100 or more characters.",
+      "Daily Session: 5 coins for each play log, up to 3 a day.",
     ],
   },
+  // ── September 2026 ────────────────────────────────────────────────────────
   {
-    id: "2026-10-11-earned-cosmetic-alerts",
-    date: "2026-10-11",
-    title: "Never miss an earned cosmetic",
-    items: [
-      {
-        text: "When you earn a cosmetic, like a seasonal reward for visiting, you now also get a notification in your alerts. Tap it to go to My Cosmetics and equip it.",
-        tag: "feature",
-      },
-      {
-        text: "A cosmetic you already own no longer shows its shop arrival date (for example \"Arrives Nov 2\") on its shop card.",
-        tag: "fix",
-      },
-    ],
-  },
-  {
-    id: "2026-10-09-cancel-replay-keeps-history",
-    date: "2026-10-09",
-    title: "Replays keep their history, and length estimates are back",
-    items: [
-      {
-        text: "Cancelling a replay, or abandoning a 100% run, no longer records a fresh Beat dated today or tells your friends you beat the game again. The game goes back to Finished with its original clear date, and a cancelled replay's Started entry goes with it.",
-        tag: "fix",
-      },
-      {
-        text: "Length estimates from HowLongToBeat are back: a change on their side meant newly added games came in without a suggested length.",
-        tag: "fix",
-      },
-      {
-        text: "When a game has a community-approved length, Add Game now shows it as its own Community option next to the HowLongToBeat estimates, already selected. Before, a HowLongToBeat estimate looked selected while the community length was the one being saved.",
-        tag: "fix",
-      },
-    ],
-  },
-  {
-    id: "2026-09-29-pact-player2-other-platform",
-    date: "2026-09-29",
-    title: "Co-op Pacts across platforms",
-    items: [
-      {
-        text: "Invited to a Co-op Pact for a game you own on a different platform? Accepting now adds a Player 2 copy on your friend's platform next to your own, instead of starting your other copy. If you own it on the same platform, that copy starts as before.",
-        tag: "fix",
-      },
-    ],
-  },
-  {
-    id: "2026-09-16-uniform-game-tiles",
+    id: "2026-09-16-gentler-economy",
     date: "2026-09-16",
-    title: "A gentler economy, tidier shelves, truer journeys",
+    title: "A gentler economy",
+    summary: "Import Charters are gone, and changing your mind about a game costs nothing.",
+    tag: "improvement",
     items: [
-      {
-        text: "Import Charters are gone: moving a game from your Wishlist into your Bazaar is now free, with no charter to buy, sell or spend. The Curio Shop is where your coins go now.",
-        tag: "feature",
-      },
-      {
-        text: "Shelve It and Retire It now refund everything you paid to start a game — nothing is forfeited any more, so changing your mind mid-run costs nothing.",
-        tag: "feature",
-      },
-      {
-        text: "Your lane sizes are now yours to set: choose how many games Focus, Replay and Completionist each hold under Account settings → Now Playing lanes. Everyone keeps the current sizes until they change them, and the Now Playing meter links straight there.",
-        tag: "feature",
-      },
-      {
-        text: "Picking a finished game back up now adds a fresh Started milestone to its Journey, so a replay or a real playthrough after an early test run gets its own date instead of hiding behind the first one.",
-        tag: "improvement",
-      },
-      {
-        text: "Game tiles on profile pages are now the same size no matter the shape of the cover art — a portrait cover no longer makes its tile taller than the one beside it.",
-        tag: "fix",
-      },
-      {
-        text: "Hot This Week tiles line up along the top of the shelf, so a title you own no longer sits lower than its neighbours.",
-        tag: "fix",
-      },
+      "Moving a game from your Wishlist to your Bazaar is free.",
+      "Shelve It and Retire It refund everything you paid.",
+      "Set your own Focus, Replay and Completionist lane sizes.",
     ],
-  },
-  {
-    id: "2026-09-08-pause-release-notes",
-    date: "2026-09-08",
-    title: "A simpler navigation menu",
-    items: ["The What’s new page and its unread indicator are temporarily hidden."],
-  },
-  {
-    id: "2026-09-08-stall-animation-visibility",
-    date: "2026-09-08",
-    title: "Stall details shine brighter",
-    items: ["Opening Night has clearer, alternating star twinkles, and Pixel Sunset’s glowing sun gently rises and falls. Reduced-motion settings keep both still."],
-  },
-  {
-    id: "2026-09-08-signature-glimmers",
-    date: "2026-09-08",
-    title: "A little more sparkle",
-    items: ["Grand Debut cosmetics now catch the light with subtle glimmers, and Pixel Sunset has a gently glowing sun. Effects stay still when reduced motion is enabled."],
-  },
-  {
-    id: "2026-09-08-cosmetic-tier-prices",
-    date: "2026-09-08",
-    title: "Consistent cosmetic prices",
-    items: [
-      "Basic / Signature prices are now 200 / 300 coins for titles, 500 / 750 for frames and stalls, and 1,000 / 1,500 for coin skins.",
-      "Existing purchases and owned cosmetics are unchanged.",
-    ],
-  },
-  {
-    id: "2026-09-08-cloudbound-workshop",
-    date: "2026-09-08",
-    title: "New looks and a Cloudbound collection",
-    items: [
-      "Explore six new standalone titles, six frames, and six Community stall decorations in the Curio Shop.",
-      "Collect Skybound, Windrose, Cloudport, and Airmail Mint for 2,550 coins total to earn the exclusive Horizon Keeper title.",
-      "This new batch starts at 250 coins for titles, 500 for frames, 800 for stalls, and 1,000 for coins.",
-    ],
-  },
-  {
-    id: "2026-09-08-six-new-mints",
-    date: "2026-09-08",
-    title: "Six new ways to mint your coins",
-    items: [
-      "Harvest Seal, Witchglass, Blood Moon, Astral Compass, Sunken Doubloon, and Emberheart are now available in the Curio Shop.",
-      "Choose a new coin skin with your earned coins, then equip it in My Cosmetics.",
-    ],
+    link: { label: "Lane sizes in Account", view: "account" },
   },
   {
     id: "2026-09-08-curio-shop-grand-opening",
     date: "2026-09-08",
-    title: "The Curio Shop is open",
+    title: "The Curio Shop's grand opening",
+    summary: "A fresh shop of titles, frames, stalls and coin skins to spend your coins on.",
+    tag: "feature",
     items: [
-      "Spend your earned coins on a curated opening selection of eight titles, frames, stall decorations, and coin skins.",
-      "Collect all four Grand Debut pieces to unlock Encore, an exclusive completion title.",
-      "Try cosmetics before buying, then equip your purchases and save favorite looks in My Cosmetics.",
-      "The storefront keeps off-sale pieces out of the way; your owned cosmetics remain in My Cosmetics.",
-      "Collection items now show their set name directly on the shop card.",
+      "Collect a full set to unlock an exclusive title.",
+      "New Cloudbound collection and six new coin skins.",
+      "Preview a look before you buy, then wear it from My Cosmetics.",
+      "Seasonal events can reward a cosmetic just for visiting.",
     ],
+    link: { label: "Visit the shop", view: "shop" },
   },
   {
-    id: "2026-09-08-cosmetic-checkout",
-    date: "2026-09-08",
-    title: "More ways to collect cosmetics",
-    items: ["See your remaining coin balance before buying a cosmetic, with protection if its price changes before checkout.", "Open My Cosmetics directly after a successful purchase.", "Your wardrobe supports earned cosmetics alongside purchases and shows how each item was acquired.", "Seasonal events can reward signed-in visits, with an option to buy the cosmetic after the earning window.", "Off-sale pieces remain part of collection requirements, so retiring stock does not change the target."],
-  },
-  {
-    id: "2026-09-08-my-cosmetics",
-    date: "2026-09-08",
-    title: "Your cosmetics, together",
-    items: [
-      "Open My Cosmetics from the menu to browse owned pieces and earned titles, try an outfit, and apply it together—even while the shop is closed.",
-      "Save favorite looks to preview and wear again later.",
-      "Stall decorations now dress up Community cards while leaving your profile banner clear.",
-    ],
-  },
-  {
-    id: "2026-09-05-subscriptions-well-spent",
+    id: "2026-09-05-subscriptions",
     date: "2026-09-05",
-    title: "Is your subscription well spent?",
+    title: "Track your subscriptions",
+    summary: "See whether PS Plus, Game Pass and other memberships are paying off in hours played.",
+    tag: "feature",
     items: [
-      {
-        text: "New Subscriptions page (sidebar): track the memberships you pay for — PS Plus, Game Pass, Switch Online and the rest — with what each costs, whether it bills monthly or yearly, and the day you first paid. Renewals are worked out from there, so the page always knows which period you're in and when the next payment lands.",
-        tag: "feature",
-      },
-      {
-        text: "Every game you hold through a service (a copy marked “subscription” with that service name) counts its logged hours toward what the membership gives back — this renewal period and overall. With a target cost per hour set, a membership earns the same “Well spent” badge as a purchase once its hours have paid for it, and a progress bar shows how far along it is.",
-        tag: "feature",
-      },
-      {
-        text: "Bought a game cheaper thanks to a member-exclusive discount? Note what you saved on that copy (game page → Library → “Member discount?”) and it counts as value the membership delivered, on top of the hours.",
-        tag: "feature",
-      },
-      {
-        text: "Each membership lists its games most-played first — and calls out the ones you claimed but never started — plus a period-by-period breakdown of hours, games added and money saved. The Master Ledger's stats bar gains a memberships line, and Account settings links straight to the page.",
-        tag: "improvement",
-      },
-      {
-        text: "Name a service on a copy that has no plan tracked yet and a one-tap prompt offers to set it up.",
-        tag: "improvement",
-      },
-      {
-        text: "Tiered services nest: a PlayStation Plus Premium membership counts the games (and discounts) you tagged as Essential or Extra, Game Pass Ultimate covers Xbox and PC Game Pass, and so on — and an upgrade shows as one membership with both plans in its history.",
-        tag: "improvement",
-      },
-      {
-        text: "Family member pickers on the Journey and Review tabs now name each edition's platform (and bundle), so several versions of one game are easy to tell apart.",
-        tag: "improvement",
-      },
-      {
-        text: "A game added on a new platform now takes the community cover the moment it lands, instead of waiting for the next site update — so a new version's card matches the one you already had.",
-        tag: "fix",
-      },
-      {
-        text: "Length estimates from HowLongToBeat are back: their search moved and new games were landing without a suggested length. The lookup now follows the move automatically, and a title that came up empty is retried within the hour instead of staying blank for a month.",
-        tag: "fix",
-      },
+      "Log each membership's cost, billing cycle and start date.",
+      "Games you play through a service count toward its value.",
+      "A membership earns Well spent once its hours pay it off.",
+      "Member discounts on games you buy count as value too.",
     ],
+    link: { label: "Open Subscriptions", view: "subscriptions" },
   },
   {
-    id: "2026-09-01-subscription-friendly-streaks",
+    id: "2026-09-01-trying-isnt-buying",
     date: "2026-09-01",
     title: "Trying a game isn't buying one",
+    summary: "Subscription, borrowed and Player 2 games no longer break your Clear Streak.",
+    tag: "improvement",
     items: [
-      {
-        text: "Games you add purely through a subscription (Game Pass, PS Plus…), a borrow, or a Player 2 seat no longer break your Clear Streak — the streak punishes buying before clearing, and trying a game that's already included isn't that. Finishing one still extends your chain. Mark the copy's acquisition when you add it and the add-time warning knows to stay quiet.",
-        tag: "improvement",
-      },
-      {
-        text: "Your history tells trials from purchases: an Added step on the profile timeline wears the same subscription/borrowed/Player 2 chip as the boards, and a wishlist import in the friends feed says “on Game Pass” instead of reading like a purchase.",
-        tag: "improvement",
-      },
-      {
-        text: "Naming a subscription copy's service now suggests the real ones (Game Pass Ultimate, PS Plus Extra, Switch Online…) as you type, so “Game Pass” stops existing in four spellings — anything you've already typed keeps working as-is.",
-        tag: "improvement",
-      },
-      {
-        text: "When a game leaves your subscription (or a borrow goes back), tap “I lost access” on that copy — nothing is deleted, your playtime and history stay put, and once no playable copy remains the card reads “no longer available” and locks from starting. One tap unlocks it the day it returns, or move it back to your Wishlist as a want.",
-        tag: "feature",
-      },
-      {
-        text: "Cancelled a whole service? Marking one of its games as lost offers to sweep every other game you hold through that service in a single tap.",
-        tag: "feature",
-      },
-      {
-        text: "New Access filter on the boards: cut straight to your subscription, borrowed, or Player 2 games — the ones on borrowed time — or to everything whose access is already gone. Priority sorting also surfaces at-risk games first within a tier, so “play it before it vanishes” takes care of itself.",
-        tag: "improvement",
-      },
+      "Tap I lost access when a game leaves a service. Its history stays.",
+      "Filter your boards to games you might lose access to.",
+      "Service names autocomplete as you type.",
     ],
   },
+  // ── August 2026 ───────────────────────────────────────────────────────────
   {
-    id: "2026-08-29-library-integrity",
+    id: "2026-08-29-recommendations",
     date: "2026-08-29",
-    title: "Tastemaker recommendations — and no game left behind",
+    title: "Recommend games to friends",
+    summary: "Send a friend a game with a pitch: they start it for less, and you earn a Tastemaker Bounty.",
+    tag: "feature",
     items: [
-      {
-        text: "Curate lists together! Invite friends to any of your custom lists as contributors — they add games and write notes freely, while removals go through you: a contributor's removal request flags the entry until you approve or deny it. Shared lists show a curator avatar stack, per-game credit for who added what, and a List Activity log of every change.",
-        tag: "feature",
-      },
-      {
-        text: "You'll hear when a curator adds something to your shared list — a quick heads-up that needs no approval, and a whole batch of additions collapses into one alert rather than a pile of them.",
-        tag: "feature",
-      },
-      {
-        text: "Recommend a game to a friend! Open the ⋮ menu on any game you own — on the boards or the Master Ledger — pick a friend who doesn't have it, and add a pitch as long as you like. It lands in their new Recommendations inbox on the Community page.",
-        tag: "feature",
-      },
-      {
-        text: "Recommendations pay off for both sides: a game added from a friend's recommendation starts at a discount, and the moment that discounted fee is paid, the recommender earns a Tastemaker Bounty — a cut of it, straight into their pocket.",
-        tag: "feature",
-      },
-      {
-        text: "No spam, no pressure: you can have at most three recommendations waiting with any one friend, and declining one is free — no penalties, it just quietly frees the slot.",
-        tag: "feature",
-      },
-      {
-        text: "Filter your boards by priority: once you've triaged any game, a Priority slicer appears in the Bazaar's filter panel — cut straight to your Essentials, or to the unassigned pile awaiting triage.",
-        tag: "feature",
-      },
-      {
-        text: "Adding a compilation? Each game in the bundle can get its own priority right on its row, so the headliner ranks above the filler from the moment they hit your shelves.",
-        tag: "feature",
-      },
-      {
-        text: "Libraries with over 1,000 games no longer lose their oldest entries: the app silently stopped loading after the first thousand, so long-time collections watched early adds vanish from the boards. Every game now loads, no matter how big the shelf.",
-        tag: "fix",
-      },
-      {
-        text: "Visiting a friend with a huge collection shows their whole library too — the same cutoff trimmed other players' shelves.",
-        tag: "fix",
-      },
-      {
-        text: "A game added from the new game database now connects to the community's existing record for it: approved cover art, screenshots, and other shared edits show up on your copy instead of a bare, unedited card.",
-        tag: "fix",
-      },
-      {
-        text: "Community edits no longer split into per-source duplicates — an approved edit lands on the game's one shared record and reaches everyone's copies, whichever search source they added it from.",
-        tag: "fix",
-      },
-      {
-        text: "Adding a game you already own (added back when we used the old game database) is detected again — you get the usual duplicate/attach choices instead of the add quietly doing nothing.",
-        tag: "fix",
-      },
-      {
-        text: "Hot This Week no longer shows blank tiles: games added from the new game database now get their cover art in the Market Square's trending row.",
-        tag: "fix",
-      },
-      {
-        text: "One game, one trending tile: a title no longer appears twice in Hot This Week when players hold differently-sourced copies of it (a hand-typed entry, a community-catalog copy, and a searched copy now count as the same game).",
-        tag: "fix",
-      },
-      {
-        text: "Undoing an accidental finish now cleans up properly: your co-op partner's \"your half awaits!\" alert is retracted, the phantom finish no longer counts in Hot This Week, and no stray \"Beat\" entry lingers on the game's timeline.",
-        tag: "fix",
-      },
-      {
-        text: "Games added to a custom list keep their full identity again: suggesting an edit on a list game no longer creates a duplicate catalog entry, the \"in your library\" badge recognizes your copy, and the Wishlist button works on list games you don't own.",
-        tag: "fix",
-      },
-      {
-        text: "Community cover art reaches every copy: games that connected to their shared catalog record late now pick up its approved cover automatically (custom uploads are always left alone), and \"Restore original\" reverts to the art your copy actually shipped with.",
-        tag: "fix",
-      },
+      "Recommend from any game's ⋮ menu.",
+      "Recommendations arrive in your Community inbox.",
+      "Up to three waiting per friend, and declining is free.",
     ],
+    link: { label: "Open Recommendations", view: "community-recs" },
   },
   {
-    id: "2026-08-14-cross-provider-identity",
-    date: "2026-08-14",
-    title: "Same game, either source — copies finally recognize each other",
+    id: "2026-08-29-collaborative-lists",
+    date: "2026-08-29",
+    title: "Build lists with friends",
+    summary: "Invite friends to add games and notes to your custom lists.",
+    tag: "feature",
     items: [
-      {
-        text: "Co-op Pacts work on newly added games again: inviting a friend on a game added recently showed “no friends are available” even when they plainly owned it. Newer entries now match older ones, so the whole friend list shows up.",
-        tag: "fix",
-      },
-      {
-        text: "Friends who own a game are recognized as owners rather than being offered a duplicate Player 2 copy — invites bind the copy already on their shelf.",
-        tag: "fix",
-      },
-      {
-        text: "A game you own twice — added once from each of our game databases — now counts as one game for medals, clears and profile totals instead of two, and shows as a single entry in Market Square trending.",
-        tag: "improvement",
-      },
-      {
-        text: "Your library links the two automatically: a game page gathers both copies, and the add flow spots the one you already own.",
-        tag: "improvement",
-      },
+      "A contributor's removals need your approval.",
+      "See who added each game, plus a full activity log.",
     ],
+    link: { label: "Open My Lists", view: "lists" },
   },
   {
-    id: "2026-08-11-igdb-genres",
-    date: "2026-08-11",
-    title: "Genre errors squashed — and richer genres on new adds",
-    items: [
-      {
-        text: "Adding certain games no longer pops an “UNKNOWN_GENRE” error — genres from the new game database are now understood everywhere.",
-        tag: "fix",
-      },
-      {
-        text: "New adds keep richer genre info: styles like Tactical, Visual Novel, MOBA and Card & Board Game are now recognized instead of being quietly dropped, and near-duplicates (like “Role-playing (RPG)”) fold into the genres you already know.",
-        tag: "improvement",
-      },
-      {
-        text: "Retro and portable platforms (NES, SNES, GameCube, PSP, PS Vita, macOS) now match up correctly when adding a game, so your copy's platform is recognized without filing a needless correction.",
-        tag: "fix",
-      },
-    ],
+    id: "2026-08-29-big-libraries",
+    date: "2026-08-29",
+    title: "Big libraries load in full",
+    summary: "Collections over 1,000 games no longer lose their oldest entries, yours or a friend's.",
+    tag: "fix",
   },
   {
-    id: "2026-08-10-igdb-primary",
+    id: "2026-08-10-priorities",
     date: "2026-08-10",
-    title: "Stealth Adds, priority triage, a new home for game search — and the Caravan rides again",
+    title: "Rank games by priority",
+    summary: "Mark games Essential, High, Medium or Low, then sort and filter by it.",
+    tag: "feature",
     items: [
-      {
-        text: "Stealth Add: a second button when adding a game slips it onto your shelves quietly. It arrives marked private, friends never see it in any activity feed, and your Clear Streak is completely unaffected — no break for adding it, and no extension when you finish it.",
-        tag: "feature",
-      },
-      {
-        text: "Priority triage: mark any game Essential, High, Medium or Low — when you add it or anytime from its page — and a small chip shows the tier on its card. Sort any board by priority (most or least urgent first), or slice the Master Ledger down to a tier with the new Priority filter; the stats up top follow along. Only you see your rankings, and games you haven't ranked simply stay out of the way.",
-        tag: "feature",
-      },
-      {
-        text: "Searching for a game now looks it up in IGDB — a bigger, more dependable game database — so cover art, genres, platforms, ratings and developers are back in your search results. The old database has been down for days; the standby kept titles turning up, but only as bare names and years.",
-        tag: "improvement",
-      },
-      {
-        text: "The Caravan is restocked: Trending, New Releases and The Merchant Recommends now come from the new database too, so discovery works again after days of empty stalls (and keeps working if either source goes down).",
-        tag: "fix",
-      },
-      {
-        text: "Games added from the new database are full citizens: community reviews, stats, likes and approved catalog edits find them just like games added before the switch.",
-        tag: "improvement",
-      },
-      {
-        text: "Search no longer leans on any single source: if IGDB can't be reached it falls back to the old database, and then to Wikidata, automatically.",
-        tag: "improvement",
-      },
+      "Set a priority when you add a game, or from its page.",
+      "Only you see your rankings.",
     ],
   },
   {
-    id: "2026-08-08-game-search-standby",
+    id: "2026-08-10-stealth-add",
+    date: "2026-08-10",
+    title: "Stealth Add",
+    summary: "Add a game quietly: it's private, skips the friends feed and leaves your Clear Streak alone.",
+    tag: "feature",
+  },
+  {
+    id: "2026-08-10-better-search",
+    date: "2026-08-10",
+    title: "Better game search",
+    summary: "Search now uses a bigger game database, so covers, genres and platforms are back.",
+    tag: "improvement",
+    items: [
+      "The Caravan is restocked with trending games and new releases.",
+      "If one source is down, search switches to another.",
+      "A game added from either source counts as one game.",
+    ],
+    link: { label: "Browse the Caravan", view: "market" },
+  },
+  {
+    id: "2026-08-08-online-while-playing",
     date: "2026-08-08",
-    title: "Search survives an outage, and your stall stays open while you play",
-    items: [
-      {
-        text: "Start your stopwatch, put your phone down and go play — you now stay online the whole time, with the game you're on shown next to your name. Presence used to need the site open in front of you, so the most common way to play made you look offline within two minutes.",
-        tag: "feature",
-      },
-      {
-        text: "That status keeps up with you while you're away from the screen: a session that reads \"Diving into Hades\" at the start says \"Grinding away at Hades\" a few hours later, with nothing for you to do.",
-        tag: "improvement",
-      },
-      {
-        text: "Tracking time on a game you've marked private no longer puts its name in your status — you show as playing, the title stays yours.",
-        tag: "fix",
-      },
-      {
-        text: "Your friends list refreshes on its own now, so friends coming online (or heading off to play) appear without you leaving the page.",
-        tag: "improvement",
-      },
-      {
-        text: "A stopwatch left running for more than 12 hours stops holding your stall open — the same point the app already asks whether you're still playing.",
-        tag: "improvement",
-      },
-      {
-        text: "Searching for a game in Add a game works again. The database we look games up in went down, and the search box had no standby to fall back on — so even Majora's Mask came back as nothing. It now switches to a second source automatically, and titles keep turning up.",
-        tag: "fix",
-      },
-      {
-        text: "Searches that come back thin from the standby source list the game and its release year, but not its length — type your own hours in, or fix them later on the game's page.",
-        tag: "improvement",
-      },
-      {
-        text: "When both sources are unreachable, the search box now says so instead of claiming there are no matches — so a bad hour never looks like your game missing from the catalog. The Caravan says the same rather than showing empty shelves.",
-        tag: "improvement",
-      },
-      {
-        text: "An unresponsive game database is given eight seconds to answer before the standby takes over, so searching no longer hangs for half a minute first.",
-        tag: "improvement",
-      },
-    ],
+    title: "Stay online while you play",
+    summary: "With your stopwatch running, friends see what you're playing even after you put your phone down.",
+    tag: "improvement",
   },
-  {
-    id: "2026-07-28-lists-tap-to-add",
-    date: "2026-07-28",
-    title: "Lists you can act on, and co-op clears that count",
-    items: [
-      {
-        text: "Joining a friend's Co-op Pact no longer resets your Clear Streak. That seat goes straight into play to be cleared together, so it was never new backlog pressure — and now a game the two of you clear counts towards both of your streaks.",
-        tag: "fix",
-      },
-      {
-        text: "Tapping a game in a list always does something now. One that's in your library opens its page as before — one you haven't added yet opens a look-only card with its cover, length and screenshots, the same card you get for a game on someone else's page. Those entries used to do nothing at all.",
-        tag: "fix",
-      },
-      {
-        text: "That card is one tap from wishlisting the game — and you can suggest an edit to its catalog entry right there, without having to add it to your Bazaar first.",
-        tag: "improvement",
-      },
-    ],
-  },
+  // ── July 2026 ─────────────────────────────────────────────────────────────
   {
     id: "2026-07-27-community-page",
     date: "2026-07-27",
-    title: "The Community page: friends, activity & messages, out of the inbox",
+    title: "The Community page",
+    summary: "Friends, activity, messages and the Market Square now share one page.",
+    tag: "feature",
     items: [
-      {
-        text: "Everything social now lives on one Community page, one tap in the nav — no more digging through the notification drawer. Friends opens first with player search, requests, and your friend list; Activity, Messages, and the Market Square each get their own tab.",
-        tag: "feature",
-      },
-      {
-        text: "Your friend list can be filtered by name and sorted by who's online, name, or recent activity — and each friend now shows what they're up to right now. Tap a friend to visit their profile; messaging is one tap away; removing a friend sits safely behind a menu and a confirmation.",
-        tag: "feature",
-      },
-      {
-        text: "Messages grows into a real two-pane inbox on bigger screens — conversations on the left, the open chat on the right — while phones keep the simple tap-in, tap-back flow.",
-        tag: "improvement",
-      },
-      {
-        text: "Badges now mean one thing each: the bell counts unread alerts only, while the Community tab counts friend requests and unread chats. On your phone, Community sits right in the bottom bar (the Master Ledger moved into the More menu).",
-        tag: "improvement",
-      },
-      {
-        text: "A list only re-ranks when you drag the handle to the left of a game, so scrolling one on your phone can't shuffle your ranking by accident.",
-        tag: "fix",
-      },
-      {
-        text: "Tap anywhere on an entry in a list to open that game's page, where you can edit it like anywhere else — wishlisted games included.",
-        tag: "improvement",
-      },
-      {
-        text: "Your Clear Streak now only breaks when you add a new game to play. Logging a game you already beat straight to Finished (or wishlisting a want) is safe — and the break warning now appears only when an add would actually end your streak.",
-        tag: "improvement",
-      },
+      "Sort and filter your friends, and see what each is playing.",
+      "Messages gets a two-pane inbox on bigger screens.",
+      "The bell now counts alerts only.",
     ],
+    link: { label: "Open Community", view: "community" },
   },
   {
     id: "2026-07-26-clear-streak",
     date: "2026-07-26",
-    title: "Build a Clear Streak",
+    title: "Clear Streaks",
+    summary: "Finish games back to back without adding new ones to earn a growing bonus.",
+    tag: "feature",
     items: [
-      {
-        text: "Finish games back-to-back — without adding anything new to your library — to build a Clear Streak that pays an escalating coin bonus. Your 3rd finish in a row pays a bonus on top of its bounty, climbing with each finish after that up to a cap. A flame by your coin balance tracks it live once you've got two in a row going.",
-        tag: "feature",
-      },
-      {
-        text: "Adding any game instantly resets your Clear Streak, so we now warn you first when one's on the line. Your all-time best streak is kept forever — chase it on your Master Ledger, and a finish that sets a new personal best gets a little celebration.",
-        tag: "feature",
-      },
-      {
-        text: "Start a stopwatch and your status now shows friends what you're in the middle of — \"Diving into Hades\" when you boot up, shading into \"Grinding away at Hades\" and finally \"Lost in Hades\" the longer you play. Stop the timer and your status quietly returns to normal.",
-        tag: "improvement",
-      },
+      "Your third finish in a row starts paying bonus coins.",
+      "Adding a new game to play resets it, and we warn you first.",
+      "Your best streak is kept on your Master Ledger.",
     ],
   },
   {
     id: "2026-07-24-stopwatch",
     date: "2026-07-24",
-    title: "Time your play with a live stopwatch",
+    title: "A live stopwatch",
+    summary: "Start a timer on any game you're playing and log the time when you stop.",
+    tag: "feature",
     items: [
-      {
-        text: "Start a live stopwatch on any game you're playing and Backlog Bazaar tracks the time for you — a floating pill keeps ticking as you play, across refreshes and devices. Stop it to log the hours automatically, or trim them down if you stepped away. Prefer typing? Manual logging works exactly as before.",
-        tag: "feature",
-      },
+      "It keeps running across refreshes and devices.",
+      "Trim the time if you stepped away.",
+      "Friends see what you're playing while it runs.",
     ],
+    link: { label: "Open Now Playing", view: "playing" },
   },
   {
     id: "2026-07-23-your-length",
     date: "2026-07-23",
     title: "Set your own length",
+    summary: "Tell us how long a game will take you, and its price and bounty follow.",
+    tag: "feature",
     items: [
-      {
-        text: "Decide how long a game will take you. On a game's Overview, set Your length — mainline, full playthrough, or 100% — and it drives your price and finish bounty instead of the shared catalog estimate. Changed your mind mid-playthrough? Update it anytime; it never touches the catalog everyone else sees.",
-        tag: "feature",
-      },
-      {
-        text: "Lengthening a game you're already playing tops up its activation fee for the extra hours — and if you can't cover it all right now, the rest is simply taken off your finish bounty instead of blocking the change. Shortening it refunds the difference.",
-        tag: "improvement",
-      },
-      {
-        text: "When a pre-order arrives, its Added date now becomes the day it actually came out — not the day you placed the order — so it joins your collection (and prices) as a fresh, day-one pickup.",
-        tag: "improvement",
-      },
-      {
-        text: "Amount fields now do math: type 19.99+7.5% for price plus tax, 45/60 for minutes as hours, or (12+8)*2 — anywhere you enter play time, game length, what you paid, or a backing stake. Proper order of operations, rounded to cents.",
-        tag: "feature",
-      },
-      {
-        text: "Ask a friend for a loan! Short of coins for a game? Ask a friend to front the difference right from its card. If they grant it, the coins transfer and the game buys itself into Now Playing — then the loan repays from your finish bounty, with interest. Withdraw a pending ask anytime; lenders see requests at the top of their Bazaar.",
-        tag: "feature",
-      },
-      {
-        text: "The Ask-a-friend loan option now always appears when you're short on coins (it used to hide until you'd opened the Friends panel), and friends' coin balances now read accurately everywhere friends see them — the hide-my-spend privacy toggle only ever hides real-money spend, never coins.",
-        tag: "fix",
-      },
+      "Pick main story, main plus extras, or 100%.",
+      "It never changes the length anyone else sees.",
     ],
   },
   {
-    id: "2026-07-22-clear-verbs",
-    date: "2026-07-22",
-    title: "Beat or completed, at a glance",
-    items: [
-      {
-        text: "Fresh Clears and your friends feed now say whether someone beat a game or completed it 100%, instead of a flat finished.",
-        tag: "improvement",
-      },
-      {
-        text: "Version pickers name the bundle a copy came in, so two copies of one game on the same platform — say, from two different compilations — are no longer both just Nintendo Switch.",
-        tag: "improvement",
-      },
-      {
-        text: "Retiring a game no longer posts it as a clear in the community feed — dropping a game you weren't enjoying stays your business.",
-        tag: "fix",
-      },
-      {
-        text: "A profile's Now Playing section shows Co-op Pact games again — they were counted in the total but their cards never appeared.",
-        tag: "fix",
-      },
-      {
-        text: "Your Beat and Completed milestones now decide when a clear happened. Log a game you finished years ago — or backdate its milestone later — and it stays out of Fresh Clears, the friends feed and the Stall of the Week, and counts toward the year it really belongs to in your Ledger.",
-        tag: "feature",
-      },
-      {
-        text: "Replaying a game you'd already beaten now records a new Beat milestone, so a second clear shows up on its Journey instead of leaving the timeline stuck on the first one.",
-        tag: "improvement",
-      },
-      {
-        text: "Retired games no longer count toward your Ledger's finished-this-year total — retiring a game isn't finishing it.",
-        tag: "fix",
-      },
-      {
-        text: "A game's steps on the same day now read in journey order in Recent Activity — Started, then Beat, then Completed — however you entered or backdated them.",
-        tag: "fix",
-      },
-      {
-        text: "Linking editions into a Game Family now shows each copy's platform and bundle, so two copies of the same game are no longer two identical rows when you pick one or crown the primary.",
-        tag: "improvement",
-      },
-      {
-        text: "The Master Ledger filters by format — see just your physical shelf, your digital library, or the DLC you own.",
-        tag: "feature",
-      },
-    ],
+    id: "2026-07-23-friend-loans",
+    date: "2026-07-23",
+    title: "Ask a friend for a loan",
+    summary: "Short on coins? A friend can front the difference, repaid from your finish bounty.",
+    tag: "feature",
   },
   {
-    id: "2026-07-21-preorder-planning",
-    date: "2026-07-21",
-    title: "Pre-order coin planning",
-    items: [
-      {
-        text: "Pre-ordered cards now show roughly how many coins the game will cost to Buy & Start once it arrives, so you can save up before release day.",
-        tag: "feature",
-      },
-      {
-        text: "Deleting a pre-ordered game no longer fails with an error — removing one from your library works again, and it still counts as cancelling the order in your history.",
-        tag: "fix",
-      },
-    ],
-  },
-  {
-    id: "2026-07-20-signature-class",
-    date: "2026-07-20",
-    title: "Signature cosmetics",
-    items: [
-      {
-        text: "The shop's fanciest class of cosmetics — the animated, ornamented pieces marked with a gilded chip — is now called Signature (formerly Premium). Same items, same gilded chip, new name.",
-        tag: "improvement",
-      },
-    ],
-  },
-  {
-    // Re-slugged as today's shop waves shipped (economy toggle, premium wave,
-    // companions/coins/collections, then Warp Zone) and again for shared co-op
-    // time, so the "What's new" dot re-lights.
-    id: "2026-07-19-curio-shop-coop-time",
+    id: "2026-07-19-curio-shop",
     date: "2026-07-19",
-    title: "The Curio Shop, shared co-op time, and pre-order polish",
+    title: "The Curio Shop",
+    summary: "Spend your coins on titles, avatar frames, stall decorations and coin skins.",
+    tag: "feature",
     items: [
-      {
-        text: "Co-op Pacts: shared time. While a pact is active, Player 1 logs your sessions once and the hours land on both players' cards automatically — no more double entry. Time either of you logged before the pact stays untouched, and once Player 1 finishes their half, Player 2's log box unlocks for the rest of their own run.",
-        tag: "feature",
-      },
-      {
-        text: "Getting signed out every time you refresh? That happens when a browser blocks site storage (private windows, in-app browsers, blocked cookies) — the sign-in page now spots it and tells you how to fix it, instead of silently forgetting you.",
-        tag: "fix",
-      },
-      {
-        text: "The Curio Shop is open! Spend your hard-earned coins on permanent cosmetics: titles to wear beside your name, avatar frames, and stall decorations that dress up your Market Square stall and profile. Find it in the sidebar — and watch for seasonal stock that's only on the shelf for a while (once bought, it's yours forever).",
-        tag: "feature",
-      },
-      {
-        text: "The shop now carries a Premium class of cosmetics with animation and flair — a frame with a passing glint of starlight, a slowly turning Prismatic ring, twinkling Marquee Lights for your stall — at premium prices, marked with a gilded chip.",
-        tag: "feature",
-      },
-      {
-        text: "Seasonal surprise drops: some shop items now stay completely hidden until their season arrives, then appear on the shelf out of nowhere. Keep an eye on the Curio Shop around the holidays…",
-        tag: "feature",
-      },
-      {
-        text: "Companions and weather join the premium shelf: a Cat Familiar that naps on your frame (it blinks — and judges), an Ember ring with drifting sparks, a Stormcaller frame with the occasional lightning strike, and a Shooting Star stall where a comet streaks past while you watch.",
-        tag: "feature",
-      },
-      {
-        text: "Coin skins: buy a custom mint — Rose Gold, Obsidian, or the glinting Radiant — and every coin and price you see wears it. Visitors see your mint on your profile, too.",
-        tag: "feature",
-      },
-      {
-        text: "New premium stall: Penguin Cove — an igloo on the frozen shore with a warm glow in the doorway, glittering ice, and penguins that toboggan clear across your stall when you least expect it.",
-        tag: "feature",
-      },
-      {
-        text: "The Retro Arcade shelf is stocked: video-game-inspired cosmetics year-round — a Pixel Heart frame with a blinking low-HP heart, an Invincibility Star that runs the rainbow, CRT scanlines, a Boss Bar, an Arcade Cabinet stall flashing INSERT COIN, a 16-bit Pixel Sunset, a torchlit Dungeon Gate, a Loot Chest that creaks open, a Starfield Warp, a Save Point crystal, arcade coin mints, and titles from Press Start to NPC. Collect the four Retro Arcade pieces for the exclusive High Score title.",
-        tag: "feature",
-      },
-      {
-        text: "New premium stall: Coral Reef — your stall underwater, with tropical fish cruising through, bubbles rising off the coral, seaweed swaying in the current, and light glinting near the surface.",
-        tag: "feature",
-      },
-      {
-        text: "New premium stall: Deep Space — a black void of resting and twinkling stars, a ringed gas giant, a little red planet, and a UFO that jinks across the sky when you least expect it. Look closely: someone's flying it.",
-        tag: "feature",
-      },
-      {
-        text: "Three more premium stalls: Puppy Park (a sunny lawn where a golden pup gallops clear across after a runaway ball, doghouse and paw prints included), Cat Nap (a sunbeam corner with a cat asleep on a cushion — breathing slowly, Zzz's drifting up, yarn and a butterfly pointedly ignored), and High Seas (two pirate ships riding the swell, trading cannon fire — muzzle flash, arcing shot, splash — under a flock of gulls).",
-        tag: "feature",
-      },
-      {
-        text: "New premium stall: Trophy Cabinet — a glass case of hard-won gold and silver behind your stall, with the glare sweeping the glass and the trophies catching the light when you least expect it.",
-        tag: "feature",
-      },
-      {
-        text: "New premium stall: Dragon's Keep — a storybook castle with fluttering pennants and a lit window, standing over a green field, while a dragon beats its wings clear across the sky above your stall.",
-        tag: "feature",
-      },
-      {
-        text: "New premium stall: Warp Zone — a side-scrolling level plays out behind your stall: a red-capped hero dashes in, hops for every floating coin, and drops down the green warp pipe. Then does it all again.",
-        tag: "feature",
-      },
-      {
-        text: "The Iridescent collection (community-requested!): a shifting-color set — the Iridescent title that's never the same color twice, a Pearlescent frame swirling every color at once, the Iridescent Veil stall with aurora curtains rippling over a starlit night, and a milky Opal Mint whose colors move. Own all four and the pearlescent Opalescent title is yours. Plus a Soap Bubble frame on the side.",
-        tag: "feature",
-      },
-      {
-        text: "Collections with set bonuses: own every piece of a seasonal collection and an exclusive animated title is yours on the spot — shimmering, glowing chips no amount of coins can buy directly.",
-        tag: "feature",
-      },
-      {
-        text: "Stall decorations now scale up on profile pages, so your cobwebs, light strings, and snowfall are easy to admire on the big header.",
-        tag: "improvement",
-      },
-      {
-        text: "On compact cards (Market Square rows, shop previews), stall decorations now fade into the background so names and stats stay easy to read — the full-strength scene lives on the big profile header.",
-        tag: "improvement",
-      },
-      {
-        text: "Prefer a plain backlog tracker? Turn off the coin economy in Account settings: starting a game becomes free, finishes pay no bounty, and prices, coins, charters and vouchers disappear from the app. Your balance is kept safe and frozen — flip it back on any time and pick up exactly where you left off (active game backings are returned when you switch off).",
-        tag: "feature",
-      },
-      {
-        text: "Importing a Wishlist game that isn't out yet now asks: did you pre-order it? Confirm with the expected date and what you paid, and it lands in your Bazaar as a locked pre-order with its countdown — and if the order ever falls through, cancelling it returns the Import Charter you spent.",
-        tag: "feature",
-      },
-      {
-        text: "The Bazaar's Coming up strip now announces only pre-orders arriving within the next 30 days, so it means what it says: time to get your coins and slots ready. Far-off pre-orders still pin on the board with their countdowns.",
-        tag: "improvement",
-      },
-      {
-        text: "Adding a game whose release date has already passed no longer offers the pre-order checkbox — it only appears when it could actually apply.",
-        tag: "improvement",
-      },
-      {
-        text: "Jump back to the top with one tap: a floating button appears on your boards and the Master Ledger once you've scrolled a screenful deep — no more flicking all the way back up a long list.",
-        tag: "improvement",
-      },
-      {
-        text: "The Co-op Pact banner on a game's page now lays out properly on phones — the pact status gets its own line instead of being squeezed into a sliver beside the buttons.",
-        tag: "fix",
-      },
-      {
-        text: "The banner-positioning dialog no longer hides behind your game cards, and clicking outside it no longer throws away your positioning — only Cancel or the X closes it.",
-        tag: "fix",
-      },
+      "Signature pieces add animation, from twinkling lights to roaming pets.",
+      "Collect a whole set to earn an exclusive title.",
+      "Some seasonal pieces appear only for a limited time.",
     ],
   },
   {
-    id: "2026-07-18-ledger-paging",
+    id: "2026-07-19-economy-off",
+    date: "2026-07-19",
+    title: "Turn off the coin economy",
+    summary: "Prefer a plain backlog tracker? Switch coins off in Account settings any time.",
+    tag: "feature",
+    items: ["Your balance is saved and comes back when you switch it on."],
+    link: { label: "Open Account", view: "account" },
+  },
+  {
+    id: "2026-07-18-market-square",
     date: "2026-07-18",
-    title: "The Market Square, Player 2 Co-op Pacts, and pre-orders",
+    title: "The Market Square",
+    summary: "The leaderboard became a community hub for clears, reviews and trending games.",
+    tag: "feature",
     items: [
-      {
-        text: "The Leaderboard is now the Market Square: players with their stall open right now are pinned up top with what they're playing, and everyone else lists below — sort by recent activity, most clears, or name. Coin rankings are gone; tap any stall to visit that player's Bazaar, just like before.",
-        tag: "feature",
-      },
-      {
-        text: "The Market Square is a community hub: Fresh Clears streams finished games from the whole community (cheer anyone on — no friendship needed), Talk of the Bazaar shows the newest reviews with their scores, and the Stall of the Week crowns whoever cleared the most games in the last seven days.",
-        tag: "feature",
-      },
-      {
-        text: "New privacy toggle in Account settings: Keep my clears out of the Market Square. Your friends' activity feed is unaffected, and nothing from before today ever appears in the community feed.",
-        tag: "feature",
-      },
-      {
-        text: "Hot This Week in the Market Square: a shelf of the titles the community is adding, finishing, liking and reviewing right now — anonymous counts, refreshed from the last seven days. Titles you own open straight into your library.",
-        tag: "feature",
-      },
-      {
-        text: "Curated Stalls in the Market Square: browse players' public game lists — cover previews, game counts, and a tap to open the list or visit its curator. Publishing a list (visibility: Public) is all it takes to appear.",
-        tag: "feature",
-      },
-      {
-        text: "Back a Game! Visiting a friend's Bazaar, stake some of your own coins on a backlog game — they claim the stake as a bonus on top of the bounty by finishing it. Unclaimed stakes quietly return to you after 60 days (or if the game is retired or removed), and a Backed chip on your own cards shows who's rooting for you.",
-        tag: "feature",
-      },
-      {
-        text: "Co-op Pacts now welcome friends who don't own the game: invite any friend — accepting adds it to their library as a Player 2 copy on your platform (no Import Charter needed, just the activation fee) and starts it right away. Invites for games you don't own appear at the top of your Bazaar and in your notifications.",
-        tag: "feature",
-      },
-      {
-        text: "Feeling generous? When sending a pact invite you can offer to cover your friend's activation fee — it's charged to you the moment they accept, so coins never stand between you two.",
-        tag: "feature",
-      },
-      {
-        text: "New Co-op Pacts lane in Now Playing: pact games play there with no limit and never take a Focus slot, so a slow partner can't block you. Sending an invite moves your game there immediately (freeing its slot) with a chip showing you're waiting on your friend.",
-        tag: "feature",
-      },
-      {
-        text: "Pre-orders! A game you've already bought but isn't out yet lives in your Bazaar, like your console library: mark it while adding it (or from its card's ⋮ menu) with its release date and what you paid. It pins to the top of the Bazaar with a countdown, locked from starting — then unlocks by itself on release day with an arrival alert. Order fell through? Cancel it and either remove the game or keep it as a Wishlist want.",
-        tag: "feature",
-      },
-      {
-        text: "Game Families break out on the game page: Journey can follow the whole family's story or a single edition's, and Review lets you pick which edition you're reviewing (the primary by default).",
-        tag: "feature",
-      },
-      {
-        text: "Choose which edition's cover art fronts your family — the board card and the game page both wear it (Overview → Family cover).",
-        tag: "feature",
-      },
-      {
-        text: "Big collections no longer slow down the Master Ledger — it now loads a page of games at a time and quietly fetches more as you scroll, just like the boards.",
-        tag: "improvement",
-      },
-      {
-        text: "Coming back from a game's page still drops you right on the row you left, even deep in a long ledger.",
-        tag: "improvement",
-      },
-      {
-        text: "A family's Owned On section now names each edition with its own platforms, instead of one merged pile of tags.",
-        tag: "improvement",
-      },
-      {
-        text: "“Link another edition” now suggests kindred titles from your library — sequels, remasters, other entries in the series — instead of whatever you added most recently.",
-        tag: "improvement",
-      },
-      {
-        text: "Fixed the Sever Family Link button: its confirmation was opening invisibly behind the Family Breakdown window.",
-        tag: "fix",
-      },
-      {
-        text: "Changed your mind after inviting? You can now offer to cover your friend's activation fee — or retract the offer — on a pact invite you've already sent, straight from the pact banner. No more withdrawing and re-inviting.",
-        tag: "feature",
-      },
-      {
-        text: "The pact invite window now shows roughly what covering the fee will cost, and warns you up front if your balance won't stretch that far.",
-        tag: "improvement",
-      },
-      {
-        text: "A covered pact fee no longer dead-ends when the gifting friend is short on coins at accept time: instead of a confusing error, you're told plainly what happened and offered to pay your own way or wait — and they get a nudge to top up.",
-        tag: "fix",
-      },
-      {
-        text: "A Co-op Pact game that detours through the Completionist lane now returns to its Co-op lane seat when you stop the 100% run, instead of dropping into Focus and stranding the pact.",
-        tag: "fix",
-      },
+      "Fresh Clears shows games the community just finished.",
+      "Hot This Week shows what players are adding and finishing.",
+      "Browse players' public lists in Curated Stalls.",
+      "A privacy toggle keeps your clears out of it.",
+    ],
+    link: { label: "Visit the Market Square", view: "community-discover" },
+  },
+  {
+    id: "2026-07-18-player-2-pacts",
+    date: "2026-07-18",
+    title: "Co-op Pacts with any friend",
+    summary: "Invite friends who don't own the game: accepting adds a Player 2 copy and starts it.",
+    tag: "feature",
+    items: [
+      "Offer to cover your friend's start cost.",
+      "Pact games get their own Co-op lane with no limit.",
+      "Player 1 logs time once, and it counts for both players.",
     ],
   },
   {
-    id: "2026-07-13-quality-of-life",
+    id: "2026-07-18-back-a-game",
+    date: "2026-07-18",
+    title: "Back a Game",
+    summary: "Stake coins on a friend's backlog game, and they claim them by finishing it.",
+    tag: "feature",
+    items: ["Unclaimed stakes come back to you after 60 days."],
+  },
+  {
+    id: "2026-07-18-preorders",
+    date: "2026-07-18",
+    title: "Pre-orders",
+    summary: "Pre-ordered games wait in your Bazaar with a countdown, then unlock on release day.",
+    tag: "feature",
+    items: [
+      "Cards show roughly what it will cost to start.",
+      "The Coming up strip lists arrivals in the next 30 days.",
+      "Cancel an order to remove the game or keep it wishlisted.",
+    ],
+  },
+  {
+    id: "2026-07-13-fast-scroll",
     date: "2026-07-13",
-    title: "Fly through big boards",
-    items: [
-      { tag: "feature", text: "Long boards get a fast-scroll rail on phones: start scrolling and a slim track fades in on the right edge. Sorted A–Z it's a letter index — tap or slide to a letter to jump straight to those titles; under any other sort it's a drag handle that whips through the whole list, with a big center bubble anchoring where you are (“Jul 2026”, “~50h”, “120 coins”). It fades back out two seconds after you stop." },
-      { tag: "fix", text: "Scrolling the page no longer changes a number field you were typing in — cost, coins and other numeric inputs now ignore the scroll wheel while focused." },
-      { tag: "improvement", text: "Not sure about a Mystery Pull? Tap the drawn game's cover (or its title) to jump to its page and look it over — the pull simply steps aside, nothing is charged." },
-      { tag: "improvement", text: "A game's “Owned on” spend breakdown now says where each copy came from — standalone purchases are listed first, and copies that came in a compilation sit under a “Part of …” header naming the bundle (each bundle listed if there are several)." },
-    ],
+    title: "Fly through long boards",
+    summary: "On phones, a fast-scroll rail jumps through long lists, with a letter index for A to Z.",
+    tag: "improvement",
   },
   {
-    id: "2026-07-11-value-played",
+    id: "2026-07-11-co-op-pacts",
     date: "2026-07-11",
-    title: "Co-op Pacts arrive",
+    title: "Co-op Pacts",
+    summary: "Pledge to finish a game with a friend, and you both earn a bonus when you do.",
+    tag: "feature",
     items: [
-      { tag: "feature", text: "Co-op Pacts: pledge to finish a game together with a friend. Invite them from the game card's ⋮ menu — they just need to own the same title, on any platform — and once you BOTH finish it, each of you earns a bonus on top of your own bounty. Pacted cards wear your partner's avatar, the game's page shows their progress, and “How it works” has the full details. Backing out (shelving, retiring, or dissolving) simply ends the pact — no bonus, no penalty." },
-      { tag: "improvement", text: "Value Played on a game's Overview is now the dollars of play you've banked — your target rate × hours played (e.g. $7.50/hr × 10.65h = $79.88). Once it covers what you spent, it turns green with the gem; until then it shows exactly how much playtime is left to reach “well spent”." },
-      { tag: "improvement", text: "Money amounts now group thousands with commas — “$1,234.56” — everywhere spend is shown, including the Master Ledger stats." },
-      { tag: "fix", text: "Each tab now opens at the top, and returning to a card after backing out of its page no longer follows you to other tabs — the Master Ledger and the boards keep their places separate." },
+      "Invite a friend from a game's ⋮ menu.",
+      "Pact cards show your partner and their progress.",
     ],
   },
   {
-    id: "2026-07-10-bundle-order",
+    id: "2026-07-10-money-well-spent",
     date: "2026-07-10",
-    title: "Bundles keep their order",
+    title: "Money Well Spent",
+    summary: "Set a target cost per hour and see which games have paid for themselves.",
+    tag: "feature",
     items: [
-      { tag: "fix", text: "A newly added compilation now remembers its natural order — the order you entered the games (or the official bundle lists them) is the order its cards appear in everywhere, with no manual reordering needed. Previously the order could scramble after a reload." },
-      { tag: "fix", text: "Editing a compilation keeps its games in their displayed order, and a game you add mid-list stays exactly where you put it." },
-      { tag: "fix", text: "Previous / Next on a game's page now steps through games stacked into a same-game deck instead of skipping over them." },
-      { tag: "fix", text: "Opening a compilation or Game Family card from deep in a long board and backing out now returns you to that card, instead of occasionally jumping to the top of the page." },
-      { tag: "fix", text: "Expanding a game into a compilation no longer fails with an UNKNOWN_PLATFORM error when the community bundle's info carries an outdated platform spelling — off-list terms are now quietly cleaned up instead." },
-      { tag: "improvement", text: "“Missing platform? Choose from all platforms” now lives at the bottom of the platform dropdown itself — pick it there to widen the choices, instead of hunting for a separate link below." },
-      { tag: "feature", text: "New “Player 2” ownership type — log games you play on someone else's copy (couch co-op, screen share, a partner's license). They never count toward your spending, wear a distinct two-player badge on their cards, and get their own filter chip in the Master Ledger." },
-      { tag: "feature", text: "“Money Well Spent”: set a target cost per hour in Account settings (e.g. $1.00/hour), and any game whose logged playtime pays off its purchase price earns a “Well spent” badge on its cards and page — hover it for the math. Each game's Overview also shows its value played (the $/hr it has cost so far) beside the money spent, and the Master Ledger stats gain total money spent and your real cost per hour, following your filters. Free and Player 2 games are never judged." },
+      "Games that hit it earn a Well spent badge.",
+      "The Master Ledger shows your real cost per hour.",
     ],
   },
   {
     id: "2026-07-08-game-browsing",
     date: "2026-07-08",
-    title: "Move through your collection your way",
-    items: [
-      { tag: "feature", text: "A game's page now has Previous / Next buttons when you opened it from the Bazaar, Finished, or Master Ledger — step through your collection card by card, in the same order you were browsing, without returning to the list each time." },
-      { tag: "feature", text: "The ⋮ menu on a Bazaar game now has 'Move to Finished' (pick Beaten or Completed) — a quick fix for a game you'd already finished but added to the Bazaar by mistake. No coins are spent or earned." },
-      { tag: "feature", text: "A game's detail page now has its own ⋮ menu with the same quick actions as a board card — move to Wishlist or Finished, make it private, link editions, or delete it — right from the page." },
-      { tag: "fix", text: "Opening a game from deep in a long board — or from the Master Ledger — and clicking Back now returns you to that same card instead of jumping to the top of the list." },
-      { tag: "fix", text: "A compilation's games now stay together in order — on the boards and in the Master Ledger — whether or not you've dragged them into a custom order, instead of scattering under the sort. Reorder them in the bundle's card to change it." },
-      { tag: "improvement", text: "Deleting a game from its detail page now moves you to the previous card in the list (or the new first one) instead of dropping you back on the board, so you can keep working through your collection." },
-      { tag: "fix", text: "Previous / Next now steps through a collapsed compilation's bundle page too, instead of skipping over it — and the bundle page has its own Previous / Next so you can keep browsing without backing out." },
-    ],
+    title: "Step through your games",
+    summary: "Previous and Next on a game's page move through your board without going back.",
+    tag: "improvement",
+    items: ["Back returns you to the card you opened."],
   },
   {
-    id: "2026-07-07-board-paging",
-    date: "2026-07-07",
-    title: "Smoother boards with big libraries",
-    items: [
-      { tag: "improvement", text: "Boards with hundreds of games now load a page of cards at a time and reveal more as you scroll, so opening the Bazaar (or any board) stays fast and smooth instead of lagging while everything renders at once." },
-    ],
-  },
-  {
-    id: "2026-07-07-csv-covers-and-cancel",
-    date: "2026-07-07",
-    title: "CSV imports now find cover art",
-    items: [
-      { tag: "improvement", text: "After a CSV import adds your games, a background pass automatically links each one to the game database and pulls in its cover art where there's a confident match — no more plain, art-less cards." },
-      { tag: "improvement", text: "You can now cancel an import (or just the cover-finding step) at any time — everything already added is kept." },
-    ],
-  },
-  {
-    id: "2026-07-06-privacy-and-csv-import",
+    id: "2026-07-06-csv-import",
     date: "2026-07-06",
-    title: "True profile privacy & CSV imports",
-    items: [
-      { tag: "improvement", text: "Making your profile private now hides you completely: you're off the leaderboard, your profile and library can't be visited (even by friends), and your reviews and activity stay yours alone. Friendships and messages keep working." },
-      { tag: "feature", text: "Import your collection from a CSV file — Add → Import from CSV reads a spreadsheet export (title, platform, cost, hours, status…), shows you exactly what will be added or skipped, and imports the rest in one go." },
-    ],
+    title: "Import from a spreadsheet",
+    summary: "Bring your collection in from a CSV file, with cover art found for you.",
+    tag: "feature",
+    items: ["You see exactly what will be added before anything changes."],
   },
   {
-    id: "2026-07-06-lanes-and-bundle-order",
+    id: "2026-07-06-private-profiles",
     date: "2026-07-06",
-    title: "Visited Now Playing by lane, and reorderable bundles",
-    items: [
-      { tag: "feature", text: "Visiting a profile now breaks their Now Playing into lanes, so you can see what they're focused on finishing, replaying, or going for 100%." },
-      { tag: "feature", text: "Open a compilation and drag its games into the order you want — that order carries to the collapsed card and to the separate cards when you split the bundle." },
-    ],
+    title: "Truly private profiles",
+    summary: "A private profile now hides you completely, even from friends.",
+    tag: "improvement",
+    items: ["Friendships and messages keep working."],
   },
   {
-    id: "2026-07-06-quick-wins",
-    date: "2026-07-06",
-    title: "Private at add, truer activity order & a clearer digital icon",
-    items: [
-      { tag: "feature", text: "Mark a game private right from the Add dialog with a new toggle — no need to add it first and hide it afterward." },
-      { tag: "improvement", text: "Your profile's Recent Activity now lists events in the real order they happened, using the actual timestamp instead of a fixed step order." },
-      { tag: "improvement", text: "The digital-copy icon on platform tags is now a download arrow, which reads more clearly than the old cloud." },
-    ],
-  },
-  {
-    id: "2026-07-06-ledger-bar-visiting-fix",
-    date: "2026-07-06",
-    title: "Master Ledger filter bar clears the header while visiting",
-    items: [
-      { tag: "fix", text: "The Master Ledger's pinned filter bar no longer hides behind the header on mobile when you're viewing another player — it now tracks the header's real height, including the \"You're visiting\" banner, on every screen size." },
-    ],
-  },
-  {
-    id: "2026-07-06-empty-lanes-collapse",
-    date: "2026-07-06",
-    title: "Now Playing takes up less room on mobile",
-    items: [
-      { tag: "improvement", text: "On phones, an empty Now Playing lane (Focus, Replay, Completionist, or Rotation) now collapses to just its heading instead of showing empty slots — so you spend less time scrolling past lanes you aren't using." },
-    ],
-  },
-  {
-    id: "2026-07-05-ledger-bar-mobile-fix",
+    id: "2026-07-05-game-hub",
     date: "2026-07-05",
-    title: "Master Ledger filter bar fits on phones",
+    title: "One page for every copy",
+    summary: "Every copy of a game opens the same page, with each version in its Library tab.",
+    tag: "feature",
     items: [
-      { tag: "fix", text: "The Master Ledger's pinned filter bar is no longer cut off behind the header on mobile — it now sits just below it." },
+      "Add another platform right from the Library tab.",
+      "Journey and Review switch between editions.",
     ],
   },
   {
-    id: "2026-07-05-wishlist-and-ledger-families",
+    id: "2026-07-05-unified-families",
     date: "2026-07-05",
-    title: "Wishlist from a visit, clearer family cards & a copy fix",
+    title: "Game Families as one card",
+    summary: "Linked editions show as one card, led by the edition you choose.",
+    tag: "improvement",
     items: [
-      { tag: "feature", text: "Viewing another player's game you don't have? A Wishlist button on their game page adds it straight to your own wishlist." },
-      { tag: "improvement", text: "Family cards on the Master Ledger now show the family name and roll up spend and hours played across every linked edition, so a family reads as one." },
-      { tag: "fix", text: "Re-adding a game you already own to your Bazaar or Finished shelf no longer shows text about your Wishlist — it names the shelf you're actually adding to." },
+      "Each edition keeps its own playtime and milestones.",
+      "The Family Breakdown lists every copy.",
     ],
   },
   {
-    id: "2026-07-05-on-hold-status",
+    id: "2026-07-05-unlimited-rotation",
     date: "2026-07-05",
-    title: "Requests can be put On Hold",
-    items: [
-      { tag: "improvement", text: "Feature requests and bug reports can now be marked On Hold — parked for maybe-someday or while we wait for more detail, rather than closed. You’re notified if yours moves there, and On-Hold items stay out of the active queue (find them with the On Hold filter)." },
-    ],
-  },
-  {
-    id: "2026-07-05-ledger-filter-bar",
-    date: "2026-07-05",
-    title: "Master Ledger: a smarter, sticky filter bar",
-    items: [
-      { tag: "improvement", text: "The Master Ledger's controls now sit up top and stay pinned as you scroll, so you can re-filter or re-group without scrolling back to the top." },
-      { tag: "improvement", text: "Your library-health stats now recalculate for whatever filter is applied — see games owned, completion rate and hours for just your PlayStation 5 shelf, for example — with a Filtered badge and a one-tap Clear back to lifetime totals." },
-    ],
-  },
-  {
-    id: "2026-07-05-game-detail-fixes",
-    date: "2026-07-05",
-    title: "Cleaner platform versions on the game page",
-    items: [
-      { tag: "fix", text: "Removing a platform version from a game's Library tab now deletes that version outright — with a quick confirm — instead of leaving an empty, platform-less card behind. Each version also gets its own Remove button." },
-      { tag: "fix", text: "A game you only wishlist on another platform no longer shows up under “Owned on” or in the Journey/Review edition dropdowns — it’s listed under “Want on” instead." },
-    ],
-  },
-  {
-    id: "2026-07-05-video-attachments",
-    date: "2026-07-05",
-    title: "Attach screen recordings to reports",
-    items: [
-      { tag: "feature", text: "Attach an .mp4 screen recording (up to 50 MB) to a feature or bug report — it plays inline right on the board, so you can show a problem instead of describing it." },
-    ],
-  },
-  {
-    id: "2026-07-05-profile-in-rotation",
-    date: "2026-07-05",
-    title: "Live-service games read as In Rotation on your profile",
-    items: [
-      { tag: "improvement", text: "Your profile now lists live-service games under their own In Rotation section instead of lumping them into Now Playing, and their Recent Activity reads In Rotation rather than a generic Started." },
-    ],
-  },
-  {
-    id: "2026-07-05-keep-board-filter",
-    date: "2026-07-05",
-    title: "Filters stay put when you open a game",
-    items: [
-      { tag: "fix", text: "Filter a board or the Master Ledger, open a game, then hit Back — your filter stays applied and its panel stays open, instead of resetting." },
-    ],
-  },
-  {
-    id: "2026-07-05-rotation-unlimited",
-    date: "2026-07-05",
-    title: "Unlimited Rotation, In Rotation statuses & add-a-platform from the hub",
-    items: [
-      { tag: "feature", text: "The Rotation lane no longer has a cap — slot as many live-service and ongoing games as you play. The dashboard keeps its clean four-quadrant shape: past two games, the Rotation row scrolls sideways with edge arrows (trackpad swiping works too)." },
-      { tag: "feature", text: "Own or want a game on another platform? The game page's Library tab now has an Add a platform button that opens the add form with the game already picked — just choose the platform, format and cost." },
-      { tag: "improvement", text: "Live-service games now wear an In Rotation status (with the lane's ∞ mark) instead of Now Playing — on cards, the Master Ledger, search, the game hub and even other players' reviews. Rotation is its own rhythm; the label finally says so." },
-      { tag: "improvement", text: "Convert to Endless and Add to Rotation are never blocked by a full lane anymore — the lane-size settings are gone from the admin screens too." },
-    ],
-  },
-  {
-    id: "2026-07-05-format-glyphs-comp-cover",
-    date: "2026-07-05",
-    title: "Format icons on your cards + a compilation-cover fix",
-    items: [
-      { tag: "feature", text: "Platform tags now carry little format icons — a disc for physical, a cloud for digital, a puzzle piece for DLC — so you can tell at a glance how you own each game. All three show when you own a platform in all three forms." },
-      { tag: "fix", text: "A compilation added from a shared community template now shows its assigned cover on the collapsed card right away, instead of borrowing the first game's art until you reloaded." },
-    ],
-  },
-  {
-    id: "2026-07-05-game-details-hub",
-    date: "2026-07-05",
-    title: "The Game Details Hub — one page per game, every copy in one place",
-    items: [
-      "A game's page is now one unified hub for the whole title: whichever copy's card you open — PS5, Switch, a linked remaster — you land on the same page with the same cover, title and community info.",
-      { tag: "feature", text: "The Library tab is the control center for every copy you own of that game: each version listed with its own platform, status and copies editor, plus the tools to link editions into a Game Family or sever a link — without leaving the page." },
-      { tag: "feature", text: "Journey and Review gained a Select Edition dropdown: your milestones, playtime and written reviews stay safely on the copy that earned them, and you flip between them right on the page. A linked family shows as one entry." },
-      { tag: "feature", text: "On stacked decks, each platform tag is now a shortcut — tap it to jump straight to that version's page." },
-      { tag: "improvement", text: "The page header is now universal — cover art and global title only. Owned-on platforms and money spent roll up across all your copies on the Overview tab, and a new editions bar sums hours played across every copy." },
-    ],
-  },
-  // The unified-families release, revised the same day it shipped: the
-  // requester's follow-up (zero data migration + the Family Breakdown modal)
-  // replaced the original Change-Primary handoff, so this entry describes the
-  // FINAL behavior and its id was renamed to re-light the "What's new" dot.
-  {
-    id: "2026-07-05-unified-families-breakdown",
-    date: "2026-07-05",
-    title: "Game Families reimagined — one card, zero data migration",
-    items: [
-      "Duplicate copies of a game now truly play as one: a linked family is a single, ordinary-looking card driven by the primary edition you designate — and every edition's history stays permanently on its own record.",
-      { tag: "feature", text: "Pick a primary edition when linking — the family card lives on its board, wears its box art, and new hours, notes and milestones save to its record." },
-      { tag: "feature", text: "The card shows platform tags for every linked copy side by side (primary's first), the family's combined playtime, and a subtle badge — no more nested editions or expanders." },
-      { tag: "feature", text: "The new Family Breakdown (tap the badge, or View linked editions in the ⋮ menu) lists every copy with its own platform, logged time and status — crown a different primary or remove a single copy right there." },
-      { tag: "feature", text: "Changing the primary moves nothing: each edition keeps the playtime and milestones it earned, forever. The card simply follows the new primary's status." },
-      { tag: "feature", text: "A linked game's Journey now interleaves every edition's milestones into one timeline, each entry marked with the edition that earned it." },
-      { tag: "feature", text: "Sever family link dissolves a family back into standalone cards; the Breakdown's Remove takes out one copy at a time." },
-      { tag: "improvement", text: "A family is one economy unit end to end: one activation fee, one slot, one Master Ledger entry, one completion bounty — hidden editions can't double-earn." },
-      { tag: "feature", text: "Stacked decks now wear a platform tag for every copy in the stack, not just the top card's." },
-      { tag: "feature", text: "Tapping Buy & Start (or Import with Charter, Add to Rotation, or Retire it) on a collapsed stack now asks which version you mean." },
-    ],
+    title: "Unlimited Rotation",
+    summary: "Keep as many live-service games in Rotation as you play.",
+    tag: "improvement",
+    items: ["They show as In Rotation instead of Now Playing."],
   },
   {
     id: "2026-07-04-custom-lists",
     date: "2026-07-04",
-    title: "Custom Lists — rank your favorites and share your taste",
+    title: "Custom lists",
+    summary: "Make ranked lists, like a Top 10, with a note on every pick.",
+    tag: "feature",
     items: [
-      "A new My Lists page (in the sidebar) lets you curate ordered game lists — a Top 10, a franchise ranked, a recommendation shelf — beyond the fixed boards.",
-      { tag: "feature", text: "Search the whole game catalog to add entries — including games you never logged — drag to reorder them, and give every pick its own blurb explaining why it made the cut." },
-      { tag: "feature", text: "Choose who sees each list: Public shows it on your profile, Unlisted lets anyone with the link view it (tap Copy link to share), Private keeps it yours." },
-      { tag: "feature", text: "Folders keep a growing collection tidy: drag lists into them (or file them from a card's menu), filter with the directory's live count badges, and jump back with All Lists." },
-      { tag: "feature", text: "Your profile gains a Lists shelf — visitors can browse your public lists, and the games they own themselves are badged when they read one." },
-      { tag: "feature", text: "Three new Curator achievements reward curation: your first list of 5+ games, then 5 and 15 such lists." },
-      { tag: "improvement", text: "Export my data now includes your custom lists and folders." },
+      "Keep each list public, unlisted or private.",
+      "Organize lists into folders.",
+      "Your profile shows your public lists.",
     ],
+    link: { label: "Open My Lists", view: "lists" },
   },
   {
-    id: "2026-07-04-smart-banner-match",
+    id: "2026-07-04-per-platform-cards",
     date: "2026-07-04",
-    title: "Profile colors matched to your banner, in one tap",
+    title: "One card per platform",
+    summary: "Each platform you own a game on gets its own card and its own progress.",
+    tag: "feature",
     items: [
-      { tag: "feature", text: "New in Profile colors: tap “Match my banner” and the Bazaar auto-picks a background and accent that complement your banner's colors — always readable, on any banner. Not feeling it? Tap again to cycle through other good matches." },
-      { tag: "fix", text: "Release notes no longer claim to be from the future — the two newest entries were stamped a day ahead." },
-    ],
-  },
-  {
-    id: "2026-07-04-polish-likes-bars-nav",
-    date: "2026-07-04",
-    title: "A thumbs-up for Likes, readable platform bars & smoother visits",
-    items: [
-      { tag: "improvement", text: "Likes now use a thumbs-up everywhere (cards, game pages, filters, Favorites, the Tastemaker medals) — the heart belongs to your Wishlist, and the two kept getting mixed up." },
-      { tag: "fix", text: "The profile Platforms bars got a readable palette: every status has its own distinct color (Completed wears medal gold, Endless sky blue, Retired a quiet stripe) on every theme and accent." },
-      { tag: "fix", text: "Leaving someone's Bazaar returns you to the page you started the visit from — no more surprise landings on your own profile." },
-      { tag: "fix", text: "The who-liked-this list no longer cuts off long game titles." },
-    ],
-  },
-  {
-    id: "2026-07-04-per-platform-instances",
-    date: "2026-07-04",
-    title: "Every platform is its own card",
-    items: [
-      "Your library now tracks one card per platform you own a game on. Each copy has its own status, play time and coin economy — finishing on PC and replaying on Switch are two real playthroughs.",
-      { tag: "feature", text: "Adding a game on a new platform creates its own card (physical, digital and DLC copies of the same platform still live together). The Add flow shows you exactly where each copy will land before anything happens." },
-      { tag: "feature", text: "A game you already beat on another platform wears a Cleared Elsewhere badge on its unplayed copies — context without touching their own progress or bounty." },
-      { tag: "feature", text: "New Stack toggle on your boards: copies of the same game fold into one deck you can fan out with a tap, for a tidier shelf without merging anything." },
-      { tag: "improvement", text: "A game owned standalone AND inside a compilation now shows as two honest, independent cards — the bundle copy stops silently merging into the standalone one." },
-      { tag: "improvement", text: "Existing multi-platform cards were carefully split into per-platform cards: your most-played platform kept the coins, review and milestones, hours followed their platform, and finished games stayed finished everywhere." },
-      { tag: "improvement", text: "Leaderboard, profile totals and achievements count distinct games — owning or finishing a game on three platforms counts it once, so nothing inflates." },
-      { tag: "improvement", text: "Wishlist wants are per-platform too: buying the wishlisted platform settles exactly that entry, and an entry hunting a different platform is left alone." },
-    ],
-  },
-  {
-    id: "2026-07-04-likes",
-    date: "2026-07-04",
-    title: "Like your favorites — and see the community's",
-    items: [
-      { tag: "feature", text: "Tap the heart on any game — on its card or its page — to mark it a favorite. Likes are a pure taste marker: they never affect prices or bounties." },
-      { tag: "feature", text: "Your profile gains a Favorites shelf showing the games you love, newest first — visible to visitors too (private games stay private)." },
-      { tag: "feature", text: "A game's Community stats now count its likes across all players — tap the count to see who, and jump straight to their Bazaar." },
-      { tag: "feature", text: "Filter any board or the Master Ledger down to liked games with the new Liked toggle." },
-      { tag: "feature", text: "Three new Tastemaker achievements reward sharing your taste: like your first, your 10th, and your 50th game." },
+      "Stack copies of the same game into one deck.",
+      "A game you beat elsewhere shows a Cleared Elsewhere badge.",
     ],
   },
   {
     id: "2026-07-04-achievements",
     date: "2026-07-04",
-    title: "Achievements — milestone medals for how you play",
+    title: "Achievements",
+    summary: "Earn bronze, silver and gold medals for how you play.",
+    tag: "feature",
     items: [
-      { tag: "feature", text: "Earn Bronze, Silver and Gold medals automatically as you play: finishing games, 100% completions, hours logged, coins earned, library growth, reviews written, honest retirements, and milestones recorded — 24 achievements at launch." },
-      { tag: "feature", text: "A new Achievements page (in the sidebar) shows your full trophy room: earned medals with the date you got them, upcoming targets with live progress bars, and how rare each medal is among all players." },
-      { tag: "feature", text: "Your profile gains an Achievements case showing your current medal per family — and you can see the medals other players have earned when visiting theirs." },
-      { tag: "improvement", text: "Your play history counts: the first time you sign in, everything you've already done is awarded retroactively." },
+      "Your past play counted, so earned medals arrived right away.",
+      "See how rare each medal is.",
     ],
   },
   {
-    id: "2026-07-04-consistent-game-page",
+    id: "2026-07-04-likes",
     date: "2026-07-04",
-    title: "A calmer, more consistent game page",
-    items: [
-      { tag: "improvement", text: "A game's page now looks the same whichever board it's on — the status-specific buttons (buy, log time, finish, shelve) stay on the board card, so opening a game is always a clean, consistent view. You can still log play time from its Journey tab." },
-      { tag: "fix", text: "When you're viewing another player's library, their game pages no longer show edit controls that aren't yours to use." },
-    ],
+    title: "Like your favorites",
+    summary: "Give games a thumbs up and show them off on your profile.",
+    tag: "feature",
+    items: ["See how many players liked a game, and who."],
   },
   {
-    id: "2026-07-04-community-stats-and-acquisition",
+    id: "2026-07-04-retire-it",
     date: "2026-07-04",
-    title: "Community stats and how you got each game",
+    title: "Retire It",
+    summary: "Move a game you'll never finish to Finished as Retired, no fake clear needed.",
+    tag: "feature",
     items: [
-      { tag: "feature", text: "Every game's Community tab now opens with a stats panel: the community's average rating and score distribution, how many players have it Now Playing / in their Bazaar / Finished / Wishlisted, and total hours logged across everyone." },
-      { tag: "feature", text: "Track how you have each copy — Owned, on a Subscription (Game Pass, PS Plus…), or Borrowed — with the service or lender noted. Subscription and borrowed games get a subtle tag on their card so a 'rented' copy is easy to spot." },
+      "Retiring a game you're playing gives coins back.",
+      "Return it to your Bazaar any time.",
     ],
   },
   {
-    id: "2026-07-04-retire-it-salvage",
+    id: "2026-07-04-mystery-pull",
     date: "2026-07-04",
-    title: "Retire It — a graceful exit for games that aren't clicking",
-    items: [
-      { tag: "feature", text: "Done with a game you'll never finish? Retire It 🏳️: it moves to your Finished shelf under a muted Retired tag — out of your backlog for good, no more faking a 'Beaten' to declutter. Works from the Bazaar or straight from a Now Playing lane, with an optional note on why it didn't click." },
-      { tag: "feature", text: "Retiring a game you're playing salvages coins back — the same rate as Shelve It — logged in your ledger as 'Dropped Game Salvage'. Retired games pay no bounty and stay out of your finished stats, platform clear rates, and the leaderboard." },
-      { tag: "feature", text: "Changed your mind? Return a Retired game to the Bazaar anytime — playing it again is a normal full-price buy. You can also re-tag old shelf entries as Retired (or back) to clean up your history." },
-    ],
+    title: "Mystery Pull",
+    summary: "Can't decide? Roll the dice for a random game you can start right now.",
+    tag: "feature",
   },
   {
-    id: "2026-07-04-recent-activity-timeline",
+    id: "2026-07-04-community-stats",
     date: "2026-07-04",
-    title: "A fuller Recent Activity timeline",
-    items: [
-      { tag: "improvement", text: "Your profile's Recent Activity now tells the whole story — when you added a game, started it, and beat or 100%'d it — instead of only your clears. A friend's profile shows theirs the same way." },
-    ],
+    title: "Community stats on every game",
+    summary: "See every game's ratings, total hours and how many players own it.",
+    tag: "feature",
+    items: ["Mark each copy as owned, on a subscription or borrowed."],
   },
   {
-    id: "2026-07-04-profile-shelves-and-pull-intro",
-    date: "2026-07-04",
-    title: "Cleaner profile shelves and a friendlier Mystery Pull",
-    items: [
-      { tag: "improvement", text: "Tap any game in the Now Playing or Finished section of a profile to open its page — the same jump the Recent Activity feed already offered." },
-      { tag: "improvement", text: "Profile game shelves are tidier: each cover now shows just its title, without the redundant status and platform chips." },
-      { tag: "improvement", text: "The first time you open a Mystery Pull, a quick intro explains what the dice do before your first roll." },
-    ],
-  },
-  {
-    id: "2026-07-04-moderator-tools-and-detail-polish",
-    date: "2026-07-04",
-    title: "Mystery Pulls, community reviews, and compilation pages",
-    items: [
-      { tag: "feature", text: "Mystery Pull 🎲: can't decide what to play? Hit the dice on your Bazaar and it draws a random game you can start right now — at its normal price, into an open slot. Take it, re-roll, or walk away. The dice work on your Finished shelf too, drawing a beaten game to pull back for a free 100% run." },
-      { tag: "feature", text: "Every game page now has a Community tab showing what the whole Bazaar thinks: each player's review of that game with their score, how far they got, and the platforms they played on — newest first. Visitors can browse it too." },
-      { tag: "feature", text: "Collapsed compilations now open their own page, just like a game: cover art and bundle stats up top, every included game one click away, and a Journey tab with a milestone timeline per game." },
-      { tag: "feature", text: "Export your data: download your whole collection — every game and compilation, your platforms and coin balance — as a JSON file from Account settings." },
-      { tag: "improvement", text: "Moderators can now set or fix a game's release date when editing it, so newly added games show the right year in search results." },
-      { tag: "improvement", text: "Platform tags on the game page and compilation cards now show just the platform, without the Physical/Digital label — your full per-copy format breakdown still lives on the Master Ledger." },
-      { tag: "fix", text: "The 'Restore original' cover button now appears only when you've uploaded your own art, so it no longer offers to swap a community-approved cover back to the old one." },
-      { tag: "fix", text: "Tooltips in a game card's ⋯ menu now describe the option you're hovering, instead of all reading 'Edit'." },
-      { tag: "fix", text: "Wishlisting a game no longer stamps it with an 'Added' milestone — that's recorded when you actually bring it into your collection." },
-      { tag: "fix", text: "Collapsed compilations and Family cards now sort and filter with the rest of the board instead of sticking to the first slots — A–Z files them by their title, and the other sorts place them where their best-fitting game would appear." },
-    ],
-  },
-  {
-    id: "2026-07-03-reviews-and-banner-matcher",
+    id: "2026-07-03-reviews",
     date: "2026-07-03",
-    title: "Leave a review — and match your colors to your banner",
-    items: [
-      { tag: "feature", text: "Every game page now has a Review tab: write up your thoughts, document the journey, and rate the game from half a star to five. Your score shows at a glance on the page and on finished cards, and visitors can read your take." },
-      { tag: "feature", text: "The profile Colors panel can now match your banner: tap one of the suggested colors pulled from the image, or click anywhere on the banner to sample that exact spot for your background or accent." },
-      { tag: "improvement", text: "Moderators can upload a cover image for compilation cards straight from their device — no more hunting for a URL." },
-    ],
+    title: "Reviews",
+    summary: "Rate and review any game, and read what other players thought.",
+    tag: "feature",
   },
   {
-    id: "2026-07-03-profile-colors",
+    id: "2026-07-03-profiles",
     date: "2026-07-03",
-    title: "Make your profile yours: custom colors with live preview",
+    title: "Profiles get personal",
+    summary: "Pick your profile's colors, show your platforms and recent clears, and frame a bigger banner.",
+    tag: "feature",
     items: [
-      { tag: "feature", text: "Pick a background and accent color for your profile page — match them to your banner or go full custom with a color picker and hex codes. Everyone who visits sees your page in your colors." },
-      { tag: "feature", text: "A live preview shows your colors on a mock header, buttons and a mini backlog bar before you save, and preset palettes (all twelve app themes) fill in a matched pair with one pick." },
-      { tag: "improvement", text: "Whatever background you choose, the page re-tints its panels and text automatically so everything stays readable — no unreadable combos." },
+      "Match your colors to your banner in one tap.",
+      "Crop and zoom your banner.",
     ],
-  },
-  {
-    id: "2026-07-03-profile-and-polish",
-    date: "2026-07-03",
-    title: "Profile glow-up: platform shelves, a trophy feed & bigger banners",
-    items: [
-      { tag: "feature", text: "Your profile now breaks your library down by platform: one bar per platform showing what's in the Bazaar, playing, beaten, completed or endless — with a 100% cleared stamp once a shelf holds only finished games." },
-      { tag: "feature", text: "A new Recent Activity feed celebrates your latest clears, newest first — gold cards for 100% Completed runs, silver for standard Beaten — with cover, platform, clear date and playtime on every entry." },
-      { tag: "feature", text: "Profile banners got bigger and smarter: uploads up to 10 MB at double the resolution, and a new crop tool lets you drag, zoom and pinch to frame exactly the slice you want." },
-      { tag: "improvement", text: "Moderators can now set cover art for a compilation's collapsed card. It fills in wherever an owner hasn't chosen their own cover — your personal covers always win, and the games inside keep theirs." },
-      { tag: "fix", text: "On phones, the undo popup no longer sits on top of the bottom navigation — and every popup now has a clear ✕ and can be swiped away sideways." },
-      { tag: "improvement", text: "Platforms now look the same everywhere: the game cards' chip style is used across the Master Ledger, game pages, profile, Caravan and bundle cards — with formats still shown where your inventory details matter." },
-      { tag: "fix", text: "Profile banners now display exactly what you framed in the crop tool — the profile header shows the full 3:1 frame instead of a zoomed-in slice, making banners noticeably taller too." },
-      { tag: "improvement", text: "Visiting another player's Bazaar is cleaner: the big banner is gone, and everything it held moved into the navigation — who you're visiting (with their online status), their Profile, Message/Add friend, Report, and a Leave button at the bottom of the sidebar. Their pages get the whole screen." },
-    ],
-  },
-  {
-    id: "2026-07-03-added-date-pricing",
-    date: "2026-07-03",
-    title: "Backdate a game's Added date to set its true price",
-    items: [
-      { tag: "feature", text: "The Added milestone on a game's page now doubles as its acquisition date: edit it and the game's Fresh-pickup price follows. Imported an old purchase yesterday? Backdate its Added date and it prices like the long-held game it really is." },
-      { tag: "improvement", text: "Recently-added ordering follows the edited date too, so a backdated game files into your Bazaar's timeline where it belongs." },
-    ],
+    link: { label: "Open your profile", view: "profile" },
   },
   {
     id: "2026-07-03-fresh-pickups",
     date: "2026-07-03",
-    title: "Fresh pickups: prices now follow YOUR timeline",
-    items: [
-      { tag: "feature", text: "A game's coin price now reflects how recently it joined your Bazaar, not when it was released: a fresh pickup carries a premium that fades the longer it waits, so your longest-shelved games become the cheapest buys. Clear the classics!" },
-      { tag: "improvement", text: "Backlog prices shifted under the new formula — recently added games cost more, long-held ones less. Everything you've already spent or earned is untouched, and coin balances are exactly as they were." },
-      { tag: "improvement", text: "Less clutter, less typing: genres, developers, Metacritic scores and release dates are gone from cards, pages, forms, filters and stats. Adding a game is now just the title, your copies, and how long it takes." },
-    ],
+    title: "Prices follow your timeline",
+    summary: "Newly added games cost more, and games that wait on your shelf get cheaper.",
+    tag: "improvement",
+    items: ["Backdate a game's Added date to set its true price."],
   },
   {
     id: "2026-07-03-game-pages",
     date: "2026-07-03",
-    title: "Every game gets its own page",
+    title: "Every game gets a page",
+    summary: "Games open on their own page with Overview, Journey and Library tabs.",
+    tag: "feature",
     items: [
-      { tag: "feature", text: "Clicking a game now opens a full page instead of a pop-up — a proper home with the artwork up top and three calm tabs: Overview (screenshots, details, your cover), Journey (play time, milestones, story order) and Library (the copies you own). Built with room to grow as games gain more to show." },
-      { tag: "feature", text: "Game pages have real links you can bookmark and share, the browser Back button returns you to your board right where you left it, and search results jump straight to the game's page." },
-      { tag: "improvement", text: "No more Save button on game details — every change saves the moment you make it, from a played-hours edit to a new copy. What you see is what's stored." },
-      { tag: "improvement", text: "Buy & Start, the time logger, Mark Finished and the rest of a card's actions now sit right on the page too, so you can act without hopping back to the board." },
-      { tag: "improvement", text: "Visiting a friend? Their games open on the same page, read-only — and it's linkable, so you can send someone straight to a game in your Bazaar." },
+      "Pages have links you can bookmark and share.",
+      "Changes save as you make them.",
     ],
   },
   {
-    id: "2026-07-03-game-milestones",
+    id: "2026-07-03-milestones",
     date: "2026-07-03",
-    title: "Game Milestones — your journey, dated",
-    items: [
-      { tag: "feature", text: "Every game now keeps a Milestones timeline in its details — the dates you added, started, beat, completed, retired, and un-retired it. New milestones record themselves automatically as you play." },
-      { tag: "feature", text: "The dates are fully yours: backdate any milestone to when it really happened, add extra entries for replays or retire/unretire cycles, or remove ones you don't want. Perfect for bringing years of pre-Bazaar history into your library." },
-      { tag: "feature", text: "Mark a game Retired even if it just sits in your Bazaar — and if you pick it up after all, starting it logs the comeback on its own." },
-      { tag: "improvement", text: "Your existing library arrives pre-seeded: milestones were created from each game's recorded history, including finish dates that replays had overwritten." },
-    ],
+    title: "Game milestones",
+    summary: "Each game keeps a dated timeline of when you added, started and finished it.",
+    tag: "feature",
+    items: ["Backdate any milestone to when it really happened."],
   },
   {
-    id: "2026-07-03-family-cards-dlc-story-order",
+    id: "2026-07-03-story-order",
     date: "2026-07-03",
-    title: "One card per family, DLC copies & story order",
-    items: [
-      { tag: "feature", text: "Linked editions now fold into one focused Family card on the board of the edition that matters most — combined hours, spend and clears up top, the version you're playing fully expanded with its time logger and Mark Finished right on the card, and the other editions one tap behind \"View other editions\". Prefer the old separate cards? Split any family back apart from its Family hub." },
-      { tag: "feature", text: "Dress up the family card: pick which edition's cover it wears, or upload your own — just like compilations." },
-      { tag: "feature", text: "Record DLC as its own copy type alongside Physical and Digital: its cost counts in your spend totals and it shows a DLC tag wherever copies appear, but it never masquerades as owning another copy of the base game." },
-      { tag: "feature", text: "Story order: lock a sequel behind another game in your library. It shows a Story-locked badge and can't be started until the prerequisite is Finished — and it unlocks by itself the moment that happens." },
-    ],
+    title: "Story order",
+    summary: "Lock a sequel until you finish its prequel, and it unlocks by itself.",
+    tag: "feature",
   },
   {
-    id: "2026-07-02-fresh-start-delete-account",
+    id: "2026-07-02-getting-started",
     date: "2026-07-02",
-    title: "Your account, your call — and a hands-on welcome",
-    items: [
-      { tag: "feature", text: "New players now learn by playing: the old walkthrough is replaced by a Getting Started checklist — add a real game, start it with a real voucher, log your time and claim your first bounty, with the app highlighting each button as you go. It docks to a little progress pill and waits patiently across sessions until you finish." },
-      { tag: "feature", text: "Fresh Start: wipe your collection and economy and begin again from day one — games, compilations, coins, charters, vouchers, slots and history all reset to a brand-new account, while your profile, friends, messages, badges and community posts stay put. Find it in Account settings, behind a typed confirmation so it can never happen by accident." },
-      { tag: "feature", text: "Delete account: permanently remove your account and all of its data, right from Account settings, with the same typed confirmation. Your bug reports and comments stay on the community boards for other players — shown without your name." },
-      { tag: "improvement", text: "Your free starter vouchers now arrive when the tutorial begins — so your very first game is on the house — instead of being held back until the tour ends." },
-    ],
+    title: "A hands-on welcome",
+    summary: "New players learn by doing with a Getting Started checklist and free starter vouchers.",
+    tag: "feature",
   },
   {
-    id: "2026-07-02-family-discount-board-bundles",
+    id: "2026-07-02-account-controls",
     date: "2026-07-02",
-    title: "Family Discounts, a fuller Now Playing & bundle upgrades",
-    items: [
-      { tag: "feature", text: "Family Discount: once any edition of a Game Family is Now Playing or Finished, its Bazaar siblings unlock at the same reduced percentage the Replay Bonus pays — the full fee shows crossed out on the card, and your Transaction Ledger records a Family Discount Activation. Unlink or remove the qualifying edition and the normal price simply returns." },
-      { tag: "feature", text: "In Manage Game Family, click any other edition to jump straight to its card — no more hunting the boards for the version you meant." },
-      { tag: "feature", text: "Collapsed compilations can wear their own cover: upload one from the Compilation Hub, or remove it to fall back to the first game's art." },
-      { tag: "improvement", text: "The Now Playing board now packs your games into a responsive multi-column flow that fills wide screens — no more single column of cards with empty space beside it. Each card shows its own lane badge." },
-      { tag: "improvement", text: "A compilation's release date now drives its games' coin prices: a recent collection of decades-old classics prices as the recent release you actually bought." },
-      { tag: "improvement", text: "Owned games now show only the platforms you actually own them on — the Master Ledger and Game Hub no longer list every console a game ever launched on. (Discovery and search still show release platforms so you can identify the right game.)" },
-    ],
+    title: "Fresh Start and account deletion",
+    summary: "Reset your collection and coins to begin again, or delete your account entirely.",
+    tag: "feature",
+    items: ["Both sit in Account settings behind a typed confirmation."],
   },
   {
-    id: "2026-07-02-wishlist-aware-adding",
+    id: "2026-07-02-family-discount",
     date: "2026-07-02",
-    title: "Wishlist-aware adding",
-    items: [
-      { tag: "improvement", text: "Adding a game you've wishlisted on a different platform now asks what to do with the Wishlist entry — keep it if you're still hunting that version, or remove it if the want is settled. Adding the exact version you wishlisted still clears the entry as before." },
-    ],
+    title: "Family Discount",
+    summary: "Once one edition of a game is playing or finished, its other editions start for less.",
+    tag: "feature",
   },
   {
-    id: "2026-07-02-lanes-ledger-polish",
+    id: "2026-07-02-new-look",
     date: "2026-07-02",
-    title: "Drag between lanes, reversible Endless & a sharper Ledger",
+    title: "A new look",
+    summary: "Backlog Bazaar has a paper, ink and rubber stamp redesign.",
+    tag: "improvement",
     items: [
-      { tag: "feature", text: "On desktop, drag a game's tile in the Now Playing slot meter onto another lane to move it — start or stop a 100% run, or send a live-service game into Rotation. While you drag, each lane shows whether the game can land there (and why not); only moves the workflow already allows will drop." },
-      { tag: "feature", text: "Converting a finished game to Endless is now fully reversible: Remove from Rotation sends it straight back to Finished with the Beaten or Completed badge it already earned, and the weekly check-in switches off. Only your library changes — the shared catalog is never touched." },
-      { tag: "improvement", text: "Removing a live-service game from Rotation now asks where it should go — park it back in the Bazaar or conclude it to Finished — instead of always sending it to the Bazaar." },
-      { tag: "feature", text: "Finished games in the Master Ledger now wear their Beaten, Completed or Endless stamp, and the ledger stats break your clears down: how much of your library is finished, beaten and 100% completed, plus a count of your endless games." },
-      { tag: "fix", text: "On short screens the sidebar no longer scrolls your main boards out of view — the boards stay pinned, the utility links scroll, and even a tiny window can always reach the whole menu." },
-      { tag: "improvement", text: "Scrollbars across the whole app — including the main page — are now slim, rounded and theme-tinted instead of the chunky system ones." },
-      { tag: "fix", text: "Cleaner wrapping: profile-tile status stamps stay on one line, and the “Beat games · Earn coins · Play more” tagline no longer splits mid-phrase." },
+      "New Ledger and Midnight Ledger themes.",
+      "Reset a forgotten password from the sign-in page.",
     ],
   },
-  {
-    id: "2026-07-02-multi-copy-compilations",
-    date: "2026-07-02",
-    title: "Compilations: every copy you own",
-    items: [
-      { tag: "feature", text: "Own a bundle on more than one platform? Compilations now record every copy — each with its own platform, format and price — and every copy's platform shows on each game inside." },
-      { tag: "feature", text: "Each copy's price is split across the bundle's games to the cent, so per-game spend and your ledger totals reflect everything you've invested." },
-      { tag: "feature", text: "Compilations can carry a release date — it fills in bundled games that don't have one, while games with a known date keep theirs." },
-      { tag: "fix", text: "Deleting one of two linked editions no longer leaves the survivor showing a family icon for a family of one." },
-    ],
-  },
-  {
-    id: "2026-07-02-cleaner-card-chips",
-    date: "2026-07-02",
-    title: "Cleaner game cards",
-    items: [
-      { tag: "improvement", text: "The Family and compilation tags on game cards are now compact icons side by side — hover one to see the family or bundle's name." },
-      { tag: "improvement", text: "The family icon is clickable: it opens Manage Game Family directly from the card (compilation icons already opened their bundle)." },
-    ],
-  },
-  {
-    id: "2026-07-02-ledger-profile-fixes",
-    date: "2026-07-02",
-    title: "Ledger & profile fixes",
-    items: [
-      { tag: "fix", text: "The Master Ledger now shows one card per game you own — a game owned in several bundles (or standalone and in a bundle) merges into a single card listing every version and your total spend." },
-      { tag: "fix", text: "Friends' custom game covers now show on their profile page, matching their boards and ledger." },
-    ],
-  },
-  {
-    id: "2026-07-02-compilations-fold-up",
-    date: "2026-07-02",
-    title: "Compilations that fold up",
-    items: [
-      { tag: "feature", text: "Collapse any compilation into a single card that totals the bundle's money spent and hours played — it sits in the Bazaar until every game inside is finished, then moves to Finished on its own." },
-      { tag: "feature", text: "Own a collection as one card (say, a trilogy remaster)? If it's linked in the catalog, expand it into its individual games — the cost splits evenly, your logged hours stay on the bundle, and any activation fee you paid comes back." },
-      { tag: "feature", text: "Moderators can now link a compilation in the catalog to the game it's sold as, which is what lights up Expand on everyone's matching cards." },
-      { tag: "improvement", text: "Adding a game the catalog knows is a compilation now mentions you'll be able to split it into its games afterwards." },
-    ],
-  },
-  {
-    id: "2026-07-02-smarter-adding",
-    date: "2026-07-02",
-    title: "Smarter adding & multi-platform wishlists",
-    items: [
-      { tag: "feature", text: "Adding a game you already own now attaches the new copy to your existing card — with a confirmation first — instead of doing nothing silently." },
-      { tag: "feature", text: "Wishlist a game you own on another platform: the card highlights exactly which version you're hunting, and importing it with a Charter merges onto your existing card instead of duplicating it." },
-      { tag: "feature", text: "Record hours played per platform right when you add a game — one field per copy, just like the editor on your cards." },
-      { tag: "improvement", text: "Recognized games now lock their release date to the catalog, and when HowLongToBeat has times the playstyle picker sets the length for you." },
-      { tag: "improvement", text: "Adding a game that's on your Wishlist warns you first — going ahead skips the Import Charter and clears the Wishlist entry." },
-      { tag: "improvement", text: "You can't accidentally add a duplicate copy anywhere — the form blocks a platform you already own (in the same or an unspecified format) as you type, on every board." },
-      { tag: "improvement", text: "Search results now say exactly where you already have a game — on your Wishlist, in your Bazaar, in Now Playing, or in your Finished." },
-    ],
-  },
-  {
-    id: "2026-07-02-stamped-ledger",
-    date: "2026-07-02",
-    title: "A fresh coat of ink: the Stamped Ledger redesign",
-    items: [
-      { tag: "feature", text: "Backlog Bazaar has a new look — paper, ink, and rubber-stamp details inspired by the trading ledger at the heart of the game, with new typography to match." },
-      { tag: "feature", text: "Two new themes lead the collection: Ledger (paper & ink) and Midnight Ledger (the same identity after dark). If you've picked a theme it's untouched, and every classic theme is still there." },
-      { tag: "improvement", text: "Game cards, buttons, badges, and menus got a tactile refresh — inked borders, stamped shadows, and ledger-style numbers — in every theme." },
-      { tag: "improvement", text: "Importing a Wishlist game is now properly satisfying: the game's ticket gets slammed with a dated IMPORTED seal — confetti and all." },
-      { tag: "improvement", text: "The sign-in page is now a proper storefront: it pitches the coin loop with real numbers and writes a live sample ledger, so new players see the game before they join." },
-      { tag: "feature", text: "Forgot your password? Request a reset link from the sign-in page and set a new one when you follow it back." },
-      { tag: "improvement", text: "The coin got a fresh minting: a new engraved slab-serif face with a reeded edge, now the default coin and browser-tab icon." },
-    ],
-  },
+  // ── June 2026 ─────────────────────────────────────────────────────────────
   {
     id: "2026-06-30-profile-hub",
     date: "2026-06-30",
-    title: "Your Profile Hub",
-    items: [
-      { tag: "feature", text: "Every player now has a Profile Hub — a public identity page with your banner, avatar, bio and an at-a-glance dashboard of what you're playing, your backlog, and your finished games." },
-      { tag: "feature", text: "Make it yours: upload a banner, write an “About Me”, and pick an accent color (a curated swatch or your own) that themes your profile." },
-      { tag: "improvement", text: "Your privacy still applies everywhere: custom cover art you've uploaded stays hidden from non-friends on profiles too." },
-    ],
+    title: "Profile pages",
+    summary: "Every player has a profile with a banner, a bio and what they're playing.",
+    tag: "feature",
   },
   {
-    id: "2026-06-29-unified-compilation-cards",
+    id: "2026-06-29-friends-and-messages",
     date: "2026-06-29",
-    title: "One card when you own a game twice",
+    title: "Friends, a feed and messages",
+    summary: "Add friends, cheer on their clears and message them.",
+    tag: "feature",
     items: [
-      { tag: "improvement", text: "Own a game both on its own and inside a compilation? It now shows as a single card instead of two — with both ownership tags stacked (e.g. your platform plus “Part of …”) and one Buy & Start price." },
-      { tag: "improvement", text: "Opening that game shows all your copies together: your standalone copy stays editable, and the compilation copy appears below it as a locked entry managed by the bundle." },
-      { tag: "fix", text: "A game you own both standalone and in compilations now tracks time the same way as any other multi-platform game: one “Played by platform” breakdown covering every platform you own it on — no more separate boxes per copy." },
-      { tag: "fix", text: "When such a game is Now Playing, the “Played on” picker now lists every platform you own it on (including ones you only own through a bundle), so logged time lands on the right platform." },
-      { tag: "fix", text: "Owning the same compilation on more than one platform no longer shows duplicate “Part of …” tags on the card — the collection appears once, with each platform listed in its own tag." },
-      { tag: "fix", text: "A game you own only through compilations — across multiple bundles or the same bundle on different platforms — now shows as a single card too, with each bundle and platform listed, instead of one card per copy." },
-    ],
-  },
-  {
-    id: "2026-06-29-missing-platform-on-copies",
-    date: "2026-06-29",
-    title: "Add a copy on any platform",
-    items: [
-      { tag: "feature", text: "The “Missing platform?” option is now in a game you already own too — open a game, add a copy, and tap “Missing platform?” to pick from every platform. Your copy is saved right away and we quietly send a request to add that platform to the game for everyone." },
-    ],
-  },
-  {
-    id: "2026-06-29-simpler-time-tracking",
-    date: "2026-06-29",
-    title: "Simpler time tracking",
-    items: [
-      { tag: "improvement", text: "Logging play time is simpler — by default you just pick the platform you played on, so a game you own both physically and digitally no longer clutters the picker with two near-identical entries." },
-      { tag: "feature", text: "Power users can switch on “Enable edition-level time tracking” in Account settings to log time against each specific copy you own. Your total hours stay the same either way." },
-      { tag: "fix", text: "Adding a game that shares its name with another now shows both, oldest first — so reboots and remakes are easy to tell apart." },
-      { tag: "fix", text: "Time you’ve already played, entered while adding a game, now shows up correctly when you open the game — and editing it adjusts your total instead of stacking on top of it." },
-    ],
-  },
-  {
-    id: "2026-06-29-adding-quality-of-life",
-    date: "2026-06-29",
-    title: "Smoother adding — games & requests",
-    items: [
-      { tag: "feature", text: "Own a game on a platform that isn’t in its list? Tap “Missing platform?” when adding it to pick from every platform — the game is added to your library right away and we quietly send a request to add that platform to the game for everyone." },
-      { tag: "feature", text: "Adding a game now always offers “Don’t see your specific game? Request a new addition.” at the bottom of the search results — so reboots, remakes and same-named games are never blocked just because the title matches something else." },
-      { tag: "fix", text: "Creating a feature request or bug report no longer hides the Submit button or the list of existing requests on larger screens — the form scrolls neatly and you can browse other issues while you write." },
-    ],
-  },
-  {
-    id: "2026-06-29-safer-covers-reporting",
-    date: "2026-06-29",
-    title: "Safer covers & community reporting",
-    items: [
-      { tag: "feature", text: "Custom cover art you upload is now shown only to you and your friends — everyone else sees the standard catalog cover, so unmoderated images stay private." },
-      { tag: "feature", text: "New privacy setting: “Always show default game covers” hides other players’ custom covers everywhere you browse." },
-      { tag: "feature", text: "Report a player from their profile, or flag a custom cover, to send it straight to our moderators. Reports are anonymous." },
+      "React, reply and send images in messages.",
+      "Type @ to share one of your games in a message.",
+      "Make your profile private or appear offline.",
     ],
   },
   {
     id: "2026-06-29-undo-finish",
     date: "2026-06-29",
     title: "Undo an accidental finish",
-    items: [
-      { tag: "feature", text: "Marked a game finished by mistake? Tap Undo on the confirmation toast (about 15 seconds) to put it back exactly where it was — coins and all." },
-      { tag: "feature", text: "The same Undo covers retiring a Rotation game and converting a finished game to Endless." },
-      { tag: "improvement", text: "The Mark Finished button now shows the coin reward right on it, with the details in a tooltip — less clutter on each Now Playing card." },
-    ],
+    summary: "Tap Undo on the finish message to put a game back, coins and all.",
+    tag: "feature",
   },
   {
-    id: "2026-06-29-message-reactions-replies",
+    id: "2026-06-29-safer-covers",
     date: "2026-06-29",
-    title: "React, reply, and share images in messages",
-    items: [
-      { tag: "feature", text: "React to a message you received with 👍 ❤️ 🎉 😄 — hover (or tap) it and pick an emoji." },
-      { tag: "feature", text: "Quote a message in your reply, so it's clear what you're responding to." },
-      { tag: "feature", text: "Send images in messages — paste a screenshot or attach image files." },
-    ],
-  },
-  {
-    id: "2026-06-29-message-recommendations",
-    date: "2026-06-29",
-    title: "Friendlier messaging: recommend games & quicker replies",
-    items: [
-      { tag: "feature", text: "When a friend shares a game in a message, add it straight to your Wishlist with one tap — a recommendation lands where you'll find it later. (Games already in your library don't show the button.)" },
-      { tag: "improvement", text: "Press Enter to send a message; Shift+Enter starts a new line." },
-    ],
-  },
-  {
-    id: "2026-06-29-unified-inbox",
-    date: "2026-06-29",
-    title: "One tabbed inbox for alerts, messages & friends",
-    items: [
-      { tag: "improvement", text: "Notifications, messages, and friends now open in one tabbed inbox (Alerts · Messages · Friends), so it's easy to jump between them." },
-      { tag: "improvement", text: "Tidier phone header: those three become a single Inbox button so the title isn't crowded, and the toolbar icons are all the same size. On desktop they stay as three separate buttons." },
-    ],
-  },
-  {
-    id: "2026-06-29-friends-feed-messaging",
-    date: "2026-06-29",
-    title: "Friends, an activity feed & direct messages",
-    items: [
-      { tag: "feature", text: "Add friends: search players by name, send and manage requests, and see your friends with their coins and what they're currently playing." },
-      { tag: "feature", text: "A new activity feed shows your friends' milestones — games imported from the Wishlist, new Game Families, and games finished — and you can Cheer them on." },
-      { tag: "feature", text: "Message your friends: a chat-style inbox with conversations, replies, edit-your-last-message, and delete. Removing a chat just tucks it away — the history comes back if you talk again." },
-      { tag: "feature", text: "Share a game in a message: type @ to attach one of your games as a card your friend can preview or add." },
-      { tag: "feature", text: "New privacy controls: make your profile private, hide your coin milestones from the feed, or appear offline." },
-    ],
-  },
-  {
-    id: "2026-06-29-contributions-sorting-finish-tags",
-    date: "2026-06-29",
-    title: "Withdraw contributions, remembered sorting & finish tags on add",
-    items: [
-      { tag: "feature", text: "Made a mistake in a suggested edit? You can now withdraw a pending contribution from your My contributions page instead of waiting for it to be reviewed." },
-      { tag: "feature", text: "Your Bazaar sort order (A–Z, newest, and the rest) is now remembered — refresh the page and it stays put." },
-      { tag: "feature", text: "Adding a game straight to Finished now lets you tag how it ended — Beaten, Completed, or Endless — so your Finished board is organized from the start." },
-      { tag: "fix", text: "Editing a game’s live-service status now actually takes effect, including on games already sitting in your Bazaar." },
-    ],
-  },
-  {
-    id: "2026-06-28-clean-catalog-data",
-    date: "2026-06-28",
-    title: "Cleaner platforms, genres & a tidy Master Ledger",
-    items: [
-      { tag: "improvement", text: "Platforms and genres are now picked from curated lists instead of free text, so your library and the catalog stay consistent (no more “PS5” vs “PlayStation 5” mismatches)." },
-      { tag: "improvement", text: "Adding a game you own now asks which platform you own it on, so your collection always knows where each game lives. For a compilation, the platform you pick applies to every game in the bundle." },
-      { tag: "improvement", text: "The Master Ledger now shows clean, uniform cards — developer, release, length, hours played, genre, platforms, ownership and spend at a glance. Tap any card to open its full hub." },
-    ],
-  },
-  {
-    id: "2026-06-28-overdraft-guard",
-    date: "2026-06-28",
-    title: "Soft-lock protection",
-    items: [
-      { tag: "improvement", text: "Buying an Import Charter is now blocked when it would leave you unable to afford the cheapest game in your Bazaar with nothing in play — so an optional purchase can't strand your progress. Finish or shelve a game to free things up." },
-    ],
-  },
-  {
-    id: "2026-06-28-compilation-template-sync",
-    date: "2026-06-28",
-    title: "Shared compilations stay up to date",
-    items: [
-      { tag: "fix", text: "When a game's details are corrected, every shared compilation that includes it now updates automatically — so anyone who adds that compilation gets the latest info, no need to delete and re-create it." },
-    ],
-  },
-  {
-    id: "2026-06-28-post-game-routing",
-    date: "2026-06-28",
-    title: "Post-game routing & Finished status tags",
-    items: [
-      { tag: "feature", text: "Finish a game and a quick prompt lets you choose its next life: leave it Finished, Grind to 100% (Completionist), or Convert to Endless (Rotation)." },
-      { tag: "feature", text: "Every Finished game now shows a status tag — Beaten, Completed, or Endless — auto-set by how it concluded, and changeable anytime from the game's card." },
-      { tag: "feature", text: "Abandon a 100% run to send a game back to Finished (kept as Beaten) with no penalty, and retire an ongoing game from Rotation straight to Finished." },
-      { tag: "improvement", text: "All four Now Playing lanes are now the same size (2 slots each) for a clean, symmetric board." },
-    ],
+    title: "Safer covers and reporting",
+    summary: "Custom covers show only to you and your friends, and you can report a player.",
+    tag: "feature",
   },
   {
     id: "2026-06-28-now-playing-lanes",
     date: "2026-06-28",
     title: "Four Now Playing lanes",
+    summary: "Focus, Replay, Completionist and Rotation lanes keep different kinds of play apart.",
+    tag: "feature",
     items: [
-      { tag: "feature", text: "Now Playing is now four lanes — Focus, Replay, Completionist, and Rotation — each with its own slots, so a backlog grind, a replay, a 100% run, and your forever-games never crowd each other out." },
-      { tag: "feature", text: "Going for 100%? Put a game in the new Completionist lane — start it there, flip a game you're already playing in, or pull a finished game back — and earn a Completion Bonus when you complete it." },
-      { tag: "improvement", text: "Replaying a finished game now has its own lane with its own capacity, instead of needing a special slot." },
-      { tag: "improvement", text: "The old length/genre 'targeted slots' are gone — every game you're playing simply lives in one of the four lanes." },
+      "Earn a Completion Bonus for a 100% run.",
+      "Choose what's next for a game when you finish it.",
     ],
   },
   {
-    id: "2026-06-27-rotation-lane",
+    id: "2026-06-27-rotation",
     date: "2026-06-27",
-    title: "Live-service games & the Rotation lane",
-    items: [
-      { tag: "feature", text: "Mark a game as live-service / ongoing (Fortnite, Destiny 2, League of Legends, Genshin Impact, …) when you add it. These are added free — no buy price, no estimated length, no finish bounty." },
-      { tag: "feature", text: "Play ongoing games from the Rotation lane: add one for free, check in once a week for coins, and remove it anytime. They never take up a focus slot." },
-      { tag: "feature", text: "Now Playing shows two lanes — Focus for the backlog you're finishing, and Rotation for your forever-games — with the weekly reset time shown right there." },
-      { tag: "improvement", text: "You can suggest the live-service flag on any catalog game, so well-known ongoing games get recognized for everyone." },
-      { tag: "improvement", text: "The Now Playing board now groups your games into Focus and Rotation sections — and you'll see the same split when visiting another player's Bazaar." },
-      { tag: "improvement", text: "Click a game in the Now Playing slot summary to jump straight to its card, or a lane heading to jump to that section." },
-    ],
+    title: "Live-service games and Rotation",
+    summary: "Add ongoing games like Fortnite for free, and check in weekly for coins.",
+    tag: "feature",
   },
   {
-    id: "2026-06-27-focused-cards",
+    id: "2026-06-27-search",
     date: "2026-06-27",
-    title: "Cleaner game cards",
-    items: [
-      { tag: "improvement", text: "Game cards now show just the cover, title, and the platforms you own each game on — clean and easy to scan." },
-      { tag: "improvement", text: "Release date, length, genre, developer and Metacritic score moved into the game's detail view, a click away." },
-      { tag: "improvement", text: "Own a game in physical and digital on the same platform? Its platform tag now shows once instead of twice." },
-    ],
+    title: "Search your library",
+    summary: "Find any game in your library, or a friend's, from the search bar.",
+    tag: "feature",
+    items: ["Mark a game private to hide it from visitors."],
   },
   {
-    id: "2026-06-27-slots-search-add",
-    date: "2026-06-27",
-    title: "Move games between slots, resume finished games, and more",
-    items: [
-      { tag: "feature", text: "Move a Now Playing game between slots anytime — including out of an Endless slot, so a game is never stuck where it landed." },
-      { tag: "feature", text: "Keep playing a finished game by resuming it into an Endless slot — free, like a replay (finishing again pays the smaller Replay Bonus)." },
-      { tag: "improvement", text: "The header search now works on the Master Ledger too." },
-      { tag: "improvement", text: "Adding is simpler: one Add button with a quick choice of a game or a compilation." },
-      { tag: "improvement", text: "Pick a shared compilation once, then choose your own platform — the same compilation no longer shows up once per platform." },
-    ],
-  },
-  {
-    id: "2026-06-27-detail-compilation-polish",
-    date: "2026-06-27",
-    title: "Cover art on visits, tidier copies, compilation lengths",
-    items: [
-      { tag: "improvement", text: "Opening a game while visiting another player now shows its full-size cover art." },
-      { tag: "improvement", text: "The “Copies you own” list now starts collapsed — even with a single copy — so the game detail stays compact." },
-      { tag: "feature", text: "Set each game’s length by completion level (Main / +Extras / 100%) when adding or editing a compilation — and the options now appear right away when you start from a shared compilation, no re-searching needed." },
-    ],
-  },
-  {
-    id: "2026-06-27-universal-search",
-    date: "2026-06-27",
-    title: "Search your whole library — and your friends'",
-    items: [
-      { tag: "feature", text: "A new search bar in the header finds any game instantly by title, platform, or franchise — no more scrolling boards." },
-      { tag: "feature", text: "As you type, the current board filters to matching games; press Enter to see every match across Wishlist, Bazaar, Now Playing and Finished at once." },
-      { tag: "feature", text: "Visiting a friend? The same search scopes to their library so you can see what they own or have finished." },
-      { tag: "feature", text: "Mark any game private to hide it from visitors — it still counts toward your own boards, stats and coins." },
-      { tag: "improvement", text: "Searched for something you don't own yet? Jump straight from the results to adding it." },
-    ],
-  },
-  {
-    id: "2026-06-26-compilation-blank-platform-crash",
-    date: "2026-06-26",
-    title: "Fixed a blank screen after saving a compilation",
-    items: [
-      { tag: "fix", text: "Saving a compilation without a platform no longer causes a blank screen — affected accounts load normally again." },
-    ],
-  },
-  {
-    id: "2026-06-26-compilation-search-fresh-data",
-    date: "2026-06-26",
-    title: "Compilation game search uses up-to-date details",
-    items: [
-      { tag: "fix", text: "Searching for a game while building a compilation now shows its latest approved cover, title and length — matching the regular Add a game search instead of stale data." },
-    ],
-  },
-  {
-    id: "2026-06-25-replay-slot-polish",
+    id: "2026-06-25-compilations",
     date: "2026-06-25",
-    title: "Replay slots: clearer rewards and an easy way out",
+    title: "Add compilations",
+    summary: "Log a bundle like Super Mario 3D All-Stars once, with every game inside it.",
+    tag: "feature",
     items: [
-      { tag: "fix", text: "A game replayed in a Replay slot now correctly shows the smaller Replay Bonus it will pay — not the full first-clear bounty." },
-      { tag: "feature", text: "Added “Abort replay” to send a replayed game straight back to Finished without claiming a bounty." },
-      { tag: "improvement", text: "Replayed games no longer show “Shelve it” (it never applied to an already-owned game)." },
-      { tag: "improvement", text: "Buying a game now always lets you choose when an Endless slot is involved, so a purchase never silently lands in your Endless slot." },
+      "Split the price across its games.",
+      "Share a compilation so others can add it in one tap.",
     ],
   },
   {
-    id: "2026-06-25-community-edit-fix",
-    date: "2026-06-25",
-    title: "Community game edits apply reliably",
-    items: [
-      { tag: "fix", text: "Approved edits to community-added games now update every copy of the game — and editing one no longer creates duplicate listings in search." },
-      { tag: "fix", text: "Cleaned up the duplicate community entries that earlier edits had created." },
-    ],
-  },
-  {
-    id: "2026-06-25-slot-picker-criteria",
-    date: "2026-06-25",
-    title: "Choose where a game starts + smarter slot rules",
-    items: [
-      { tag: "feature", text: "When you start a game that fits more than one open slot, you now pick where it lands — a general slot, a matching slot like “Quick Play”, or an ongoing Endless slot — with a smart default already selected." },
-      { tag: "improvement", text: "Now Playing slots can target games by era, genre, platform and Metacritic score (not just length), so a slot like “Classic RPG” or “Handheld” shows exactly what it accepts." },
-    ],
-  },
-  {
-    id: "2026-06-25-slot-categories",
-    date: "2026-06-25",
-    title: "New Now Playing slot types: Endless & Replay",
-    items: [
-      { tag: "feature", text: "Endless slots hold an ongoing or live-service game without tying up a general slot — park one there when you buy it, or move an in-progress game in from its card." },
-      { tag: "feature", text: "Replay slots let you pull a Finished game back into Now Playing for free; finishing it again pays the smaller Replay Bonus." },
-      { tag: "improvement", text: "The Now Playing board now shows each slot as its own card — what it accepts and which game is in it — and every playing card shows the slot it occupies." },
-    ],
-  },
-  {
-    id: "2026-06-25-screenshots-compilation-status",
-    date: "2026-06-25",
-    title: "Game screenshots & finer compilation control",
-    items: [
-      { tag: "feature", text: "Games can now show a flip-through gallery of screenshots, so you can preview a game before adding it — and see it again from the Edit Game window." },
-      { tag: "feature", text: "Add screenshots to a game through Suggest Edit; like other catalog changes, a moderator reviews them before they go live for everyone." },
-      { tag: "improvement", text: "Mark each game in a compilation as Bazaar or Finished individually — when adding it, while editing the compilation, or later from a game's menu — handy when you've already beaten some of them." },
-      { tag: "improvement", text: "Editing a game shows the cover in a wider frame, so less of the artwork is cropped." },
-    ],
-  },
-  {
-    id: "2026-06-25-edit-game-polish",
-    date: "2026-06-25",
-    title: "A roomier game editor",
-    items: [
-      { tag: "improvement", text: "Your cover art now sits large at the top of the game window — easy to admire, and easy to see while you swap it." },
-      { tag: "improvement", text: "Suggesting a game's platforms or genres? Paste a whole comma-separated list at once (e.g. “PS5, Xbox Series X/S, PC”) instead of adding them one at a time." },
-      { tag: "improvement", text: "The “Copies you own” list now tucks away when you have several, keeping the editor compact." },
-    ],
-  },
-  {
-    id: "2026-06-25-game-compilations",
-    date: "2026-06-25",
-    title: "Add game compilations",
-    items: [
-      { tag: "feature", text: "“Add compilation” lets you log a bundle or collection — like Super Mario 3D All-Stars — as one purchase: set the title, total price, platform and format once." },
-      { tag: "feature", text: "Every game inside gets its own card on your board, so you can buy, play and finish each one on its own." },
-      { tag: "feature", text: "Search each game as you add it to pull in its length and cover art automatically." },
-      { tag: "feature", text: "The total price is split across the games for you — evenly, by length, or however you choose." },
-      { tag: "feature", text: "Each card opens a Compilation Hub showing the total spent, hours played, and a checklist of every game with its status — and you can edit the compilation any time from there." },
-      { tag: "feature", text: "Share a compilation you built so others can add it in one tap — once it's approved it autocompletes for everyone, and your contributions earn coins." },
-    ],
-  },
-  {
-    id: "2026-06-24-onboarding-vouchers",
+    id: "2026-06-24-vouchers",
     date: "2026-06-24",
-    title: "Free Game Vouchers for new players",
-    items: [
-      { tag: "feature", text: "New players get a quick guided tour of the core loop and the main sections, then receive two Free Game Vouchers in their wallet to finish." },
-      { tag: "feature", text: "Each voucher starts a game from your Bazaar straight into Now Playing for free, so you can jump into games you're already playing without saving up coins." },
-      { tag: "feature", text: "When you start a game, a new activation pop-up lets you pay with coins or tap “Use voucher”." },
-      { tag: "feature", text: "Your voucher balance shows as a ticket in the header and on a game's details while you still have some." },
-      { tag: "improvement", text: "Voucher redemptions appear in your transaction ledger (at zero coins), with their own filter." },
-    ],
-  },
-  {
-    id: "2026-06-24-issue-effort",
-    date: "2026-06-24",
-    title: "Size up requests by effort",
-    items: [
-      { tag: "feature", text: "Tag a feature or bug as Low, Medium or High effort — a quick size estimate alongside its priority." },
-      { tag: "feature", text: "Sort the board by “Quick wins” to surface the lowest-effort items first." },
-    ],
-  },
-  {
-    id: "2026-06-24-edit-playtime-by-version",
-    date: "2026-06-24",
-    title: "Edit playtime by version",
-    items: [
-      { tag: "feature", text: "Editing a game lets you set your hours per version — one field per copy you own — so corrections land on the right edition, not just the grand total." },
-      { tag: "feature", text: "Physical and digital copies of the same platform are tracked separately, in both the log-time picker and the breakdown." },
-      { tag: "improvement", text: "Older time logged before formats existed automatically shows under your copy's format when you own that platform in just one format — no manual cleanup." },
-      { tag: "improvement", text: "“Played by version” lists only the copies you currently own. Time not tied to one — logged without a version, or on a copy you've changed or removed — collects in a single reassignable “Unspecified” row you can move onto the version you actually played." },
-      { tag: "fix", text: "Playtime edited from the Edit Game screen is now attributed to a version, matching how Now Playing logs already worked." },
-    ],
-  },
-  {
-    id: "2026-06-24-playtime-and-families",
-    date: "2026-06-24",
-    title: "Per-version playtime & family polish",
-    items: [
-      { tag: "feature", text: "Log time on a multi-platform game and it remembers which version you last played — that version stays selected when you come back to log more." },
-      { tag: "feature", text: "Open a game to see a “Time by version” breakdown of how many hours you've put in on each platform." },
-      { tag: "improvement", text: "The Transaction Ledger now shows which game a Contribution Reward was for, and whether it was a new game or a catalog edit." },
-      { tag: "improvement", text: "Editing a game that's part of a Game Family now shows the family's name up top." },
-      { tag: "improvement", text: "Linking editions moved into a game card's ⋮ menu to keep the detail view focused." },
-      { tag: "fix", text: "Closing the Manage Family window now returns you to the game's details instead of closing everything, and it no longer closes when you tap outside it." },
-    ],
-  },
-  {
-    id: "2026-06-23-privacy-and-developer",
-    date: "2026-06-23",
-    title: "Developer edits & a Privacy Policy",
-    items: [
-      { tag: "feature", text: "Suggest Edit now includes a Developer field, so you can fix or fill in which studio made a game (separate multiple studios with commas)." },
-      { tag: "feature", text: "A new Privacy page (in the sidebar) explains what data we collect, how it's used, and your rights — we don't sell your data." },
-      { tag: "fix", text: "Suggesting a game edit no longer shows a stray “Saved” pop-up alongside the confirmation." },
-    ],
-  },
-  {
-    id: "2026-06-23-issue-links",
-    date: "2026-06-23",
-    title: "Link issues together",
-    items: [
-      { tag: "feature", text: "Open a request or bug and link it to others — “blocks”, “blocked by”, “relates to”, “duplicates”, or “duplicated by” — Jira-style. Linked issues are listed in the detail and jump straight to each other." },
-      { tag: "feature", text: "Link a brand-new request to existing ones right as you create it." },
-      { tag: "improvement", text: "Admins can change an issue's status right from its detail view, without going back to the board." },
-    ],
-  },
-  {
-    id: "2026-06-23-decentralized-families",
-    date: "2026-06-23",
-    title: "Game Families, Reimagined",
-    items: [
-      { tag: "improvement", text: "Linked editions no longer hide inside one folder card — each edition gets its own card on the board that matches its status, so your Finished pile shows completed older versions and Now Playing shows the exact port you're tackling." },
-      { tag: "improvement", text: "Family members are marked with a small “Family” tag; open any one to see the family's combined hours played and money spent." },
-      { tag: "feature", text: "A new Manage Family hub lets you see the full roster and link or unlink editions in one place." },
-    ],
-  },
-  {
-    id: "2026-06-23-mobile-header",
-    date: "2026-06-23",
-    title: "Mobile header polish",
-    items: [
-      { tag: "fix", text: "The full Backlog Bazaar name no longer gets cut off in the mobile header, and the tagline now appears there too." },
-    ],
-  },
-  {
-    id: "2026-06-23-reports-and-notifications",
-    date: "2026-06-23",
-    title: "Smoother reports & notifications",
-    items: [
-      { tag: "feature", text: "Paste a screenshot straight into a bug or feature report (or a comment) — no need to save and upload it first." },
-      { tag: "fix", text: "Tapping a notification about a request now opens that exact item, even when you're already on the Requests page." },
-      { tag: "improvement", text: "The Add a game window now retitles itself — Bazaar, Wishlist, or Finished — to match where the game is headed." },
-    ],
+    title: "Free Game Vouchers",
+    summary: "New players get two vouchers that start games for free.",
+    tag: "feature",
   },
   {
     id: "2026-06-23-import-charters",
     date: "2026-06-23",
     title: "Import Charters",
-    items: [
-      { tag: "feature", text: "Games you already own still add to your Bazaar for free. Your Wishlist is now for games you don't own yet." },
-      { tag: "feature", text: "Move a Wishlist game into your Bazaar by spending an Import Charter — buy them with coins from the new charter chip next to your balance, and sell unused ones back." },
-      { tag: "improvement", text: "Refreshed the wallet: coins and charters now sit in clean, tappable chips, with a satisfying stamp when you import a game." },
-    ],
+    summary: "Your Wishlist became games you don't own yet, moved into your Bazaar with a charter.",
+    tag: "feature",
   },
   {
     id: "2026-06-22-transaction-ledger",
     date: "2026-06-22",
     title: "Transaction Ledger",
-    items: [
-      { tag: "feature", text: "Tap your coin balance — or “Transaction Ledger” in the menu — to see a full, dated record of every coin you've earned and spent." },
-      { tag: "feature", text: "Each entry shows what happened (bounty, activation fee, shelve refund, contribution reward…), the game involved, the exact change, and your balance right after." },
-      { tag: "feature", text: "Filter your history to just income, just expenses, or by currency, and scroll back through your whole timeline." },
-    ],
+    summary: "Tap your coin balance to see every coin you've earned and spent.",
+    tag: "feature",
+    link: { label: "Open your ledger", view: "transaction-ledger" },
+  },
+  {
+    id: "2026-06-22-master-ledger",
+    date: "2026-06-22",
+    title: "The Master Ledger",
+    summary: "See every game you own in one place, grouped and filtered your way.",
+    tag: "feature",
+    link: { label: "Open the Master Ledger", view: "master-ledger" },
   },
   {
     id: "2026-06-22-community-catalog",
     date: "2026-06-22",
     title: "Help build the game catalog",
-    items: [
-      { tag: "feature", text: "See wrong or missing details on a game? Hit “Suggest edit” on any game to propose a fix — title, cover, platforms, genres, release date or length." },
-      { tag: "feature", text: "Searched for a game that isn't listed? Suggest it as a new entry so everyone can add it." },
-      { tag: "feature", text: "Earn coins when a moderator approves your suggestion. Approved changes update the game for every player." },
-      { tag: "feature", text: "Track your suggestions on the new “My contributions” page: see exactly which fields went live, the coins you earned, and each one's status — and jump there straight from the notification." },
-      { tag: "feature", text: "Moderators can approve just some of a suggestion's fields; a partial approval still earns you a (smaller) reward." },
-      { tag: "improvement", text: "Editing a game's platforms no longer changes it for everyone instantly — catalog changes now go through a quick review so the shared data stays accurate." },
-    ],
+    summary: "Suggest fixes or new games, and earn coins when they're approved.",
+    tag: "feature",
+    items: ["Track your suggestions on My contributions."],
   },
   {
-    id: "2026-06-22-cover-comments-notifs",
+    id: "2026-06-22-visit-players",
     date: "2026-06-22",
-    title: "Restore covers, comment attachments & tidier notifications",
-    items: [
-      { tag: "feature", text: "Customized a game's cover? You can now restore its original artwork from the edit screen." },
-      { tag: "feature", text: "Attach screenshots or logs to a comment, so you can share evidence in a discussion." },
-      { tag: "improvement", text: "Opening your notifications and closing them now clears the unread count automatically — no need to open each one." },
-      { tag: "fix", text: "The request/bug window now closes only with the ✕ (like the game windows), so a stray tap outside won't lose your comment." },
-      { tag: "improvement", text: "What's new now tags each change as a Feature, Fix, or Improvement at a glance." },
-    ],
+    title: "Visit other players",
+    summary: "Browse anyone's Bazaar, Now Playing, Finished and Wishlist, and see who's online.",
+    tag: "feature",
   },
   {
-    id: "2026-06-22-mobile-polish-2",
+    id: "2026-06-22-sort-and-filter",
     date: "2026-06-22",
-    title: "Mobile fixes",
-    items: [
-      { tag: "fix", text: "The theme picker opens next to its button and scrolls on its own, instead of stretching the whole menu on mobile." },
-      { tag: "improvement", text: "Notifications load more as you scroll, so you can browse your full history." },
-    ],
-  },
-  {
-    id: "2026-06-22-profile-badges",
-    date: "2026-06-22",
-    title: "Profile badges & titles",
-    items: [
-      { tag: "feature", text: "Players can now earn prestige badges that show on their profile and the leaderboard." },
-      { tag: "feature", text: "Choose one of your badges to display as your title from the Account page — or hide it." },
-      "Everyone who joined during the beta has been awarded a Beta Tester badge. Thanks for helping shape Backlog Bazaar!",
-    ],
-  },
-  {
-    id: "2026-06-22-board-tags-priority",
-    date: "2026-06-22",
-    title: "Tag and prioritize requests & bugs",
-    items: [
-      { tag: "feature", text: "Add tags to a request or bug — pick common ones like “mobile” or “quality of life”, or type your own. Custom tags become available to everyone afterward." },
-      { tag: "feature", text: "Set a priority (Low / Medium / High) when creating or editing a request, and sort the board by it." },
-      { tag: "improvement", text: "Display names are now unique, so no two players share one." },
-      { tag: "fix", text: "Fixed the “requested changes” notification icon so it no longer looks like an approval." },
-    ],
-  },
-  {
-    id: "2026-06-22-master-ledger",
-    date: "2026-06-22",
-    title: "The Master Ledger — your whole collection at a glance",
-    items: [
-      "A new Master Ledger view gathers every game you own — across the Bazaar, Now Playing, and Finished — into one dashboard (Wishlist stays out, since you don't own those yet).",
-      "Each card shows a color-coded status badge so you can see where every game sits at a glance.",
-      "Group your library by platform or status, and filter by platform, status, or genre — e.g. every PS5 game you own, finished or not.",
-      "A summary header tracks your library health: total games owned, completion percentage, lifetime hours played, games finished this year, and coins earned from clears.",
-      "The Master Ledger now lives in the main menu alongside your boards, so it's one tap away.",
-      "Visiting another player? Open their Master Ledger to browse their whole collection in the same view.",
-    ],
-  },
-  {
-    id: "2026-06-22-edit-display-name",
-    date: "2026-06-22",
-    title: "Choose your display name",
-    items: [
-      "Edit your display name anytime from the Account page — fix the capitalization or pick something new.",
-      "Signed up with Google? You're no longer stuck with the lowercased name pulled from your email.",
-    ],
-  },
-  {
-    id: "2026-06-22-add-game-polish",
-    date: "2026-06-22",
-    title: "Smoother adding & tidier boards",
-    items: [
-      "The Add a game window no longer closes when you tap outside it — only the ✕ closes it, so a stray tap can't wipe what you've typed.",
-      "The Edit game window works the same way now — only the ✕ closes it, so you won't lose your changes to an accidental tap outside.",
-      "Adding a game that isn't in the suggestions? Tap “Add as a custom game” to dismiss the dropdown and keep your own title.",
-      "Game cards now share a consistent height for a cleaner, more even look across your collection.",
-    ],
-  },
-  {
-    id: "2026-06-22-edit-platforms",
-    date: "2026-06-22",
-    title: "Add missing platforms to a game",
-    items: [
-      "Edit a game's platforms from its edit screen — add one the catalog was missing (like Nintendo Switch 2).",
-      "Platforms you add to a catalog game are shared, so the next person who adds it sees them too.",
-    ],
-  },
-  {
-    id: "2026-06-22-custom-cover",
-    date: "2026-06-22",
-    title: "Use your own cover art",
-    items: [
-      "Upload a custom cover image for any game from its edit screen — perfect for manually-added games that aren't in the catalog.",
-      "Swap or remove the image anytime to keep your boards looking consistent.",
-    ],
-  },
-  {
-    id: "2026-06-22-family-name",
-    date: "2026-06-22",
-    title: "Name your Game Families",
-    items: [
-      "Give a linked Game Family its own name — it becomes the title on the family card, instead of defaulting to one edition's name.",
-    ],
-  },
-  {
-    id: "2026-06-22-wishlist-version",
-    date: "2026-06-22",
-    title: "Pick a version for wishlist games",
-    items: [
-      "Note which platform/edition you're planning to get for a wishlisted game — it shows as “Want on …” on the card.",
-      "When you later buy it, that version carries over as your owned copy.",
-    ],
-  },
-  {
-    id: "2026-06-22-add-context",
-    date: "2026-06-22",
-    title: "Smarter Add games button",
-    items: [
-      "Adding a game now defaults to the board you're on — open it from your Wishlist and it lands in your Wishlist.",
-      "On mobile, the floating Add button only shows on your game boards, so it's out of the way on pages like Requests & bugs.",
-    ],
+    title: "Sort and filter your boards",
+    summary: "Sort by cost, bounty, length or date, and filter by platform, genre and format.",
+    tag: "feature",
   },
   {
     id: "2026-06-22-finish-bounty",
     date: "2026-06-22",
     title: "Finishing pays a bounty",
-    items: [
-      "Coins now arrive as a single bounty when you finish a game, instead of trickling in per hour you logged.",
-      "Logging play time still tracks your hours — it just isn't where the coins come from anymore.",
-      "Buy prices and finish bounties can now be balanced by the team without an app update.",
-    ],
+    summary: "Coins now arrive as one bounty when you finish a game.",
+    tag: "improvement",
   },
   {
-    id: "2026-06-22-flexible-length",
+    id: "2026-06-22-badges",
     date: "2026-06-22",
-    title: "Enter game length in hours and minutes",
-    items: [
-      "Set a game's length the same flexible way as played time — “1h 30m”, “90m”, or “1:30” all work, not just whole hours.",
-      "Lengths now show as a tidy “1h 30m” across your cards and details.",
-    ],
+    title: "Badges and titles",
+    summary: "Earn badges and show one beside your name as your title.",
+    tag: "feature",
+    items: ["Every beta player got a Beta Tester badge. Thank you!"],
   },
   {
-    id: "2026-06-22-owned-platform-filter",
-    date: "2026-06-22",
-    title: "Platform filter matches what you own",
-    items: [
-      "Filtering by platform now matches the copies you actually own — own a game on Switch 2 but not the Switch release, and the Switch filter won't surface it.",
-      "Games with no copies recorded still filter by where they released, so nothing disappears.",
-    ],
-  },
-  {
-    id: "2026-06-22-visit-focus",
-    date: "2026-06-22",
-    title: "A cleaner view when visiting",
-    items: [
-      "While visiting another player's Bazaar, your own wallet, Add games, The Caravan, and the utility menu step aside — so it's never unclear whose stats you're looking at.",
-      "The only coin balance on screen is the player you're visiting; use “Leave” to return to your own pages.",
-    ],
-  },
-  {
-    id: "2026-06-22-report-attachments",
-    date: "2026-06-22",
-    title: "Attach screenshots & logs to reports",
-    items: [
-      "Add images or log files to a bug or feature report — show the problem instead of just describing it.",
-      "Screenshots preview right inside the report; log and text files attach as quick downloads.",
-      "Attach up to 5 files (10 MB each) when you create a report, or add and remove them later while editing.",
-    ],
-  },
-  {
-    id: "2026-06-22-mobile-nav",
-    date: "2026-06-22",
-    title: "Smoother navigation on mobile",
-    items: [
-      "The Back button now works the way you'd expect: it closes an open form or window first, then steps back through the pages you visited.",
-      "Refreshing the page keeps you where you were instead of bouncing you Home.",
-      "You can cancel a bug or feature report you started, and scroll the Requests page freely while writing one.",
-    ],
-  },
-  {
-    id: "2026-06-22-online-presence",
-    date: "2026-06-22",
-    title: "See who's online",
-    items: [
-      "A green dot on the leaderboard shows who's active right now.",
-      "Peek at what they're up to — “Browsing the Caravan”, “Reading Requests & bugs”, and more.",
-      "Want privacy? Flip on “Appear offline” in Account settings to hide your status and activity.",
-    ],
-  },
-  {
-    id: "2026-06-22-visit-bazaars",
-    date: "2026-06-22",
-    title: "Visit other players' Bazaars",
-    items: [
-      "Tap anyone on the leaderboard — or a poster's name on the Requests board — to browse their Bazaar, Now Playing, Finished, and Wishlist.",
-      "You see their pages in their own theme, read-only, so there's nothing to accidentally change.",
-      "Your theme now follows you across devices.",
-      "New privacy setting: hide what you paid in real money for your games from visitors.",
-    ],
-  },
-  {
-    id: "2026-06-22-bazaar-sort-filter",
-    date: "2026-06-22",
-    title: "Sort & filter your boards",
-    items: [
-      "Sort any board by lowest unlock cost, highest completion bounty, shortest playtime, name, or date added.",
-      "Stack filters for platform, genre, and format (physical vs. digital) — e.g. find your Switch RPGs under 20 hours in seconds.",
-      "Built for big backlogs: slice hundreds of games down to exactly what fits your coins and your schedule.",
-    ],
-  },
-  {
-    id: "2026-06-22-requests-roomier",
-    date: "2026-06-22",
-    title: "Roomier requests & bugs",
-    items: [
-      "Bigger, drag-to-resize text boxes and a wider detail window make writing and editing requests, bugs, and comments much easier.",
-      "Much higher text limits, so you no longer have to split a long request across replies.",
-      "Edited requests and comments now show an “edited” marker with when they changed.",
-    ],
-  },
-  {
-    id: "2026-06-22-unified-family-cards",
-    date: "2026-06-22",
-    title: "Game Families collapse into one card",
-    items: [
-      "Linked editions of a game now show as a single card on your boards instead of cluttering them with every port and remaster.",
-      "The card tags every platform in the family and sits on one board based on its top edition (Now Playing > Bazaar > Wishlist > Finished).",
-      "Open it to get per-edition tabs — each version's stats, cost, progress notes, and actions live there.",
-    ],
-  },
-  {
-    id: "2026-06-22-how-it-works",
-    date: "2026-06-22",
-    title: "A “How it works” page",
-    items: [
-      "New “How it works” page (in the sidebar) explains the whole concept — the play-to-earn-to-buy loop, the coin economy, slots, and more.",
-      "First-timers get a quick link to it from an empty Bazaar.",
-    ],
-  },
-  {
-    id: "2026-06-22-avatars",
-    date: "2026-06-22",
-    title: "Profile pictures",
-    items: [
-      "Upload a profile picture from your Account page — we crop and shrink it for you.",
-      "Your picture shows next to your name in the top bar, on the leaderboard, and in the admin tools.",
-      "No picture yet? You'll get a clean circle with your initials.",
-    ],
-  },
-  {
-    id: "2026-06-22-mobile-polish",
-    date: "2026-06-22",
-    title: "Mobile fit-and-finish",
-    items: [
-      "Notifications stay on screen and show your most recent ones instead of scrolling forever.",
-      "Long lists of owned platforms wrap neatly instead of running off the edge of a card.",
-      "The Caravan shows one card per row on phones, so the card menus no longer get cut off.",
-    ],
-  },
-  {
-    id: "2026-06-22-top-bar-roomier-pages",
-    date: "2026-06-22",
-    title: "Notifications up top, roomier pages",
-    items: [
-      "Notifications, the theme picker, and your account now sit in a top-right bar — the spot you'd expect them.",
-      "Pages like the Leaderboard, Requests board, and Account now stretch to fill the screen instead of sitting in a narrow strip.",
-      "Tap the Backlog Bazaar name to jump back to your Bazaar; on phones, Add is now a floating button so the name isn't cut off.",
-    ],
-  },
-  {
-    id: "2026-06-22-pages-not-popups",
-    date: "2026-06-22",
-    title: "Pages, not pop-ups",
-    items: [
-      "The Leaderboard, Account, Requests & bugs, What's new, and admin tools now open as full pages instead of pop-up dialogs — they get the whole screen and the active one is highlighted in the menu.",
-    ],
-  },
-  {
-    id: "2026-06-21-sidebar-nav",
+    id: "2026-06-21-requests-and-bugs",
     date: "2026-06-21",
-    title: "A clearer, friendlier layout",
-    items: [
-      "Navigation moved to a labeled sidebar on desktop — every section now shows its name and count at a glance, no more guessing icons.",
-      "On phones, a bottom tab bar makes jumping between sections one-tap easy.",
-      "Account, leaderboard, requests, theme, and more are tidied into one clearly labeled menu.",
-    ],
-  },
-  {
-    id: "2026-06-21-the-caravan",
-    date: "2026-06-21",
-    title: "The Market is now The Caravan",
-    items: [
-      "Renamed the Market to The Caravan — a clearer name, since you don't spend coins there.",
-      "Adding a game now just says “Send to Bazaar” instead of showing a coin price.",
-      "Games already in your Bazaar or wishlist drop out of The Caravan and are replaced with fresh suggestions.",
-    ],
-  },
-  {
-    id: "2026-06-21-coin-icon",
-    date: "2026-06-21",
-    title: "A coin of our own",
-    items: [
-      "Coins now use a custom Backlog Bazaar coin throughout the app — in your wallet, on prices, and everywhere else — instead of the stock emoji.",
-      "The browser tab icon matches it too.",
-    ],
+    title: "Requests and bugs",
+    summary: "Suggest features and report bugs, with comments, reactions and screenshots.",
+    tag: "feature",
   },
   {
     id: "2026-06-21-game-families",
     date: "2026-06-21",
-    title: "Link editions into a Game Family",
-    items: [
-      "Link different versions of the same game — a remaster, a Switch port, a PC copy — into one “Game Family” from a game's edit screen.",
-      "A linked game shows Family Stats: your combined playtime and total real-world spend across every version.",
-      "Linked editions share a single Now Playing slot, so playing two versions at once won't eat extra space.",
-      "Finishing pays the full bonus only the first time you clear a family — re-clears on other platforms earn a smaller Replay Bonus.",
-    ],
-  },
-  {
-    id: "2026-06-21-platforms-copies",
-    date: "2026-06-21",
-    title: "Your platforms, your way",
-    items: [
-      "Add your own platforms (like “Nintendo Switch 2”) in Account settings, or just type one while adding a game — it's saved for next time.",
-      "When adding a game, the platform options now come from the consoles you own.",
-      "Mark each copy you own as Physical or Digital — so you can track owning a game both ways on the same console.",
-    ],
-  },
-  {
-    id: "2026-06-21-playtime-granularity",
-    date: "2026-06-21",
-    title: "Log play time to the minute",
-    items: [
-      "Play-time fields now take minutes, not just half-hours — type “1h 30m”, “90m”, “1:30”, or “2.75”.",
-      "Your played time shows as a tidy “2h 45m” everywhere.",
-    ],
-  },
-  {
-    id: "2026-06-21-targeted-slots",
-    date: "2026-06-21",
-    title: "Targeted Now Playing slots",
-    items: [
-      "Admins can hand out special slots that only hold games of a certain length — like a “Quick Clear” slot just for short games.",
-      "Your Now Playing slots now show what each one accepts, and a game tells you which slot it's filling.",
-      "Move a game out of a general slot into a matching targeted slot to free the general one for something bigger.",
-    ],
+    title: "Game Families",
+    summary: "Link editions of the same game, like a remaster and a port.",
+    tag: "feature",
+    items: ["Clearing another edition pays the smaller Replay Bonus."],
   },
   {
     id: "2026-06-21-now-playing-slots",
     date: "2026-06-21",
     title: "Now Playing slots",
-    items: [
-      "You now have a limited number of Now Playing slots — start with 2 — and need an open one to begin a new game.",
-      "A slot meter on the Now Playing tab shows what's in use, so you finish or shelve before piling on another big title.",
-    ],
+    summary: "You play a few games at a time, so finish or shelve one before starting more.",
+    tag: "feature",
   },
   {
-    id: "2026-06-21-shelve-it",
+    id: "2026-06-21-platforms-and-copies",
     date: "2026-06-21",
-    title: "The \"Shelve It\" penalty",
-    items: [
-      "Dropping a game from Now Playing without finishing it refunds half of what you paid — you recoup some coins but forfeit the rest to the Bazaar.",
-      "You'll see the exact refund before you confirm, so there are no surprises.",
-    ],
+    title: "Your platforms and copies",
+    summary: "Track which platforms you own each game on, physical or digital, and what you paid.",
+    tag: "feature",
   },
   {
-    id: "2026-06-21-add-finished",
+    id: "2026-06-21-play-time",
     date: "2026-06-21",
-    title: "Add games you've already finished",
-    items: [
-      "When adding a game, choose where it lands: Bazaar, Wishlist, or Finished.",
-      "Add finished games straight to your collection — record platforms, cost, and hours played, no coins involved.",
-    ],
+    title: "Track your play time",
+    summary: "Log hours on the games you're playing, down to the minute.",
+    tag: "feature",
+    items: ["Jot a progress note on any game you're playing."],
   },
   {
-    id: "2026-06-21-progress-notes",
+    id: "2026-06-21-caravan-and-wishlist",
     date: "2026-06-21",
-    title: "Progress notes",
-    items: [
-      "Jot a quick \"where I left off\" note on any game you're playing — your current chapter, objective, or reminder.",
-      "The note shows right on the Now Playing card, and on other players' active boards for context.",
-    ],
+    title: "The Caravan and your Wishlist",
+    summary: "Discover games for your platforms and wishlist the ones you want.",
+    tag: "feature",
+    link: { label: "Browse the Caravan", view: "market" },
   },
   {
-    id: "2026-06-21-request-tweaks",
+    id: "2026-06-21-themes",
     date: "2026-06-21",
-    title: "Requests & Bugs tweaks",
-    items: [
-      "Change a submission's type — switch a feature to a bug (or back) when editing it.",
-      "New \"Awaiting Feedback\" status for items that are built and waiting on the requester to sign off.",
-      "Submitters can approve their item (marks it Done) or request changes (sends it back to In Progress) once it's awaiting their feedback.",
-    ],
-  },
-  {
-    id: "2026-06-21-library-upgrades",
-    date: "2026-06-21",
-    title: "Your library, leveled up",
-    items: [
-      "Track which platforms you own each game on — owning it on several shows right on the card.",
-      "Record what each copy cost you, with a per-version spend breakdown.",
-      "Click any game to edit its details — title, length, hours played, and your copies.",
-      "New: this Release Notes panel, so you can keep up with what's changed.",
-    ],
-  },
-  {
-    id: "2026-06-21-update-banner",
-    date: "2026-06-21",
-    title: "Never miss an update",
-    items: [
-      "A banner now appears when a new version is deployed, prompting a quick refresh.",
-    ],
-  },
-  {
-    id: "2026-06-21-red-themes",
-    date: "2026-06-21",
-    title: "Three new red themes",
-    items: ["Added Bloodmoon, Phoenix, and Crimson themes for the red-lovers."],
-  },
-  {
-    id: "2026-06-21-requests-rework",
-    date: "2026-06-21",
-    title: "Requests & Bugs, reworked",
-    items: [
-      "A full-screen, searchable board with filtering and sorting.",
-      "Edit or delete your own submissions.",
-      "Comment threads with replies and emoji reactions.",
-      "Get notified when someone replies on a thread you're in or reacts to your comment.",
-      "Report bugs, not just feature requests.",
-    ],
-  },
-  {
-    id: "2026-06-21-playtime",
-    date: "2026-06-21",
-    title: "Play-time tracking",
-    items: [
-      "Log the hours you put into a game and earn a steady trickle of coins as you go.",
-      "Record time you'd already played before you started tracking.",
-      "See played hours across libraries, plus a clearer estimated coin payout.",
-    ],
-  },
-  {
-    id: "2026-06-21-notifications",
-    date: "2026-06-21",
-    title: "Notifications",
-    items: ["A notification bell keeps a permanent history of activity on your account."],
-  },
-  {
-    id: "2026-06-21-market-wishlist",
-    date: "2026-06-21",
-    title: "The Market & Wishlist",
-    items: [
-      "Discover games on a dedicated Market page, filtered to the platforms you own.",
-      "Wishlist games you can't play yet, and hide ones you're not interested in.",
-    ],
-  },
-  {
-    id: "2026-06-21-redesign",
-    date: "2026-06-21",
-    title: "A fresh look",
-    items: [
-      "A modern redesign with light/dark mode and several gaming-themed palettes.",
-      "Toast feedback and smooth card animations throughout.",
-    ],
-  },
-  {
-    id: "2026-06-21-game-data",
-    date: "2026-06-21",
-    title: "Smarter game data",
-    items: [
-      "Game stats and box art pulled in automatically from RAWG.",
-      "Accurate lengths from HowLongToBeat, with a playstyle selector (story / extras / completionist).",
-    ],
-  },
-  {
-    id: "2026-06-21-accounts",
-    date: "2026-06-21",
-    title: "Accounts",
-    items: ["Sign in with Google and link it to your existing account."],
-  },
-  {
-    id: "2026-06-20-leaderboard",
-    date: "2026-06-20",
-    title: "Leaderboard",
-    items: ["Compete on the leaderboard and drill into any player's library."],
+    title: "Themes",
+    summary: "Pick from light, dark and gaming-inspired color themes, including Bloodmoon, Phoenix and Crimson.",
+    tag: "feature",
   },
   {
     id: "2026-06-20-launch",
     date: "2026-06-20",
     title: "Welcome to Backlog Bazaar",
-    items: [
-      "Build your game backlog, earn coins by finishing games, and spend them to start new ones.",
-    ],
+    summary: "Build your backlog, finish games to earn coins, and spend them to start new ones.",
+    tag: "feature",
   },
 ];
 
 /** The id of the latest release (the one users are compared against). */
 export const LATEST_RELEASE_ID = RELEASES[0]?.id ?? "";
+
+/** How many of the newest releases the page shows open, before the months. */
+export const EXPANDED_RELEASES = 5;
+
+export interface ReleaseMonth {
+  /** "2026-09" */
+  key: string;
+  /** "September 2026" */
+  label: string;
+  releases: Release[];
+}
+
+/** The page's layout: the newest few releases open, then the rest grouped by
+ *  month (newest month first, release order kept). */
+export function groupReleases(
+  releases: Release[],
+  expanded = EXPANDED_RELEASES,
+  locale?: string,
+): { recent: Release[]; months: ReleaseMonth[] } {
+  const recent = releases.slice(0, expanded);
+  const months: ReleaseMonth[] = [];
+  for (const r of releases.slice(expanded)) {
+    const key = r.date.slice(0, 7);
+    let month = months[months.length - 1];
+    if (!month || month.key !== key) {
+      const [y, m] = key.split("-").map(Number);
+      const label = new Date(y, m - 1, 1).toLocaleDateString(locale, { month: "long", year: "numeric" });
+      month = { key, label, releases: [] };
+      months.push(month);
+    }
+    month.releases.push(r);
+  }
+  return { recent, months };
+}
 
 /** Format a release's ISO date (YYYY-MM-DD) for display. A date-only string is
  *  parsed as a LOCAL calendar date: `new Date("2026-06-29")` is UTC midnight,

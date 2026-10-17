@@ -2,6 +2,7 @@ import { describe, it, expect, afterEach, vi } from "vitest";
 import { act, render, screen, fireEvent } from "@testing-library/react";
 import { Sidebar, MobileNav, TopBar, type ChromeProps } from "./Sidebar";
 import { useStore, type ViewingSession } from "../store";
+import { LATEST_RELEASE_ID } from "../lib/changelog";
 
 function chromeProps(): ChromeProps {
   return {
@@ -539,16 +540,20 @@ describe("My Cosmetics navigation", () => {
   });
 });
 
-describe("paused release notes", () => {
-  it("hides the release link even with unseen releases", () => {
+describe("What's new link", () => {
+  it("shows with a New dot until the latest release is seen", () => {
     act(() => useStore.setState({ viewing: null }));
-    render(<Sidebar {...chromeProps()} seenReleaseId={null} />);
-    expect(screen.queryByRole("button", { name: /What's new/i })).toBeNull();
+    const { unmount } = render(<Sidebar {...chromeProps()} seenReleaseId={null} />);
+    const link = screen.getByRole("button", { name: /What's new/i });
+    expect(link.querySelector('[aria-label="New"]')).toBeTruthy();
+    unmount();
+    render(<Sidebar {...chromeProps()} seenReleaseId={LATEST_RELEASE_ID} />);
+    expect(screen.getByRole("button", { name: /What's new/i }).querySelector('[aria-label="New"]')).toBeNull();
   });
-  it("hides the release link in the mobile menu", () => {
+  it("is in the mobile menu", () => {
     act(() => useStore.setState({ viewing: null }));
     render(<MobileNav {...chromeProps()} seenReleaseId={null} />);
     fireEvent.click(screen.getByRole("button", { name: /More options/i }));
-    expect(screen.queryByRole("button", { name: /What's new/i })).toBeNull();
+    expect(screen.getByRole("button", { name: /What's new/i })).toBeTruthy();
   });
 });

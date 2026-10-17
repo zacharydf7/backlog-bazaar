@@ -61,44 +61,43 @@ this to every change, no matter how small:
 If a request would require cutting these corners, say so and propose the clean
 way instead.
 
-## ⭐ Keep the release notes updated (do this every user-facing change)
+## ⭐ Keep the release notes updated (big user-facing changes)
 
-There is a **Release Notes / "What's new"** panel powered by
-[`src/lib/changelog.ts`](src/lib/changelog.ts). Users discover new features
-through it, and an "unseen" dot lights up when a release newer than the one they
-last viewed exists.
+The **"What's new"** page is powered by
+[`src/lib/changelog.ts`](src/lib/changelog.ts). Players discover features
+through it, and an "unseen" dot lights up when a newer release exists.
 
-**Whenever you make a change that a user would notice, add a changelog entry as
-part of the same work — before going live.** This is not optional cleanup; treat
-it like updating tests.
+**When you ship a change most players would want to know about, add or update a
+release in the same work, before going live.**
+
+The bar is high (owner, 2026-10-17): big user-facing features and changes most
+players would notice. Skip edge-case fixes, internal mechanics, tiny polish,
+refactors, infra, test-only changes, and anything admin- or moderator-only.
+**When unsure, leave it out.**
 
 How:
 
-1. Prepend a new object to the top of the `RELEASES` array (newest first):
+1. **One release per feature or theme**, not per date or commit. Follow-up
+   fixes and polish to a feature fold into its existing release (edit it in
+   place, keeping its id). A busy day can have several releases.
+2. Prepend a new release to `RELEASES` (newest first):
    ```ts
    {
      id: "YYYY-MM-DD-short-slug", // unique; also the "seen" marker
-     date: "YYYY-MM-DD",          // absolute date of the release
-     title: "Short, benefit-focused headline",
-     items: [
-       "One short, user-facing sentence per change.",
-       "Describe the benefit, not the implementation.",
-     ],
+     date: "YYYY-MM-DD",
+     title: "Names the thing",    // 8 words or fewer
+     summary: "One plain sentence on why a player cares.", // 24 words or fewer
+     tag: "feature",              // exactly one: feature | improvement | fix
+     items: ["Up to four bullets, 15 words or fewer each."],
+     link: { label: "Open Challenges", view: "challenges" }, // optional "Try it"
    },
    ```
-2. Keep `id` unique and date-prefixed. A new top entry automatically re-lights
-   the "What's new" dot for everyone.
-3. **Group related commits into one release entry** — users want milestones, not
-   raw commit messages. If you ship several commits for one feature, they share
-   a single entry.
-4. **Skip** pure refactors, infra, dependency bumps, test-only changes, and
-   internal/admin tweaks. The changelog is for end users.
-5. Write in plain language ("Track which platforms you own each game on"), not
-   jargon ("added `copies` JSONB column").
+3. Write plainly: no em dashes, no jargon or internal names, American spelling,
+   describe the benefit rather than the implementation.
+4. `link` only to pages every player can open, for features that still exist.
 
-If you're unsure whether a change is user-facing enough to list, it usually is —
-err toward adding a concise bullet to the most relevant recent entry, or a new
-entry if it stands alone.
+[`src/lib/changelog.test.ts`](src/lib/changelog.test.ts) enforces the word
+limits, bullet count, dashes, spelling and link targets.
 
 ## Keep the "How it works" page updated (when core mechanics change)
 

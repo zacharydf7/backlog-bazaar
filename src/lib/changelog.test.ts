@@ -3,9 +3,9 @@ import {
   isUnseen,
   RELEASES,
   LATEST_RELEASE_ID,
-  normalizeReleaseItem,
-  orderReleaseItems,
   formatReleaseDate,
+  groupReleases,
+  type Release,
 } from "./changelog";
 
 describe("isUnseen", () => {
@@ -49,10 +49,6 @@ describe("RELEASES", () => {
     expect(LATEST_RELEASE_ID).toBe(RELEASES[0].id);
   });
 
-  it("every release has at least one item", () => {
-    for (const r of RELEASES) expect(r.items.length).toBeGreaterThan(0);
-  });
-
   it("every release has a well-formed date that matches its id prefix", () => {
     for (const r of RELEASES) {
       expect(r.date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
@@ -61,10 +57,8 @@ describe("RELEASES", () => {
   });
 
   it("no release is dated in the future (the July-5th-on-July-4th regression)", () => {
-    // Regression: entries were stamped from a UTC timestamp that had already
-    // rolled past midnight while the release actually went out "yesterday"
-    // locally. Release dates are local calendar days, so compare against the
-    // LOCAL today — dates are ISO (YYYY-MM-DD), so string compare is safe.
+    // Release dates are local calendar days, so compare against the LOCAL
+    // today; dates are ISO (YYYY-MM-DD), so string compare is safe.
     const now = new Date();
     const today = [
       now.getFullYear(),
@@ -79,55 +73,64 @@ describe("RELEASES", () => {
       expect(RELEASES[i - 1].date >= RELEASES[i].date).toBe(true);
     }
   });
+});
 
-  it("every item normalizes to non-empty text with a valid tag (or none)", () => {
-    const valid = new Set(["feature", "fix", "improvement"]);
+// The owner's writing rules (2026-10-17): short, plain, scannable. These keep
+// new entries from drifting back to long, wordy notes.
+describe("release style", () => {
+  const words = (s: string) => s.trim().split(/\s+/).length;
+  const texts = (r: Release) => [r.title, r.summary, ...(r.items ?? [])];
+
+  it("keeps titles to 8 words, summaries to 24 and bullets to 15", () => {
     for (const r of RELEASES) {
-      for (const raw of r.items) {
-        const item = normalizeReleaseItem(raw);
-        expect(item.text.length).toBeGreaterThan(0);
-        if (item.tag) expect(valid.has(item.tag)).toBe(true);
-      }
+      expect(words(r.title), r.id).toBeLessThanOrEqual(8);
+      expect(r.summary.length, r.id).toBeGreaterThan(0);
+      expect(words(r.summary), r.id).toBeLessThanOrEqual(24);
+      for (const item of r.items ?? []) expect(words(item), `${r.id}: ${item}`).toBeLessThanOrEqual(15);
     }
   });
-});
 
-describe("orderReleaseItems", () => {
-  it("groups by category — untagged, then features, improvements, fixes", () => {
-    const ordered = orderReleaseItems([
-      { text: "fix A", tag: "fix" },
-      "intro line",
-      { text: "improvement A", tag: "improvement" },
-      { text: "feature A", tag: "feature" },
-      { text: "fix B", tag: "fix" },
-      { text: "feature B", tag: "feature" },
-    ]);
-    expect(ordered.map((i) => i.text)).toEqual([
-      "intro line",
-      "feature A",
-      "feature B",
-      "improvement A",
-      "fix A",
-      "fix B",
-    ]);
+  it("has at most four bullets per release", () => {
+    for (const r of RELEASES) expect((r.items ?? []).length, r.id).toBeLessThanOrEqual(4);
   });
 
-  it("keeps the authored order within a group (stable)", () => {
-    const ordered = orderReleaseItems([
-      { text: "first fix", tag: "fix" },
-      { text: "second fix", tag: "fix" },
+  it("uses no em or en dashes", () => {
+    for (const r of RELEASES) for (const t of texts(r)) expect(t, r.id).not.toMatch(/[—–]/);
+  });
+
+  it("uses American spelling", () => {
+    const british = /\b(colour|favourite|behaviour|organis|neighbour|cancelled|centre|catalogue)/i;
+    for (const r of RELEASES) for (const t of texts(r)) expect(t, r.id).not.toMatch(british);
+  });
+
+  it("links only to pages every player can open", () => {
+    const playerPages = new Set([
+      "backlog", "playing", "finished", "wishlist", "market", "profile", "lists", "subscriptions",
+      "master-ledger", "transaction-ledger", "community", "community-activity", "community-messages",
+      "community-recs", "community-discover", "cosmetics", "shop", "achievements", "challenges",
+      "account", "about",
     ]);
-    expect(ordered.map((i) => i.text)).toEqual(["first fix", "second fix"]);
+    for (const r of RELEASES) if (r.link) expect(playerPages.has(r.link.view), r.id).toBe(true);
   });
 });
 
-describe("normalizeReleaseItem", () => {
-  it("wraps a plain string as untagged text", () => {
-    expect(normalizeReleaseItem("Hello")).toEqual({ text: "Hello" });
+describe("groupReleases", () => {
+  const rel = (id: string): Release => ({ id, date: id.slice(0, 10), title: "T", summary: "S", tag: "feature" });
+
+  it("opens the newest few, then groups the rest by month, newest first", () => {
+    const { recent, months } = groupReleases(
+      [rel("2026-10-17-a"), rel("2026-10-02-b"), rel("2026-09-30-c"), rel("2026-09-01-d"), rel("2026-07-04-e")],
+      2,
+      "en-US",
+    );
+    expect(recent.map((r) => r.id)).toEqual(["2026-10-17-a", "2026-10-02-b"]);
+    expect(months.map((m) => [m.key, m.label, m.releases.map((r) => r.id)])).toEqual([
+      ["2026-09", "September 2026", ["2026-09-30-c", "2026-09-01-d"]],
+      ["2026-07", "July 2026", ["2026-07-04-e"]],
+    ]);
   });
 
-  it("passes an already-object item through", () => {
-    const item = { text: "Fixed a thing", tag: "fix" as const };
-    expect(normalizeReleaseItem(item)).toBe(item);
+  it("has no months when everything fits in the open part", () => {
+    expect(groupReleases([rel("2026-10-17-a")], 5).months).toEqual([]);
   });
 });

@@ -181,7 +181,6 @@ describe("isAccountSwitch", () => {
   });
 });
 
-it("redirects paused release notes bookmarks home", () => {
-  expect(parseHash("#whatsnew")).toEqual(HOME);
-  expect(parseHash("#/whatsnew")).toEqual(HOME);
+it("opens What's new from a bookmark", () => {
+  expect(parseHash("#whatsnew")).toEqual({ kind: "view", view: "whatsnew" });
 });

@@ -1349,7 +1349,7 @@ export default function App() {
         ) : view === "mysubmissions" ? (
           <MySubmissions initialId={mySubmissionId} />
         ) : view === "whatsnew" ? (
-          WHATS_NEW_ENABLED ? <ReleaseNotes /> : <AboutPage />
+          WHATS_NEW_ENABLED ? <ReleaseNotes onNavigate={navigate} /> : <AboutPage />
         ) : view === "about" ? (
           <AboutPage />
         ) : view === "privacy" ? (
