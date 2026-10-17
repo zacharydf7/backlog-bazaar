@@ -98,6 +98,7 @@ import { PrivacyPage } from "./components/PrivacyPage";
 import { GamePage } from "./components/gamepage/GamePage";
 import { AchievementsPage } from "./components/AchievementsPage";
 import { ChallengesPage } from "./components/ChallengesPage";
+import { WeeklyRecapModal } from "./components/WeeklyRecapModal";
 import { MyCosmetics } from "./components/MyCosmetics";
 import { ShopPage } from "./components/ShopPage";
 import { CompilationPage } from "./components/gamepage/CompilationPage";
@@ -194,6 +195,8 @@ export default function App() {
     refreshBountyRate,
     coOpPacts,
     passwordRecovery,
+    weeklyRecap,
+    openWeeklyRecap,
   } = useStore();
   // A pact invite opened from its notification for a game the user doesn't
   // own — there's no game page to land on, so the join modal opens globally.
@@ -351,6 +354,10 @@ export default function App() {
       setOpenCompilationId(null);
       setOpenListId(null);
       setView("challenges");
+    } else if (link.startsWith("recap:")) {
+      // The weekly recap notice reopens its "Your week" card.
+      setAlertsOpen(false);
+      void openWeeklyRecap(link.slice("recap:".length));
     } else if (link.startsWith("list:")) {
       // Collaborative-list alerts (issue b2059a55): invite, removal request,
       // ruling — all land on the list's own page.
@@ -1557,6 +1564,7 @@ export default function App() {
         return p ? <PactJoinModal pact={p} onClose={() => setCoopJoinId(null)} /> : null;
       })()}
       <PostGameRoutingModal />
+      {weeklyRecap && <WeeklyRecapModal recap={weeklyRecap} onNavigate={navigate} />}
       <SessionPill />
       <Toasts />
       <UpdateBanner />

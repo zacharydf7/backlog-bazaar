@@ -12,11 +12,11 @@ export interface RotationResetConfig {
   resetTz: string; // IANA timezone the day/hour are expressed in (e.g. "UTC")
 }
 
-/** Defaults mirroring the SQL app_config defaults: 3 slots, 3 coins, Tue 00:00 UTC. */
+/** Defaults mirroring the SQL app_config defaults: 3 slots, 3 coins, Mon 00:00 UTC. */
 export const DEFAULT_ROTATION_SLOTS = 3;
 export const DEFAULT_ROTATION_CHECKIN_REWARD = 3;
 export const DEFAULT_ROTATION_RESET: RotationResetConfig = {
-  resetDow: 2, // Tuesday
+  resetDow: 1, // Monday
   resetHour: 0,
   resetTz: "UTC",
 };

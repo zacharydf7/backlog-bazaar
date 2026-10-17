@@ -20,6 +20,7 @@ import {
   PiggyBank,
   Sparkles,
   Target,
+  CalendarRange,
   type LucideIcon,
 } from "lucide-react";
 import { useStore } from "../store";
@@ -56,6 +57,7 @@ const TYPE_ICON: Record<string, LucideIcon> = {
   loan_repaid: PiggyBank,
   cosmetic_granted: Sparkles,
   challenges_reset: Target,
+  weekly_recap: CalendarRange,
 };
 
 /** A fallback destination derived from a notification's type, for older

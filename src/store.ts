@@ -172,6 +172,7 @@ import {
 import { coerceCommunityReview, type CommunityReview } from "./lib/communityReviews";
 import { coerceAchievements, earnToastMessage } from "./lib/achievements";
 import { trackEvent } from "./lib/appEvents";
+import { coerceWeeklyRecap, type WeeklyRecap } from "./lib/weeklyRecap";
 import {
   coerceChallenges,
   coerceAdminSeasonal,
@@ -1009,6 +1010,9 @@ interface BazaarState {
   // This month's goals, your picks and the seasonal events (lib/challenges.ts).
   // Loaded by fetchChallenges; null until then and offline.
   challenges: ChallengesState | null;
+  // The "Your week" recap card currently open (null = closed). Opened at boot
+  // for an unseen recap, or from its bell notification.
+  weeklyRecap: WeeklyRecap | null;
   // Curio Shop: the cosmetic catalog (lazily loaded by fetchShop), the item ids
   // this user owns, and their equipped frame/stall picks (boot-loaded).
   shopItems: ShopItem[];
@@ -1651,6 +1655,13 @@ interface BazaarState {
   pickMonthlyGoal: (goalKey: string) => Promise<void>;
   // Claim one completed goal/bonus/event reward by its row id, or all of them.
   claimChallengeRewards: (id?: string) => Promise<void>;
+  // Build/fetch last week's recap (server-side, once per week) and open its
+  // card if it hasn't been seen. Quiet weeks have none.
+  fetchWeeklyRecap: () => Promise<void>;
+  // Reopen a stored recap (its bell notification's link).
+  openWeeklyRecap: (id: string) => Promise<void>;
+  // Close the recap card, marking it seen.
+  closeWeeklyRecap: () => void;
   // Admin (challenges.manage): every seasonal event, archived included.
   fetchSeasonalChallengesAdmin: () => Promise<AdminSeasonalChallenge[]>;
   // Admin: create (id null) or edit a seasonal event. Resolves true on success.
@@ -2053,6 +2064,7 @@ export const useStore = create<BazaarState>((set, get) => ({
   selectedTitleId: null,
   achievements: [],
   challenges: null,
+  weeklyRecap: null,
   shopItems: [],
   shopSets: [],
   shopOwnedIds: [],
@@ -2338,6 +2350,7 @@ export const useStore = create<BazaarState>((set, get) => ({
         selectedTitleId: null,
         achievements: [],
         challenges: null,
+        weeklyRecap: null,
         shopItems: [],
         shopSets: [],
         shopOwnedIds: [],
@@ -2587,8 +2600,10 @@ export const useStore = create<BazaarState>((set, get) => ({
 
     // Award anything this account's history now qualifies for and load the
     // trophy case. Fire-and-forget: the boot evaluation is also the retroactive
-    // backfill — the first sign-in after achievements ship earns the lot.
-    void get().evaluateAchievements();
+    // backfill — the first sign-in after achievements ship earns the lot. The
+    // weekly recap follows, so its "close to" medals and unclaimed rewards
+    // count anything just earned.
+    void get().evaluateAchievements().then(() => get().fetchWeeklyRecap());
 
     // A stopwatch session left running on another device (or before a refresh)
     // resurfaces here.
@@ -8310,6 +8325,41 @@ export const useStore = create<BazaarState>((set, get) => ({
       toast(`+${row.paid} coins — ${what} claimed`, Coins);
     }
     await get().fetchChallenges();
+  },
+
+  fetchWeeklyRecap: async () => {
+    if (!supabase || !get().cloud) return;
+    const { data, error } = await supabase.rpc("weekly_recap");
+    if (error) return;
+    const recap = coerceWeeklyRecap(data);
+    if (!recap || recap.seenAt != null) return;
+    // A recap built just now added a bell notification too.
+    void get().fetchNotifications();
+    // Never over the first-run tutorial; the bell keeps it for later.
+    if (get().onboardingCompletedAt == null) return;
+    set({ weeklyRecap: recap });
+    trackEvent("feature", "weekly_recap_open", { week: recap.weekStart, from: "boot" });
+  },
+
+  openWeeklyRecap: async (id) => {
+    if (!supabase || !get().cloud) return;
+    const { data, error } = await supabase
+      .from("weekly_recaps")
+      .select("id, week_start, data, seen_at")
+      .eq("id", id)
+      .maybeSingle();
+    if (error || !data) return;
+    const recap = coerceWeeklyRecap(data);
+    if (!recap) return;
+    set({ weeklyRecap: recap });
+    trackEvent("feature", "weekly_recap_open", { week: recap.weekStart, from: "notification" });
+  },
+
+  closeWeeklyRecap: () => {
+    const recap = get().weeklyRecap;
+    if (!recap) return;
+    set({ weeklyRecap: null });
+    if (recap.seenAt == null && supabase) void supabase.rpc("mark_weekly_recap_seen", { p_id: recap.id });
   },
 
   fetchSeasonalChallengesAdmin: async () => {

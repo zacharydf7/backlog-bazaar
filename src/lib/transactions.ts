@@ -19,6 +19,7 @@ export const LEDGER_LABELS: Record<string, string> = {
   collectors_record_bonus: "Collector's Record Bonus",
   review_bonus: "Reviewer Bonus",
   session_bonus: "Daily Session Bonus",
+  rotation_checkin: "Rotation Check-in",
   achievement_reward: "Achievement Reward",
   monthly_goal: "Monthly Goal Reward",
   monthly_goal_bonus: "All Monthly Goals Bonus",

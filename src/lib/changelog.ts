@@ -61,6 +61,14 @@ export const RELEASES: Release[] = [
     title: "Compilations are games too, and bounties follow your time",
     items: [
       {
+        text: "Your week, at a glance: the first time you open the app each week, a recap shows what you played, what you finished, the coins you earned and spent, the medals you earned and the ones you're close to. Reopen it from its notification any time.",
+        tag: "feature",
+      },
+      {
+        text: "The weekly Rotation check-in now resets on Mondays instead of Tuesdays, in step with your weekly recap.",
+        tag: "improvement",
+      },
+      {
         text: "Can't decide what to play? Mystery Pull now has Help me choose: say how long a game you want, on which platform, in what mood and what you're after, and get three games you can start right now, with why each one fits.",
         tag: "feature",
       },

@@ -6120,7 +6120,8 @@ alter table public.app_config add constraint app_config_default_general_slots_ra
 --   rotation_reset_dow      — the reset's day of week, Postgres dow (0=Sun..6=Sat).
 --   rotation_reset_hour     — the reset's hour of day (0–23) in rotation_reset_tz.
 --   rotation_reset_tz       — IANA timezone the reset day/hour are expressed in.
--- Defaults: 2 slots (symmetric 4×2 board), 3 coins, Tuesday 00:00 UTC.
+-- Defaults: 2 slots (symmetric 4×2 board), 3 coins, Monday 00:00 UTC (Tuesday until
+-- 2026-10-17, when weekly resets moved to Monday to match the weekly recap).
 alter table public.app_config add column if not exists default_rotation_slots integer not null default 2;
 -- 4×2 symmetry: cap the live default at 2 as well (reduce-only, safe to re-run).
 update public.app_config set default_rotation_slots = 2 where id = 1 and default_rotation_slots > 2;
@@ -6131,7 +6132,8 @@ alter table public.app_config add column if not exists rotation_checkin_reward i
 alter table public.app_config drop constraint if exists app_config_rotation_checkin_reward_range;
 alter table public.app_config add constraint app_config_rotation_checkin_reward_range
   check (rotation_checkin_reward between 0 and 100000);
-alter table public.app_config add column if not exists rotation_reset_dow integer not null default 2;
+alter table public.app_config add column if not exists rotation_reset_dow integer not null default 1;
+alter table public.app_config alter column rotation_reset_dow set default 1;
 alter table public.app_config drop constraint if exists app_config_rotation_reset_dow_range;
 alter table public.app_config add constraint app_config_rotation_reset_dow_range
   check (rotation_reset_dow between 0 and 6);
@@ -19598,6 +19600,251 @@ grant execute on function public.claim_challenge_rewards(uuid) to authenticated;
 grant execute on function public.admin_save_seasonal_challenge(uuid, text, text, text, numeric, timestamptz, timestamptz, integer, uuid) to authenticated;
 grant execute on function public.admin_archive_seasonal_challenge(uuid, boolean) to authenticated;
 grant execute on function public.admin_list_seasonal_challenges() to authenticated;
+
+-- ---------------------------------------------------------------------------
+-- Weekly recap (2026-10-17): a "Your week" card the first time a player opens
+-- the app in a new week, plus a bell notification that reopens it. Weeks run
+-- Monday to Sunday in the Rotation reset's timezone. There's no scheduler, so
+-- the recap for the week just ended is built lazily by weekly_recap() at
+-- sign-in and stored once (append-only history; seen_at is the only thing
+-- that changes). A week with no logged play and no library moves is quiet:
+-- no recap and no notification. The figures come from the event logs, so
+-- they're the same whenever the recap is built; "close to" achievements use
+-- the progress at build time.
+-- ---------------------------------------------------------------------------
+create table if not exists public.weekly_recaps (
+  id         uuid primary key default gen_random_uuid(),
+  user_id    uuid not null references auth.users (id) on delete cascade,
+  week_start date not null,
+  data       jsonb not null,
+  created_at timestamptz not null default now(),
+  seen_at    timestamptz,
+  unique (user_id, week_start)
+);
+alter table public.weekly_recaps enable row level security;
+revoke insert, update, delete on public.weekly_recaps from anon, authenticated;
+drop policy if exists "weekly_recaps_select_own" on public.weekly_recaps;
+create policy "weekly_recaps_select_own" on public.weekly_recaps
+  for select to authenticated using (auth.uid() = user_id);
+
+-- The Monday-to-Sunday week `p_at` falls in, in the Rotation reset's timezone.
+create or replace function public.recap_week(p_at timestamptz default now())
+returns table (week_start date, starts timestamptz, ends timestamptz)
+language sql
+stable
+set search_path = public
+as $$
+  with tz as (
+    select coalesce(nullif(btrim(c.rotation_reset_tz), ''), 'UTC') as tz
+      from public.app_config c where c.id = 1
+  ),
+  w as (
+    -- date_trunc('week') is ISO: weeks start on Monday.
+    select date_trunc('week', p_at at time zone tz.tz)::date as d, tz.tz from tz
+  )
+  select w.d, w.d::timestamp at time zone w.tz, (w.d + 7)::timestamp at time zone w.tz from w;
+$$;
+revoke execute on function public.recap_week(timestamptz) from public, anon, authenticated;
+
+-- Build one player's recap for [p_from, p_to), or null for a quiet week.
+create or replace function public.build_weekly_recap(p_user uuid, p_from timestamptz, p_to timestamptz)
+returns jsonb
+language plpgsql
+stable
+security definer set search_path = public
+as $$
+declare
+  v_tz      text;
+  v_gate    numeric;
+  v_economy boolean := public.economy_enabled(p_user);
+  v_hours   numeric;
+  v_moves   integer;
+begin
+  select coalesce(nullif(btrim(c.rotation_reset_tz), ''), 'UTC'), coalesce(c.bounty_gate_pct, 25)
+    into v_tz, v_gate
+    from public.app_config c where c.id = 1;
+
+  select coalesce(sum(e.hours), 0) into v_hours
+    from public.playtime_events e
+   where e.user_id = p_user and e.created_at >= p_from and e.created_at < p_to;
+  select count(*) into v_moves
+    from public.game_status_events e
+   where e.user_id = p_user and e.created_at >= p_from and e.created_at < p_to;
+  if v_hours <= 0 and v_moves = 0 then
+    return null;
+  end if;
+
+  return jsonb_build_object(
+    'play', jsonb_build_object(
+      'hours', round(v_hours, 1),
+      'days', (select count(distinct (e.created_at at time zone v_tz)::date)
+                 from public.playtime_events e
+                where e.user_id = p_user and e.hours > 0 and e.created_at >= p_from and e.created_at < p_to),
+      'sessions', (select count(*) from public.play_sessions s
+                    where s.user_id = p_user and s.status = 'logged'
+                      and s.ended_at >= p_from and s.ended_at < p_to),
+      'top_game', (select jsonb_build_object('id', t.game_id, 'title', t.title, 'hours', round(t.hours::numeric, 1))
+                     from (select e.game_id, max(coalesce(g.title, e.game_title)) as title, sum(e.hours) as hours
+                             from public.playtime_events e
+                             left join public.games g on g.id = e.game_id
+                            where e.user_id = p_user and e.game_id is not null
+                              and e.created_at >= p_from and e.created_at < p_to
+                            group by e.game_id
+                           having sum(e.hours) > 0
+                            order by sum(e.hours) desc
+                            limit 1) t)
+    ),
+    'clears', (
+      with c as (
+        select g.id, g.title,
+               coalesce(g.personal_hours, g.hours, 0) as len, coalesce(g.played_hours, 0) as played
+          from public.games g
+         where g.user_id = p_user and g.status = 'finished' and g.finish_tag in ('beaten', 'completed')
+           and exists (select 1 from public.game_status_events e
+                        where e.game_id = g.id and e.user_id = p_user and e.to_status = 'finished'
+                          and e.created_at >= p_from and e.created_at < p_to)
+      )
+      select jsonb_build_object(
+        'finished', (select count(*) from c),
+        'verified', (select count(*) from c where c.len > 0 and c.played >= v_gate / 100.0 * c.len),
+        'titles', coalesce((select jsonb_agg(x.title) from (select c.title from c order by c.title limit 3) x), '[]'::jsonb),
+        'streak', (select coalesce(p.clear_streak, 0) from public.profiles p where p.id = p_user),
+        'best_streak', (select coalesce(p.clear_streak_best, 0) from public.profiles p where p.id = p_user)
+      )
+    ),
+    'coins', case when v_economy then (
+      select jsonb_build_object(
+        'earned', coalesce(sum(e.coin_delta) filter (where e.coin_delta > 0), 0),
+        'spent', coalesce(-sum(e.coin_delta) filter (where e.coin_delta < 0), 0),
+        'top_sources', coalesce((
+          select jsonb_agg(jsonb_build_object('kind', k.kind, 'coins', k.coins) order by k.coins desc)
+            from (select e2.kind, sum(e2.coin_delta) as coins
+                    from public.coin_events e2
+                   where e2.user_id = p_user and e2.coin_delta > 0
+                     and e2.created_at >= p_from and e2.created_at < p_to
+                   group by e2.kind
+                   order by sum(e2.coin_delta) desc
+                   limit 3) k), '[]'::jsonb)
+      )
+        from public.coin_events e
+       where e.user_id = p_user and e.created_at >= p_from and e.created_at < p_to
+    ) end,
+    'progress', jsonb_build_object(
+      'achievements', coalesce((
+        select jsonb_agg(jsonb_build_object('name', a.name, 'tier', a.tier) order by ua.earned_at)
+          from public.user_achievements ua
+          join public.achievements a on a.id = ua.achievement_id
+         where ua.user_id = p_user and ua.earned_at >= p_from and ua.earned_at < p_to), '[]'::jsonb),
+      'goals', coalesce((
+        select jsonb_agg(x.name)
+          from (select u.goal_name as name from public.user_monthly_goals u
+                 where u.user_id = p_user and u.completed_at >= p_from and u.completed_at < p_to
+                union all
+                select s.challenge_name from public.user_seasonal_challenges s
+                 where s.user_id = p_user and s.completed_at >= p_from and s.completed_at < p_to) x), '[]'::jsonb),
+      -- Each family's next medal you're at least halfway to, closest first.
+      'close', coalesce((
+        select jsonb_agg(jsonb_build_object('name', n.name, 'description', n.description,
+                                            'value', n.value, 'threshold', n.threshold) order by n.frac desc)
+          from (select a.name, a.description, floor(m.value) as value, a.threshold,
+                       m.value / a.threshold as frac
+                  from public.achievements a
+                  join public.achievement_metrics(p_user) m on m.metric = a.metric
+                 where not a.hidden and a.threshold > 0
+                   and not exists (select 1 from public.user_achievements ua
+                                    where ua.user_id = p_user and ua.achievement_id = a.id)
+                   and a.tier = (select min(a2.tier) from public.achievements a2
+                                  where a2.family = a.family
+                                    and not exists (select 1 from public.user_achievements ua2
+                                                     where ua2.user_id = p_user and ua2.achievement_id = a2.id))
+                   and m.value / a.threshold >= 0.5 and m.value < a.threshold
+                 order by m.value / a.threshold desc
+                 limit 3) n), '[]'::jsonb),
+      'unclaimed', case when v_economy then
+          coalesce((select sum(a.reward) from public.user_achievements ua
+                      join public.achievements a on a.id = ua.achievement_id
+                     where ua.user_id = p_user and ua.reward_paid_at is null), 0)
+        + coalesce((select sum(u.reward) from public.user_monthly_goals u
+                     where u.user_id = p_user and u.completed_at is not null and u.reward_paid_at is null), 0)
+        + coalesce((select sum(b.reward) from public.monthly_goal_bonuses b
+                     where b.user_id = p_user and b.reward_paid_at is null), 0)
+        + coalesce((select sum(s.reward) from public.user_seasonal_challenges s
+                     where s.user_id = p_user and s.reward_paid_at is null), 0)
+        else 0 end
+    )
+  );
+end;
+$$;
+revoke execute on function public.build_weekly_recap(uuid, timestamptz, timestamptz) from public, anon, authenticated;
+
+-- The caller's recap for the week that just ended: built and stored (with its
+-- bell notification) the first time it's asked for, then returned as stored.
+-- Null for a quiet week. Called at sign-in; the client shows the card when
+-- seen_at is still null.
+create or replace function public.weekly_recap()
+returns jsonb
+language plpgsql security definer set search_path = public
+as $$
+declare
+  v_me   uuid := auth.uid();
+  v_this record;
+  v_last record;
+  v_row  public.weekly_recaps%rowtype;
+  v_data jsonb;
+  v_bits text[] := '{}';
+begin
+  if v_me is null then raise exception 'Not authenticated'; end if;
+  select * into v_this from public.recap_week(now());
+  select * into v_last from public.recap_week(v_this.starts - interval '1 second');
+
+  select * into v_row from public.weekly_recaps
+   where user_id = v_me and week_start = v_last.week_start;
+  if not found then
+    -- The profile lock keeps two tabs signing in together from building it twice.
+    perform 1 from public.profiles where id = v_me for update;
+    select * into v_row from public.weekly_recaps
+     where user_id = v_me and week_start = v_last.week_start;
+  end if;
+  if not found then
+    v_data := public.build_weekly_recap(v_me, v_last.starts, v_last.ends);
+    if v_data is null then return null; end if;
+    insert into public.weekly_recaps (user_id, week_start, data)
+    values (v_me, v_last.week_start, v_data)
+    returning * into v_row;
+
+    if (v_data #>> '{play,hours}')::numeric > 0 then
+      v_bits := v_bits || (trim_scale((v_data #>> '{play,hours}')::numeric) || 'h played');
+    end if;
+    if (v_data #>> '{clears,finished}')::int > 0 then
+      v_bits := v_bits || ((v_data #>> '{clears,finished}') || ' finished');
+    end if;
+    if (v_data #>> '{coins,earned}')::int > 0 then
+      v_bits := v_bits || ('+' || (v_data #>> '{coins,earned}') || ' coins');
+    end if;
+    insert into public.notifications (user_id, type, title, body, link)
+    values (v_me, 'weekly_recap', 'Your week in the Bazaar',
+            coalesce(nullif(array_to_string(v_bits, ' · '), ''), 'See how your week went.'),
+            'recap:' || v_row.id);
+  end if;
+
+  return jsonb_build_object('id', v_row.id, 'week_start', v_row.week_start, 'data', v_row.data,
+                            'seen_at', v_row.seen_at);
+end;
+$$;
+
+-- Mark a recap seen (the card was shown and closed).
+create or replace function public.mark_weekly_recap_seen(p_id uuid)
+returns void
+language sql security definer set search_path = public
+as $$
+  update public.weekly_recaps set seen_at = coalesce(seen_at, now())
+   where id = p_id and user_id = auth.uid();
+$$;
+
+revoke execute on function public.weekly_recap() from public, anon;
+revoke execute on function public.mark_weekly_recap_seen(uuid) from public, anon;
+grant execute on function public.weekly_recap() to authenticated;
+grant execute on function public.mark_weekly_recap_seen(uuid) to authenticated;
 
 -- ---------------------------------------------------------------------------
 -- Instance isolation: per-platform game instances (issues a2b0bcf4 + 5a320005).
