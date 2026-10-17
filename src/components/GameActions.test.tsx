@@ -427,3 +427,63 @@ describe("GameActions Buy & Start with a full Focus lane (issue d06bb5fd)", () =
     expect(screen.getByText(/Need/)).toBeTruthy();
   });
 });
+
+describe("GameActions finish check (coin outliers, 2026-10-17)", () => {
+  const playing = (over: Partial<Game> = {}) =>
+    game({ id: "p", status: "playing", hours: 40, pricePaid: 10, playedHours: 0, startedAt: 1, ...over });
+
+  beforeEach(() => {
+    act(() =>
+      useStore.setState({ viewing: null, economyEnabled: true, bountyGatePct: 25, activeSession: null }),
+    );
+  });
+
+  it("asks before a finish that would hold part of the bounty", () => {
+    const finishGame = vi.fn(async () => {});
+    act(() => useStore.setState({ games: [playing()], finishGame }));
+    render(<GameActions game={playing()} />);
+    fireEvent.click(screen.getByRole("button", { name: /Mark Finished/i }));
+    expect(finishGame).not.toHaveBeenCalled();
+    const dialog = screen.getByRole("dialog", { name: /Finish Alwa's Awakening/ });
+    // Logged 0 of ~40h: the activation refund now, the rest at 10h logged.
+    expect(dialog.textContent).toMatch(/logged 0h of about 40h/);
+    expect(dialog.textContent).toMatch(/all of it at 10h/);
+
+    fireEvent.click(screen.getByRole("button", { name: /Finish anyway/ }));
+    expect(finishGame).toHaveBeenCalledWith("p");
+  });
+
+  it("logs the time first, then finishes", async () => {
+    const finishGame = vi.fn(async () => {});
+    const logPlaytime = vi.fn(async () => {});
+    act(() => useStore.setState({ games: [playing()], finishGame, logPlaytime }));
+    render(<GameActions game={playing()} />);
+    fireEvent.click(screen.getByRole("button", { name: /Mark Finished/i }));
+    fireEvent.change(screen.getByLabelText(/Time you played/), { target: { value: "12h" } });
+    fireEvent.click(screen.getByRole("button", { name: /Log & finish/ }));
+    await waitFor(() => expect(finishGame).toHaveBeenCalledWith("p"));
+    expect(logPlaytime).toHaveBeenCalledWith("p", 12);
+  });
+
+  it("files a game beaten before joining under Finished, refunded, with no bounty", async () => {
+    const abandonGame = vi.fn(async () => {});
+    const bazaarToFinished = vi.fn(async () => {});
+    const finishGame = vi.fn(async () => {});
+    act(() => useStore.setState({ games: [playing()], abandonGame, bazaarToFinished, finishGame }));
+    render(<GameActions game={playing()} />);
+    fireEvent.click(screen.getByRole("button", { name: /Mark Finished/i }));
+    fireEvent.click(screen.getByRole("button", { name: /I beat this before I joined/ }));
+    await waitFor(() => expect(bazaarToFinished).toHaveBeenCalledWith("p", "beaten"));
+    expect(abandonGame).toHaveBeenCalledWith("p");
+    expect(finishGame).not.toHaveBeenCalled();
+  });
+
+  it("finishes straight away with enough logged", () => {
+    const finishGame = vi.fn(async () => {});
+    act(() => useStore.setState({ games: [playing({ playedHours: 10 })], finishGame }));
+    render(<GameActions game={playing({ playedHours: 10 })} />);
+    fireEvent.click(screen.getByRole("button", { name: /Mark Finished/i }));
+    expect(finishGame).toHaveBeenCalledWith("p");
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+});

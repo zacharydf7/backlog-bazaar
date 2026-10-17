@@ -74,11 +74,15 @@ import { recDiscountedPrice, recommendationForGame } from "../lib/recommendation
 import {
   computeFormula,
   formulaBreakdown,
+  lengthActivationFee,
   signedCoins,
   FACTOR_KEYS,
   FACTOR_META,
   type FactorKey,
 } from "../lib/economy";
+import { beatenFinishLength, effectiveLength, finishBountyOffset } from "../lib/personalLength";
+import { bountyGateHours, heldAtFinish } from "../lib/bountyHold";
+import { FinishCheckModal } from "./FinishCheckModal";
 import { useScrollLock } from "../lib/useScrollLock";
 import { CoinIcon } from "./CoinIcon";
 import { StackVersionPicker, useStackVersions } from "./StackVersionPicker";
@@ -378,6 +382,7 @@ export function GameActions({
     regainAccess,
     bazaarToWishlist,
     featureBonuses,
+    bountyGatePct,
   } = useStore();
   // Getting Started quests highlight the real control they teach (derived —
   // the ring clears itself the moment the quest's predicate flips).
@@ -385,6 +390,8 @@ export function GameActions({
   const coachRing = " ring-2 ring-brand ring-offset-2 ring-offset-canvas";
   const [showWhy, setShowWhy] = useState(false);
   const [activating, setActivating] = useState(false);
+  // The check before a finish that would hold part of its bounty.
+  const [checkingFinish, setCheckingFinish] = useState(false);
   // Which Finished-card action is awaiting confirmation (its payout note lives in the
   // dialog, keeping the card itself uncluttered). Null = no dialog.
   const [finishedAction, setFinishedAction] = useState<null | "replay" | "completion" | "convert" | "unretire">(null);
@@ -433,10 +440,35 @@ export function GameActions({
   // store + server both force it).
   const showEconomy = economyEnabled && game.startedEconomyOff !== true;
   // The finish payout: a Completionist game pays its base + the Completion Bonus.
+  // A plain finish of a run set past its main + extras time pays on that
+  // shorter length, its extra fee refunded (finishGame settles it first).
+  const settleTo = game.status === "playing" ? beatenFinishLength(game, isCompletionist) : undefined;
+  const finishAs = settleTo != null ? { ...game, personalHours: settleTo } : game;
+  const finishBounty = computeFormula(finishAs, economy.bounty);
   const reward = showEconomy
     ? isCompletionist
-      ? computeCompletionReward(willReplay, bounty, completionBonusPct)
-      : computeFinishReward(willReplay, bounty, replayBonusPct)
+      ? computeCompletionReward(willReplay, finishBounty, completionBonusPct)
+      : computeFinishReward(willReplay, finishBounty, replayBonusPct)
+    : 0;
+  // What the finish pays now and what waits for logged time (the logged-time
+  // gate; the server decides the real split in apply_finish).
+  const settleRefund =
+    showEconomy && settleTo != null
+      ? Math.max(
+          0,
+          lengthActivationFee(economy.price, effectiveLength(game)) -
+            lengthActivationFee(economy.price, settleTo),
+        )
+      : 0;
+  const finishGateHours = bountyGateHours(effectiveLength(finishAs), bountyGatePct);
+  const finishNet = reward - finishBountyOffset(game.lengthPremiumOwed, reward);
+  const finishHeld = showEconomy
+    ? heldAtFinish({
+        net: finishNet,
+        pricePaid: Math.max(0, (game.pricePaid ?? 0) - settleRefund),
+        played: game.playedHours ?? 0,
+        gateHours: finishGateHours,
+      })
     : 0;
   // Feature bonuses this game is set up to earn on its first clear (Story Order /
   // Collector's Record) — previewed the moment the setup is in place.
@@ -786,6 +818,20 @@ export function GameActions({
       {stackPickModal}
       {stackActivationModal}
       {stackRetireModal}
+      {checkingFinish &&
+        finishGateHours != null &&
+        createPortal(
+          <FinishCheckModal
+            game={game}
+            length={effectiveLength(finishAs) ?? 0}
+            gateHours={finishGateHours}
+            payNow={finishNet - finishHeld + settleRefund}
+            held={finishHeld}
+            onFinish={() => withSessionStopped(() => finishGame(game.id))}
+            onClose={() => setCheckingFinish(false)}
+          />,
+          document.body,
+        )}
       {activating && game.status === "backlog" && !storyLocked && (
         <ActivationModal game={game} onClose={() => setActivating(false)} />
       )}
@@ -1275,7 +1321,11 @@ export function GameActions({
             )}
           </div>
           <button
-            onClick={() => withSessionStopped(() => finishGame(game.id))}
+            onClick={() =>
+              finishHeld > 0
+                ? setCheckingFinish(true)
+                : withSessionStopped(() => finishGame(game.id))
+            }
             title={finishHint({ reward, isCompletionist, willReplay, isResumed })}
             className={
               "inline-flex items-center justify-center gap-1.5 rounded-lg border-[1.5px] border-success bg-success/10 px-3 py-2 text-sm font-semibold text-success shadow-stamp-sm transition hover:bg-success/20 active:translate-x-px active:translate-y-px active:shadow-none" +
