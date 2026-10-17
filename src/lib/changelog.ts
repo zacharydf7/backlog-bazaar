@@ -61,6 +61,10 @@ export const RELEASES: Release[] = [
     title: "Compilations are games too, and bounties follow your time",
     items: [
       {
+        text: "My Cosmetics is now a dressing room: your preview stays in view while you browse titles, frames, stalls and coins one at a time, and tapping anything you own wears it right away, with Undo. Saved looks switch your whole outfit in one tap.",
+        tag: "improvement",
+      },
+      {
         text: "Your week, at a glance: the first time you open the app each week, a recap shows what you played, what you finished, the coins you earned and spent, the medals you earned and the ones you're close to. Reopen it from its notification any time.",
         tag: "feature",
       },

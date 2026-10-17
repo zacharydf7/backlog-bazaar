@@ -2,7 +2,7 @@ import { fireEvent, render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useStore } from "../store";
 import { OutfitPresets } from "./OutfitPresets";
-import type { CosmeticsSession } from "../lib/cosmeticsPreview";
+import type { CosmeticLook, CosmeticsSession } from "../lib/cosmeticsPreview";
 const mocks = vi.hoisted(() => ({
   list: vi.fn(),
   save: vi.fn(),
@@ -46,41 +46,48 @@ beforeEach(() => {
     archived_at: archived ? "2026-09-08T00:00:00Z" : null,
   }));
 });
-async function open() {
-  const onPreview = vi.fn();
+/** Open the panel while wearing `wearing` (a different outfit from the
+ *  "Evening" preset unless a test says otherwise). */
+async function open(wearing: CosmeticLook = { ...empty, frame: "other" }) {
+  const onWear = vi.fn();
   render(
     <OutfitPresets
       session={session}
-      look={empty}
+      look={wearing}
       disabled={false}
-      onPreview={onPreview}
+      onWear={onWear}
     />,
   );
   await screen.findByRole("article", { name: "Evening" });
-  return onPreview;
+  return onWear;
 }
 describe("saved look panel", () => {
-  it("saves a named snapshot without equipping or previewing it", async () => {
-    const preview = await open();
-    fireEvent.click(screen.getByRole("button", { name: "Save this look" }));
+  it("saves the outfit you're wearing as a named look without changing it", async () => {
+    const wear = await open(empty);
+    fireEvent.click(screen.getByRole("button", { name: "Save this outfit" }));
     fireEvent.change(screen.getByLabelText("Look name"), {
       target: { value: "  Weekend  " },
     });
     fireEvent.click(screen.getByRole("button", { name: "Save named look" }));
-    await screen.findByText("Saved look updated. Your equipment is unchanged.");
+    await screen.findByText("Look saved.");
     expect(mocks.save).toHaveBeenCalledWith(
       expect.any(String),
       0,
       "  Weekend  ",
       empty,
     );
-    expect(preview).not.toHaveBeenCalled();
+    expect(wear).not.toHaveBeenCalled();
   });
-  it("loads a preset only into the existing try-on", async () => {
-    const preview = await open();
-    fireEvent.click(screen.getByRole("button", { name: "Preview look" }));
-    expect(preview).toHaveBeenCalledWith(empty);
+  it("wears a saved look in one tap, and marks the one you're wearing", async () => {
+    const wear = await open();
+    fireEvent.click(screen.getByRole("button", { name: "Wear" }));
+    expect(wear).toHaveBeenCalledWith(empty, "Evening");
     expect(mocks.save).not.toHaveBeenCalled();
+  });
+  it("disables Wear for the look you already have on", async () => {
+    await open(empty);
+    expect(screen.getByText("Wearing")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Wear" }).hasAttribute("disabled")).toBe(true);
   });
   it("retains rename edits after a version conflict", async () => {
     mocks.save.mockRejectedValueOnce(new Error("Changed elsewhere"));
@@ -99,7 +106,7 @@ describe("saved look panel", () => {
   it("archives and restores without deleting the look", async () => {
     await open();
     fireEvent.click(screen.getByRole("button", { name: "Archive" }));
-    await screen.findByText("No saved looks yet.");
+    await screen.findByText(/Save outfits you like/);
     fireEvent.click(
       screen.getByRole("button", { name: "Show archived looks" }),
     );
@@ -112,24 +119,23 @@ describe("saved look panel", () => {
     mocks.list.mockResolvedValueOnce([
       { ...preset, look: { ...empty, title: "revoked" } },
     ]);
-    const preview = await open();
-    expect(screen.getByText(/Needs attention: Title/)).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Preview look" }));
-    expect(preview).toHaveBeenCalledWith({ ...empty, title: "revoked" });
+    const wear = await open();
+    expect(screen.getByText(/No longer yours: Title/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Wear" }));
+    expect(wear).toHaveBeenCalledWith({ ...empty, title: "revoked" }, "Evening");
+    expect(mocks.save).not.toHaveBeenCalled();
   });
   it("requires a review confirmation before replacing saved pieces", async () => {
     mocks.list.mockResolvedValueOnce([
       { ...preset, look: { ...empty, title: "revoked" } },
     ]);
-    await open();
+    await open(empty);
     fireEvent.click(
-      screen.getByRole("button", { name: "Replace with try-on" }),
+      screen.getByRole("button", { name: "Update to this outfit" }),
     );
     expect(mocks.save).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "Replace saved look" }));
-    await screen.findByText(
-      "Saved look replaced. Your equipment is unchanged.",
-    );
+    await screen.findByText("Saved look updated.");
     expect(mocks.save).toHaveBeenCalledWith("preset", 1, "Evening", empty);
   });
   it("does not load presets when signed out", () => {
@@ -139,7 +145,7 @@ describe("saved look panel", () => {
         session={session}
         look={empty}
         disabled={false}
-        onPreview={vi.fn()}
+        onWear={vi.fn()}
       />,
     );
     expect(mocks.list).not.toHaveBeenCalled();

@@ -102,7 +102,7 @@ export const wardrobeApi = {
     if (error)
       throw new Error(
         error.message.includes("OUTFIT_CONFLICT")
-          ? "Your outfit changed elsewhere. Your try-on is still here; reload your wardrobe before applying again."
+          ? "Your outfit changed on another device. Reload to see what you're wearing, then try again."
           : error.message,
       );
     if (!data || !validLook(data.look))

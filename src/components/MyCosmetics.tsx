@@ -1,48 +1,57 @@
 import { useEffect, useRef, useState } from "react";
+import { Check, Shirt } from "lucide-react";
 import { useStore } from "../store";
+import { toastAction } from "../lib/toast";
 import { wardrobeApi, sameLook } from "../lib/wardrobe";
 import {
   COSMETIC_SLOTS,
   SLOT_LABELS,
-  wardrobeItems,
   itemSelection,
-  lookIsOwned,
   type CosmeticLook,
   type CosmeticsSession,
 } from "../lib/cosmeticsPreview";
-import { SHOP_KIND_META, type ShopItemKind } from "../lib/shop";
-import { CosmeticLookPreview, CosmeticThumbnail } from "./CosmeticPreviewCard";
 import {
-  previewButton,
-  previewPrimary,
-  previewInput,
-} from "./CosmeticsDraftEditor";
+  isWorn,
+  pieceName,
+  slotCounts,
+  slotItems,
+  unheldSlots,
+  wearMessage,
+  wearOutfit,
+} from "../lib/dressingRoom";
+import type { ShopItemKind } from "../lib/shop";
+import { CosmeticLookPreview, CosmeticThumbnail } from "./CosmeticPreviewCard";
+import { previewButton, previewInput } from "./CosmeticsDraftEditor";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { cosmeticOwnershipLabel } from "../lib/cosmeticOwnership";
 import { CosmeticEvents } from "./CosmeticEvents";
 import { OutfitPresets } from "./OutfitPresets";
 
+/** Show search once a slot holds more pieces than this. */
+const SEARCH_AFTER = 8;
+
 export function MyCosmetics({ onClose }: { onClose: () => void }) {
-  const allowed = useStore(
-    (s) => s.cloud && !!s.userId,
-  );
+  const allowed = useStore((s) => s.cloud && !!s.userId);
   const userId = useStore((s) => s.userId);
-  if (!allowed)
-    return <p className="text-sm text-muted">Sign in to use My Cosmetics.</p>;
+  if (!allowed) return <p className="text-sm text-muted">Sign in to use My Cosmetics.</p>;
   return <Wardrobe key={userId} onClose={onClose} />;
 }
+
+/** The dressing room: the live preview stays in view while you browse one
+ *  slot at a time, and tapping anything you own wears it right away (saved,
+ *  with Undo in the toast). Saved looks switch a whole outfit in one tap. */
 function Wardrobe({ onClose }: { onClose: () => void }) {
   const [session, setSession] = useState<CosmeticsSession | null>(null);
+  // The outfit on screen: the saved one, or the one being saved right now.
   const [look, setLook] = useState<CosmeticLook | null>(null);
-  const [kind, setKind] = useState<ShopItemKind | "all">("all");
+  const [slot, setSlot] = useState<ShopItemKind>("title");
   const [query, setQuery] = useState("");
   const [collection, setCollection] = useState("");
   const [error, setError] = useState("");
-  const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const [presetEditing, setPresetEditing] = useState(false);
-  const [confirm, setConfirm] = useState<"leave" | "reload" | null>(null);
+  const [confirmLeave, setConfirmLeave] = useState(false);
   const saving = useRef(false);
   const [identity] = useState(() => {
     const s = useStore.getState();
@@ -55,6 +64,7 @@ function Wardrobe({ onClose }: { onClose: () => void }) {
       defaultCoin: s.defaultCoin,
     };
   });
+
   useEffect(() => {
     let cancelled = false;
     setBusy(true);
@@ -65,16 +75,10 @@ function Wardrobe({ onClose }: { onClose: () => void }) {
         if (!cancelled) {
           setSession(loaded);
           setLook(loaded.look);
-          setNotice("Your saved outfit is loaded.");
         }
       })
       .catch((reason) => {
-        if (!cancelled)
-          setError(
-            reason instanceof Error
-              ? reason.message
-              : "Could not load your wardrobe.",
-          );
+        if (!cancelled) setError(reason instanceof Error ? reason.message : "Could not load your wardrobe.");
       })
       .finally(() => {
         if (!cancelled) setBusy(false);
@@ -83,315 +87,272 @@ function Wardrobe({ onClose }: { onClose: () => void }) {
       cancelled = true;
     };
   }, [attempt]);
-  const changed = !!session && !!look && !sameLook(session.look, look);
-  const unsaved = changed || presetEditing;
+
   useEffect(() => {
-    if (!unsaved) return;
+    if (!presetEditing) return;
     const warn = (event: BeforeUnloadEvent) => {
       event.preventDefault();
       event.returnValue = "";
     };
     window.addEventListener("beforeunload", warn);
     return () => window.removeEventListener("beforeunload", warn);
-  }, [unsaved]);
-  const items = session ? wardrobeItems(session) : [];
-  const filtered = items.filter(
-    (item) =>
-      (kind === "all" || item.kind === kind) &&
-      (!collection || item.setKey === collection) &&
-      `${item.name} ${item.description ?? ""}`
-        .toLowerCase()
-        .includes(query.trim().toLowerCase()),
-  );
-  const wearable = !!session && !!look && lookIsOwned(session, look);
-  async function apply() {
-    if (!session || !look || !changed || !wearable || saving.current) return;
+  }, [presetEditing]);
+
+  /** Put changes on and save them. One save at a time; a failed save puts the
+   *  previous outfit back on screen and says why. */
+  async function wear(changes: Partial<CosmeticLook>, label: string) {
+    if (!session || saving.current) return;
+    const before = session.look;
+    const { next, cleared } = wearOutfit(session, before, changes);
+    if (sameLook(next, before)) return;
     saving.current = true;
     setBusy(true);
     setError("");
-    setNotice("");
+    setLook(next);
     try {
-      const saved = await wardrobeApi.apply(look, session.look);
-      setSession({ ...session, look: saved });
+      const saved = await wardrobeApi.apply(next, before);
+      setSession((s) => (s ? { ...s, look: saved } : s));
       setLook(saved);
-      setNotice("Your outfit is saved.");
-    } catch (reason) {
-      setError(
-        reason instanceof Error
-          ? reason.message
-          : "Could not save your outfit. Your try-on is still here.",
+      toastAction(
+        wearMessage(label, cleared),
+        { label: "Undo", onAction: () => void undo.current(before) },
+        Shirt,
       );
+    } catch (reason) {
+      setLook(before);
+      setError(reason instanceof Error ? reason.message : "Could not save your outfit.");
     } finally {
       saving.current = false;
       setBusy(false);
     }
   }
+  // Undo (from the toast) always reaches the latest wear(), so it saves
+  // against the outfit as it stands now.
+  const undo = useRef((previous: CosmeticLook) => wear(previous, "Back to your previous outfit"));
+  undo.current = (previous: CosmeticLook) => wear(previous, "Back to your previous outfit");
+
+  const unheld = session && look ? unheldSlots(session, look) : [];
+  const counts = session ? slotCounts(session) : null;
+  const allInSlot = session ? slotItems(session, slot) : [];
+  const shown = session ? slotItems(session, slot, { query, collection }) : [];
+  const slotSets = session ? session.sets.filter((set) => allInSlot.some((item) => item.setKey === set.key)) : [];
+
+  function pickSlot(next: ShopItemKind) {
+    setSlot(next);
+    setQuery("");
+    setCollection("");
+  }
+
   return (
     <section aria-label="My Cosmetics" className="flex min-w-0 flex-col gap-4">
       <CosmeticEvents />
-      <header className="flex flex-wrap items-start justify-between gap-3 rounded-2xl border border-line bg-surface p-4">
-        <div>
+      <header className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
           <h1 className="font-display text-2xl text-ink">My Cosmetics</h1>
-          <p className="mt-2 max-w-xl text-sm text-muted">
-            Your real collection, including retired pieces and earned titles.
-            Try a look, then Apply to save your actual equipment. Saved
-            cosmetics appear wherever your equipment is shown.
+          <p className="mt-1 text-sm text-muted">
+            Tap anything you own to wear it. Changes save right away.
           </p>
         </div>
         <button
           disabled={busy}
           className={previewButton}
-          onClick={() => (unsaved ? setConfirm("leave") : onClose())}
+          onClick={() => (presetEditing ? setConfirmLeave(true) : onClose())}
         >
           Done
         </button>
       </header>
+
       {error && (
-        <p role="alert" className="text-sm text-danger">
-          {error}
-        </p>
+        <div role="alert" className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-danger/40 bg-danger/10 px-3 py-2">
+          <p className="text-sm text-danger">{error}</p>
+          <button className={previewButton} disabled={busy} onClick={() => setAttempt(attempt + 1)}>
+            Reload
+          </button>
+        </div>
       )}
-      {notice && (
-        <p role="status" className="text-sm text-muted">
-          {notice}
-        </p>
-      )}
-      <button
-        className={`${previewButton} self-start`}
-        disabled={busy}
-        onClick={() =>
-          unsaved ? setConfirm("reload") : setAttempt(attempt + 1)
-        }
-      >
-        Reload wardrobe
-      </button>
       {!session && busy && <p role="status">Loading your wardrobe…</p>}
-      {session && look && (
-        <>
-          <div className="grid min-w-0 gap-4 lg:grid-cols-2">
-            <div className="flex min-w-0 flex-col gap-3">
-              <CosmeticLookPreview
-                look={look}
-                items={session.items}
-                badges={session.badges}
-                identity={identity}
-              />
-              <p className="text-center text-xs text-muted">
-                Profile · your banner and colors
-              </p>
-              <CosmeticLookPreview
-                surface="community"
-                look={look}
-                items={session.items}
-                badges={session.badges}
-                identity={identity}
-              />
-              <p className="text-center text-xs text-muted">
-                Community · your stall decorations
-              </p>
-            </div>
-            <div className="rounded-2xl border border-line bg-surface p-4">
-              <h2 className="mb-3 font-display text-lg text-ink">Your look</h2>
-              <div className="grid grid-cols-2 gap-2">
-                {COSMETIC_SLOTS.map((slot) => {
-                  const name =
-                    slot === "title"
-                      ? session.badges.find((b) => b.id === look.title)?.name
-                      : session.items.find((i) => i.id === look[slot])?.name;
-                  return (
-                    <div
-                      key={slot}
-                      className="min-w-0 rounded-xl border border-line p-3"
-                    >
-                      <button
-                        disabled={busy}
-                        className="min-h-11 w-full text-left"
-                        onClick={() => {
-                          setKind(slot);
-                          setCollection("");
-                          setQuery("");
-                        }}
-                      >
-                        <span className="block text-xs text-muted">
-                          {SLOT_LABELS[slot]}
-                        </span>
-                        <span className="block break-words text-sm text-ink">
-                          {name ??
-                            (look[slot] ? "Unavailable item" : "Default")}
-                        </span>
-                      </button>
-                      <button
-                        aria-label={`Use default ${slot}`}
-                        disabled={busy || look[slot] === null}
-                        className="min-h-11 text-sm text-accent disabled:opacity-40"
-                        onClick={() => setLook({ ...look, [slot]: null })}
-                      >
-                        Use default
-                      </button>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
-          <div className="sticky top-2 z-20 flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-line bg-surface p-3 shadow-lg">
-            <p className="text-sm text-muted">
-              {busy
-                ? "Working…"
-                : changed
-                  ? "You have unapplied changes."
-                  : "Your outfit is up to date."}
-            </p>
-            <div className="flex flex-wrap gap-2">
-              <button
-                className={previewPrimary}
-                disabled={busy || !changed || !wearable}
-                onClick={() => void apply()}
-              >
-                Apply outfit
-              </button>
-              <button
-                className={previewButton}
-                disabled={busy || !changed}
-                onClick={() => {
-                  setLook(session.look);
-                  setError("");
-                  setNotice("Returned to your saved outfit.");
-                }}
-              >
-                Undo try-on
-              </button>
-            </div>
-          </div>
-          {!wearable && (
-            <p className="text-sm text-danger">
-              An equipped piece is no longer held. Choose a replacement or use
-              its default before applying.
-            </p>
-          )}
-          <OutfitPresets
-            key={attempt}
-            session={session}
-            look={look}
-            disabled={busy}
-            onEditingChange={setPresetEditing}
-            onPreview={(presetLook) => {
-              setLook(presetLook);
-              setError("");
-              setNotice(
-                "Saved look loaded for try-on. Apply outfit to wear it.",
-              );
-            }}
-          />
-          <h2 className="font-display text-xl text-ink">
-            Your collection{" "}
-            <span className="text-sm text-muted">({items.length})</span>
-          </h2>
-          <div className="flex flex-wrap gap-2">
-            <input
-              className={`${previewInput} min-w-0 flex-1 basis-48`}
-              aria-label="Search cosmetics"
-              placeholder="Search cosmetics…"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-            />
-            <select
-              aria-label="Filter collection"
-              className={`${previewInput} min-w-0 flex-1 basis-48`}
-              value={collection}
-              onChange={(e) => setCollection(e.target.value)}
-            >
-              <option value="">All collections</option>
-              {session.sets.map((s) => (
-                <option key={s.key} value={s.key}>
-                  {s.name}
-                </option>
-              ))}
-            </select>
-          </div>
+
+      {session && look && counts && (
+        <div className="min-w-0 gap-4 lg:grid lg:grid-cols-[minmax(0,22rem)_minmax(0,1fr)] lg:items-start">
+          {/* The preview stays in view while you browse: pinned under the app
+              bar on a phone (the compact stall card), and as a sticky column
+              on a wide screen (profile card and stall card). */}
           <div
-            className="flex flex-wrap gap-2"
-            aria-label="Cosmetic categories"
+            className="sticky z-20 -mx-4 bg-canvas px-4 pb-3 pt-1 md:-mx-6 md:px-6 lg:mx-0 lg:bg-transparent lg:px-0 lg:pt-0"
+            style={{ top: "var(--chrome-h, 0px)" }}
           >
-            {(["all", ...COSMETIC_SLOTS] as const).map((value) => (
-              <button
-                key={value}
-                aria-pressed={kind === value}
-                className={kind === value ? previewPrimary : previewButton}
-                onClick={() => setKind(value)}
-              >
-                {value === "all" ? "All" : SHOP_KIND_META[value].label}
-              </button>
-            ))}
+            <div className="hidden lg:mb-3 lg:block">
+              <CosmeticLookPreview look={look} items={session.items} badges={session.badges} identity={identity} />
+            </div>
+            <CosmeticLookPreview
+              surface="community"
+              look={look}
+              items={session.items}
+              badges={session.badges}
+              identity={identity}
+            />
           </div>
-          <div className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            {filtered.map((item) => (
-              <article
-                aria-label={item.name}
-                key={item.id}
-                className="min-w-0 rounded-2xl border border-line bg-surface p-3"
-              >
-                <CosmeticThumbnail
-                  item={item}
-                  badges={session.badges}
-                  identity={identity}
-                />
-                <h3 className="mt-3 break-words font-medium text-ink">
-                  {item.name}
-                </h3>
-                <p className="mt-1 break-words text-sm text-muted">
-                  {item.description}
-                </p>
-                <p className="my-2 text-xs text-muted">
-                  {item.id.startsWith("badge:")
-                    ? "Earned title"
-                    : cosmeticOwnershipLabel(session.ownershipSources?.[item.id], item.active)}
-                  {session.look[item.kind] === itemSelection(item)
-                    ? " · Equipped"
-                    : ""}
+
+          <div className="flex min-w-0 flex-col gap-3">
+            {unheld.length > 0 && (
+              <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-danger/40 bg-danger/10 px-3 py-2">
+                <p className="text-sm text-danger">
+                  {unheld.map((s) => `${SLOT_LABELS[s]} (${pieceName(session, s, look[s])})`).join(" and ")}{" "}
+                  {unheld.length === 1 ? "is" : "are"} no longer yours.
                 </p>
                 <button
                   className={previewButton}
                   disabled={busy}
-                  aria-pressed={look[item.kind] === itemSelection(item)}
-                  onClick={() => {
-                    setLook({ ...look, [item.kind]: itemSelection(item) });
-                    setNotice("Try-on updated. Apply to save this outfit.");
-                  }}
+                  onClick={() =>
+                    void wear(Object.fromEntries(unheld.map((s) => [s, null])), "Took it off")
+                  }
                 >
-                  {look[item.kind] === itemSelection(item)
-                    ? session.look[item.kind] === itemSelection(item)
-                      ? "Equipped"
-                      : "Trying on"
-                    : "Try on"}
+                  Take it off
                 </button>
-              </article>
-            ))}
+              </div>
+            )}
+
+            <div role="tablist" aria-label="Cosmetic slots" className="grid grid-cols-4 gap-1.5">
+              {COSMETIC_SLOTS.map((s) => (
+                <button
+                  key={s}
+                  role="tab"
+                  aria-selected={slot === s}
+                  onClick={() => pickSlot(s)}
+                  className={
+                    "min-w-0 rounded-xl border px-2 py-2 text-left transition " +
+                    (slot === s ? "border-brand bg-brand/10" : "border-line bg-surface hover:bg-panel")
+                  }
+                >
+                  <span className="block text-xs font-semibold text-ink">
+                    {SLOT_LABELS[s]} <span className="font-normal text-subtle">{counts[s]}</span>
+                  </span>
+                  <span className="block truncate text-[11px] text-muted">{pieceName(session, s, look[s])}</span>
+                </button>
+              ))}
+            </div>
+
+            {(allInSlot.length > SEARCH_AFTER || slotSets.length > 1) && (
+              <div className="flex flex-wrap gap-2">
+                {allInSlot.length > SEARCH_AFTER && (
+                  <input
+                    className={`${previewInput} min-w-0 flex-1 basis-40`}
+                    aria-label="Search cosmetics"
+                    placeholder={`Search ${SLOT_LABELS[slot].toLowerCase()}s…`}
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                  />
+                )}
+                {slotSets.length > 1 && (
+                  <select
+                    aria-label="Filter collection"
+                    className={`${previewInput} min-w-0 flex-1 basis-40`}
+                    value={collection}
+                    onChange={(e) => setCollection(e.target.value)}
+                  >
+                    <option value="">All collections</option>
+                    {slotSets.map((set) => (
+                      <option key={set.key} value={set.key}>
+                        {set.name}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+            )}
+
+            <div className="grid min-w-0 grid-cols-2 gap-2 sm:grid-cols-3">
+              <button
+                type="button"
+                aria-pressed={look[slot] === null}
+                aria-label={`No ${SLOT_LABELS[slot].toLowerCase()}`}
+                disabled={busy}
+                onClick={() => void wear({ [slot]: null }, `No ${SLOT_LABELS[slot].toLowerCase()}`)}
+                className={tileClass(look[slot] === null)}
+              >
+                <div className="flex h-24 items-center justify-center rounded-xl border border-dashed border-line text-sm text-muted">
+                  None
+                </div>
+                <TileCaption name="None" detail="The default look" worn={look[slot] === null} />
+              </button>
+              {shown.map((item) => {
+                const worn = isWorn(look, item);
+                return (
+                  <button
+                    type="button"
+                    key={item.id}
+                    aria-pressed={worn}
+                    aria-label={item.name}
+                    title={item.description ?? undefined}
+                    disabled={busy}
+                    onClick={() => void wear({ [item.kind]: itemSelection(item) }, `Wearing ${item.name}`)}
+                    className={tileClass(worn)}
+                  >
+                    <CosmeticThumbnail item={item} badges={session.badges} identity={identity} />
+                    <TileCaption
+                      name={item.name}
+                      detail={
+                        item.id.startsWith("badge:")
+                          ? "Earned title"
+                          : cosmeticOwnershipLabel(session.ownershipSources?.[item.id], item.active)
+                      }
+                      worn={worn}
+                    />
+                  </button>
+                );
+              })}
+            </div>
+            {shown.length === 0 && (
+              <p className="rounded-xl border border-dashed border-line p-4 text-center text-sm text-muted">
+                {allInSlot.length
+                  ? "Nothing matches these filters."
+                  : `You don't own any ${SLOT_LABELS[slot].toLowerCase()}s yet. Find them in the Curio Shop.`}
+              </p>
+            )}
+
+            <OutfitPresets
+              key={attempt}
+              session={session}
+              look={look}
+              disabled={busy}
+              onEditingChange={setPresetEditing}
+              onWear={(presetLook, name) => void wear(presetLook, `Wearing ${name}`)}
+            />
           </div>
-          {filtered.length === 0 && (
-            <p className="rounded-xl border border-dashed border-line p-6 text-center text-sm text-muted">
-              {items.length
-                ? "No cosmetics match these filters."
-                : "Your collection is empty. Default looks are always available."}
-            </p>
-          )}
-        </>
+        </div>
       )}
-      {confirm && (
+
+      {confirmLeave && (
         <ConfirmDialog
-          title="Discard unapplied changes?"
-          body="Your saved outfit and saved looks will stay as they are. Your current try-on and unsaved preset edits will be discarded."
-          confirmLabel={
-            confirm === "leave" ? "Leave wardrobe" : "Reload wardrobe"
-          }
-          onCancel={() => setConfirm(null)}
+          title="Discard your unsaved look name?"
+          body="The look you were naming won't be saved. Everything you're wearing is already saved."
+          confirmLabel="Leave"
+          onCancel={() => setConfirmLeave(false)}
           onConfirm={() => {
-            if (confirm === "leave") onClose();
-            else setAttempt(attempt + 1);
-            setConfirm(null);
+            setConfirmLeave(false);
+            onClose();
           }}
         />
       )}
     </section>
+  );
+}
+
+function tileClass(worn: boolean): string {
+  return (
+    "relative min-w-0 rounded-2xl border bg-surface p-2 text-left transition disabled:cursor-wait " +
+    (worn ? "border-brand ring-2 ring-brand/60" : "border-line hover:border-brand/50")
+  );
+}
+
+function TileCaption({ name, detail, worn }: { name: string; detail: string; worn: boolean }) {
+  return (
+    <div className="mt-2 min-w-0 px-1">
+      <p className="flex min-w-0 items-center gap-1 text-sm font-medium text-ink">
+        <span className="truncate">{name}</span>
+        {worn && <Check size={14} className="shrink-0 text-brand" aria-label="Wearing" />}
+      </p>
+      <p className="truncate text-[11px] text-muted">{worn ? "Wearing" : detail}</p>
+    </div>
   );
 }

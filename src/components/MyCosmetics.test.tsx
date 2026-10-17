@@ -1,7 +1,8 @@
-import { act, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useStore } from "../store";
 import { MyCosmetics } from "./MyCosmetics";
+import { useToasts } from "../lib/toast";
 import type { CosmeticsSession } from "../lib/cosmeticsPreview";
 const mocks = vi.hoisted(() => ({
   load: vi.fn(),
@@ -82,135 +83,87 @@ beforeEach(() => {
 async function open() {
   const onClose = vi.fn();
   render(<MyCosmetics onClose={onClose} />);
-  await screen.findByText("Your saved outfit is loaded.");
+  await screen.findByRole("tablist", { name: "Cosmetic slots" });
   return onClose;
 }
-const tryFrame = () =>
-  fireEvent.click(
-    within(screen.getByRole("article", { name: "Retired Bronze" })).getByRole(
-      "button",
-      { name: "Try on" },
-    ),
-  );
-describe("real wardrobe", () => {
-  it("previews a saved look and applies it through the single outfit action", async () => {
+const tab = (name: string) => fireEvent.click(screen.getByRole("tab", { name: new RegExp(`^${name}`) }));
+const tile = (name: string) => screen.getByRole("button", { name });
+describe("dressing room", () => {
+  it("lists earned titles and retired pieces under their slots", async () => {
+    await open();
+    expect(tile("Earned Star")).toBeTruthy();
+    tab("Frame");
+    expect(tile("Retired Bronze")).toBeTruthy();
+    expect(screen.getAllByTestId("community-look-preview").length).toBeGreaterThan(0);
+  });
+  it("wears a piece in one tap, saves it at once, and offers Undo", async () => {
+    useToasts.setState({ toasts: [] });
+    await open();
+    tab("Frame");
+    fireEvent.click(tile("Retired Bronze"));
+    expect(mocks.apply).toHaveBeenCalledWith({ ...empty, frame: "frame" }, empty);
+    await waitFor(() => expect(tile("Retired Bronze").getAttribute("aria-pressed")).toBe("true"));
+    const toast = useToasts.getState().toasts.at(-1)!;
+    expect(toast.message).toBe("Wearing Retired Bronze");
+    await act(async () => toast.action!.onAction());
+    expect(mocks.apply).toHaveBeenLastCalledWith(empty, { ...empty, frame: "frame" });
+  });
+  it("takes a slot back to None", async () => {
+    mocks.load.mockResolvedValue({ ...session, look: { ...empty, frame: "frame" } });
+    await open();
+    tab("Frame");
+    fireEvent.click(tile("No frame"));
+    expect(mocks.apply).toHaveBeenCalledWith(empty, { ...empty, frame: "frame" });
+  });
+  it("puts the outfit back and explains when a save fails", async () => {
+    mocks.apply.mockRejectedValueOnce(new Error("Your outfit changed on another device."));
+    await open();
+    tab("Frame");
+    fireEvent.click(tile("Retired Bronze"));
+    expect((await screen.findByRole("alert")).textContent).toContain("changed on another device");
+    expect(tile("Retired Bronze").getAttribute("aria-pressed")).toBe("false");
+  });
+  it("saves one change at a time", async () => {
+    let resolve!: (value: unknown) => void;
+    mocks.apply.mockImplementationOnce(() => new Promise((done) => (resolve = done)));
+    await open();
+    tab("Frame");
+    fireEvent.click(tile("Retired Bronze"));
+    fireEvent.click(tile("No frame"));
+    expect(mocks.apply).toHaveBeenCalledTimes(1);
+    expect(tile("No frame").hasAttribute("disabled")).toBe(true);
+    await act(async () => resolve({ ...empty, frame: "frame" }));
+  });
+  it("offers to take off a piece you no longer own", async () => {
+    mocks.load.mockResolvedValue({ ...session, look: { ...empty, coin: "gone" } });
+    await open();
+    expect(screen.getByText(/Coin \(Unavailable piece\) is no longer yours/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Take it off" }));
+    expect(mocks.apply).toHaveBeenCalledWith(empty, { ...empty, coin: "gone" });
+  });
+  it("wears a saved look in one tap", async () => {
     mocks.presets.mockResolvedValue([
-      {
-        id: "saved",
-        name: "Favorite",
-        version: 1,
-        archived_at: null,
-        look: { ...empty, frame: "frame" },
-      },
+      { id: "saved", name: "Favorite", version: 1, archived_at: null, look: { ...empty, frame: "frame" } },
     ]);
     await open();
     await screen.findByRole("article", { name: "Favorite" });
-    fireEvent.click(screen.getByRole("button", { name: "Preview look" }));
-    expect(mocks.apply).not.toHaveBeenCalled();
-    expect(
-      screen.getAllByRole("button", { name: "Apply outfit" }),
-    ).toHaveLength(1);
-    fireEvent.click(screen.getByRole("button", { name: "Apply outfit" }));
-    await screen.findByText("Your outfit is saved.");
-    expect(mocks.apply).toHaveBeenCalledWith(
-      { ...empty, frame: "frame" },
-      empty,
-    );
+    fireEvent.click(screen.getByRole("button", { name: "Wear" }));
+    expect(mocks.apply).toHaveBeenCalledWith({ ...empty, frame: "frame" }, empty);
   });
-  it("asks before leaving with an unsaved preset name", async () => {
+  it("asks before leaving with an unsaved look name", async () => {
     const close = await open();
-    await screen.findByText("No saved looks yet.");
-    fireEvent.click(screen.getByRole("button", { name: "Save this look" }));
-    fireEvent.change(screen.getByLabelText("Look name"), {
-      target: { value: "Unfinished name" },
-    });
-    fireEvent.click(
-      screen.getByRole("button", { name: "Done" }),
-    );
+    await screen.findByText(/Save outfits you like/);
+    fireEvent.click(screen.getByRole("button", { name: "Save this outfit" }));
+    fireEvent.change(screen.getByLabelText("Look name"), { target: { value: "Unfinished name" } });
+    fireEvent.click(screen.getByRole("button", { name: "Done" }));
     expect(close).not.toHaveBeenCalled();
-    expect(screen.getByText("Discard unapplied changes?")).toBeTruthy();
-  });
-  it("includes retired items and earned titles, and sends one complete outfit only on Apply", async () => {
-    await open();
-    expect(screen.getByRole("article", { name: "Earned Star" })).toBeTruthy();
-    expect(screen.getAllByTestId("community-look-preview")).toHaveLength(1);
-    tryFrame();
-    expect(mocks.apply).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("button", { name: "Apply outfit" }));
-    await screen.findByText("Your outfit is saved.");
-    expect(mocks.apply).toHaveBeenCalledWith(
-      { ...empty, frame: "frame" },
-      empty,
-    );
-    expect(
-      screen
-        .getByRole("button", { name: "Apply outfit" })
-        .hasAttribute("disabled"),
-    ).toBe(true);
-  });
-  it("filters the real inventory by collection and search", async () => {
-    await open();
-    fireEvent.change(screen.getByLabelText("Filter collection"), {
-      target: { value: "classics" },
-    });
-    expect(screen.queryByRole("article", { name: "Earned Star" })).toBeNull();
-    fireEvent.change(screen.getByLabelText("Search cosmetics"), {
-      target: { value: "no match" },
-    });
-    expect(screen.getByText("No cosmetics match these filters.")).toBeTruthy();
-  });
-  it("keeps the tried-on look after a rejected apply and can undo without writing", async () => {
-    mocks.apply.mockRejectedValueOnce(
-      new Error("Your outfit changed elsewhere."),
-    );
-    await open();
-    tryFrame();
-    fireEvent.click(screen.getByRole("button", { name: "Apply outfit" }));
-    await screen.findByRole("alert");
-    expect(
-      within(screen.getByRole("article", { name: "Retired Bronze" })).getByRole(
-        "button",
-        { name: "Trying on" },
-      ),
-    ).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Undo try-on" }));
-    expect(
-      screen
-        .getByRole("button", { name: "Apply outfit" })
-        .hasAttribute("disabled"),
-    ).toBe(true);
-    expect(mocks.apply).toHaveBeenCalledTimes(1);
-  });
-  it("disables competing actions and duplicate submissions while saving", async () => {
-    let resolve!: (value: unknown) => void;
-    mocks.apply.mockImplementationOnce(
-      () =>
-        new Promise((done) => {
-          resolve = done;
-        }),
-    );
-    await open();
-    tryFrame();
-    fireEvent.click(screen.getByRole("button", { name: "Apply outfit" }));
-    fireEvent.click(screen.getByRole("button", { name: "Apply outfit" }));
-    expect(mocks.apply).toHaveBeenCalledTimes(1);
-    expect(
-      screen
-        .getByRole("button", { name: "Reload wardrobe" })
-        .hasAttribute("disabled"),
-    ).toBe(true);
-    await act(async () => resolve({ ...empty, frame: "frame" }));
-  });
-  it("asks before discarding try-on and never saves on exit", async () => {
-    const close = await open();
-    tryFrame();
-    fireEvent.click(
-      screen.getByRole("button", { name: "Done" }),
-    );
-    expect(close).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("button", { name: "Leave wardrobe" }));
+    fireEvent.click(screen.getByRole("button", { name: "Leave" }));
     expect(close).toHaveBeenCalled();
-    expect(mocks.apply).not.toHaveBeenCalled();
+  });
+  it("leaves straight away otherwise, since everything is already saved", async () => {
+    const close = await open();
+    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+    expect(close).toHaveBeenCalled();
   });
   it("blocks loading when signed out and unmounts on sign-out", async () => {
     useStore.setState({ cloud: false });
@@ -226,10 +179,8 @@ describe("real wardrobe", () => {
     mocks.load.mockRejectedValueOnce(new Error("Unavailable"));
     render(<MyCosmetics onClose={vi.fn()} />);
     await screen.findByRole("alert");
-    expect(
-      screen.queryByRole("article", { name: "Retired Bronze" }),
-    ).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Reload wardrobe" }));
-    await screen.findByRole("article", { name: "Retired Bronze" });
+    expect(screen.queryByRole("tablist")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Reload" }));
+    await screen.findByRole("tablist", { name: "Cosmetic slots" });
   });
 });

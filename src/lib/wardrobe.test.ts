@@ -96,7 +96,7 @@ describe("wardrobe API", () => {
       error: { message: "OUTFIT_CONFLICT" },
     });
     await expect(wardrobeApi.apply(look, empty)).rejects.toThrow(
-      "changed elsewhere",
+      "changed on another device",
     );
     expect(useStore.getState().equippedCoinId).toBeNull();
   });

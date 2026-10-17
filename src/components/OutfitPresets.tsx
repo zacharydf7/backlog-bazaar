@@ -13,6 +13,7 @@ import {
   type CosmeticLook,
   type CosmeticsSession,
 } from "../lib/cosmeticsPreview";
+import { pieceName } from "../lib/dressingRoom";
 import { sameLook } from "../lib/wardrobe";
 import {
   previewButton,
@@ -23,9 +24,11 @@ import { ConfirmDialog } from "./ConfirmDialog";
 
 type PresetPanelProps = {
   session: CosmeticsSession;
+  /** The outfit being worn right now. */
   look: CosmeticLook;
   disabled: boolean;
-  onPreview: (look: CosmeticLook) => void;
+  /** Put a saved look on (saved at once, like any piece). */
+  onWear: (look: CosmeticLook, name: string) => void;
   onEditingChange?: (editing: boolean) => void;
 };
 export function OutfitPresets(props: PresetPanelProps) {
@@ -40,7 +43,7 @@ function PresetPanel({
   session,
   look,
   disabled,
-  onPreview,
+  onWear,
   onEditingChange,
 }: PresetPanelProps) {
   const [presets, setPresets] = useState<OutfitPreset[]>([]);
@@ -121,16 +124,10 @@ function PresetPanel({
       aria-label="Saved looks"
       className="min-w-0 rounded-2xl border border-line bg-surface p-4"
     >
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h2 className="font-display text-xl text-ink">Saved looks</h2>
-          <p className="mt-1 text-sm text-muted">
-            Keep favorite combinations. Preview a saved look, then use Apply
-            outfit to wear it.
-          </p>
-        </div>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="font-display text-lg text-ink">Saved looks</h2>
         <button
-          className={previewPrimary}
+          className={previewButton}
           disabled={locked || !!editing || !lookIsOwned(session, look)}
           onClick={() => {
             setEditing({
@@ -143,7 +140,7 @@ function PresetPanel({
             setNotice("");
           }}
         >
-          Save this look
+          Save this outfit
         </button>
       </div>
       {error && (
@@ -156,27 +153,19 @@ function PresetPanel({
           {notice}
         </p>
       )}
-      <div className="my-3 flex flex-wrap items-center gap-2">
+      {error && (
         <button
-          className={previewButton}
+          className={`${previewButton} mt-2`}
           disabled={locked || !!editing}
           onClick={() => setAttempt(attempt + 1)}
         >
-          Reload saved looks
+          Try again
         </button>
-        <button
-          className={previewButton}
-          disabled={locked || !!editing}
-          aria-pressed={archived}
-          onClick={() => setArchived(!archived)}
-        >
-          {archived ? "Show active looks" : "Show archived looks"}
-        </button>
-      </div>
+      )}
       {editing && (
         <form
           aria-label="Save named look"
-          className="mb-4 rounded-xl border border-line bg-panel p-3"
+          className="mt-3 rounded-xl border border-line bg-panel p-3"
           onSubmit={(e) => {
             e.preventDefault();
             if (!presetNameProblem(editing.name))
@@ -188,7 +177,7 @@ function PresetPanel({
                     editing.name,
                     editing.look,
                   ),
-                "Saved look updated. Your equipment is unchanged.",
+                "Look saved.",
               );
           }}
         >
@@ -206,7 +195,7 @@ function PresetPanel({
           </label>
           <p className="my-2 text-xs text-muted">
             {editing.version === 0
-              ? "Saves the look you were previewing when you chose Save this look."
+              ? "Saves the outfit you're wearing."
               : "Renames this saved look without changing its pieces."}
           </p>
           <div className="flex flex-wrap gap-2">
@@ -229,67 +218,52 @@ function PresetPanel({
         </form>
       )}
       {loading && (
-        <p role="status" className="text-sm text-muted">
+        <p role="status" className="mt-2 text-sm text-muted">
           Loading saved looks…
         </p>
       )}
       {!loading && shown.length === 0 && !error && (
-        <p className="py-3 text-sm text-muted">
-          {archived ? "No archived looks." : "No saved looks yet."}
+        <p className="mt-2 text-sm text-muted">
+          {archived
+            ? "No archived looks."
+            : "Save outfits you like to switch between them in one tap."}
         </p>
       )}
-      <div className="grid min-w-0 gap-3 lg:grid-cols-2">
+      <div className="mt-3 flex min-w-0 flex-col gap-2">
         {shown.map((preset) => {
           const missing = missingPresetSlots(session, preset.look);
+          const wearing = sameLook(look, preset.look);
           return (
             <article
               aria-label={preset.name}
               key={preset.id}
               className="min-w-0 rounded-xl border border-line p-3"
             >
-              <h3 className="break-words font-medium text-ink">
+              <h3 className="break-words text-sm font-semibold text-ink">
                 {preset.name}
-                {sameLook(session.look, preset.look) && (
-                  <span className="ml-2 text-xs text-success">Equipped</span>
+                {wearing && (
+                  <span className="ml-2 text-xs font-normal text-success">Wearing</span>
                 )}
               </h3>
-              <dl className="my-3 grid grid-cols-2 gap-2">
-                {COSMETIC_SLOTS.map((slot) => {
-                  const id = preset.look[slot];
-                  const name =
-                    id === null
-                      ? "Default"
-                      : slot === "title"
-                        ? session.badges.find((b) => b.id === id)?.name
-                        : session.items.find((i) => i.id === id)?.name;
-                  return (
-                    <div key={slot} className="min-w-0">
-                      <dt className="text-xs text-muted">
-                        {SLOT_LABELS[slot]}
-                      </dt>
-                      <dd className="break-words text-sm text-ink">
-                        {name ?? "Unavailable piece"}
-                      </dd>
-                    </div>
-                  );
-                })}
-              </dl>
+              <p className="mt-0.5 break-words text-xs text-muted">
+                {COSMETIC_SLOTS.map((slot) => `${SLOT_LABELS[slot]}: ${pieceName(session, slot, preset.look[slot])}`).join(" · ")}
+              </p>
               {missing.length > 0 && (
-                <p className="mb-3 text-sm text-danger">
-                  Needs attention:{" "}
-                  {missing.map((slot) => SLOT_LABELS[slot]).join(", ")}. Preview
-                  it and choose replacements before applying.
+                <p className="mt-1 text-xs text-danger">
+                  No longer yours:{" "}
+                  {missing.map((slot) => SLOT_LABELS[slot]).join(", ")}. Wearing
+                  this look leaves those slots empty.
                 </p>
               )}
-              <div className="flex flex-wrap gap-2">
+              <div className="mt-2 flex flex-wrap gap-2">
                 {!archived && (
                   <>
                     <button
-                      className={previewButton}
-                      disabled={locked || !!editing}
-                      onClick={() => onPreview({ ...preset.look })}
+                      className={previewPrimary}
+                      disabled={locked || !!editing || wearing}
+                      onClick={() => onWear({ ...preset.look }, preset.name)}
                     >
-                      Preview look
+                      Wear
                     </button>
                     <button
                       className={previewButton}
@@ -317,7 +291,7 @@ function PresetPanel({
                         setReplacing({ preset, look: { ...look } })
                       }
                     >
-                      Replace with try-on
+                      Update to this outfit
                     </button>
                   </>
                 )}
@@ -340,10 +314,20 @@ function PresetPanel({
           );
         })}
       </div>
+      {!loading && (archived || presets.some((preset) => !!preset.archived_at)) && (
+        <button
+          className="mt-2 text-xs font-medium text-muted underline-offset-2 hover:text-ink hover:underline disabled:opacity-40"
+          disabled={locked || !!editing}
+          aria-pressed={archived}
+          onClick={() => setArchived(!archived)}
+        >
+          {archived ? "Show saved looks" : "Show archived looks"}
+        </button>
+      )}
       {replacing && (
         <ConfirmDialog
           title="Replace this saved look?"
-          body={`Replace the pieces in ${replacing.preset.name} with your current try-on? Your equipment stays unchanged.`}
+          body={`Replace the pieces in ${replacing.preset.name} with the outfit you're wearing now?`}
           confirmLabel="Replace saved look"
           onCancel={() => setReplacing(null)}
           onConfirm={() => {
@@ -357,7 +341,7 @@ function PresetPanel({
                   selection.preset.name,
                   selection.look,
                 ),
-              "Saved look replaced. Your equipment is unchanged.",
+              "Saved look updated.",
             );
           }}
         />
