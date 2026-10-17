@@ -259,6 +259,7 @@ as $$
     'badges.grant',
     'economy.edit',
     'economy.shadow',
+    'economy.insights',
     'shop.manage',
     'shop.drafts',
     'shop.publish',
@@ -13983,6 +13984,74 @@ delete from public.notifications n
 -- it's included ONLY for All-Time (p_from is null) and excluded from bounded
 -- windows.
 -- ---------------------------------------------------------------------------
+-- Economy health (admin, economy.insights; 2026-10-17): the whole economy
+-- over a window (p_from null = all time) — coins in and out by ledger kind,
+-- a daily in/out series, each player's flows, and coins in circulation. Read
+-- straight from the append-only coin_events ledger; 'opening' balances are
+-- listed but kept out of the in/out totals (they're starting stock, not
+-- earnings). Hidden-adjustment detail stays on its own economy.shadow card.
+create or replace function public.admin_economy_health(p_from timestamptz, p_to timestamptz)
+returns jsonb
+language plpgsql stable security definer set search_path = public
+as $$
+declare
+  v_to timestamptz := coalesce(p_to, now());
+begin
+  if not public.has_permission('economy.insights') then
+    raise exception 'Not authorized';
+  end if;
+  return jsonb_build_object(
+    'circulation', (select coalesce(sum(coins), 0) from public.profiles),
+    'by_kind', coalesce((
+      select jsonb_agg(k order by k.coins_in + k.coins_out desc)
+        from (select e.kind,
+                     coalesce(sum(e.coin_delta) filter (where e.coin_delta > 0), 0)::bigint as coins_in,
+                     coalesce(-sum(e.coin_delta) filter (where e.coin_delta < 0), 0)::bigint as coins_out,
+                     count(*)::integer as events,
+                     count(distinct e.user_id)::integer as players
+                from public.coin_events e
+               where (p_from is null or e.created_at >= p_from) and e.created_at <= v_to
+                 and e.coin_delta <> 0
+               group by e.kind) k), '[]'::jsonb),
+    'daily', coalesce((
+      select jsonb_agg(d order by d.day)
+        from (select (e.created_at at time zone 'UTC')::date as day,
+                     coalesce(sum(e.coin_delta) filter (where e.coin_delta > 0), 0)::bigint as coins_in,
+                     coalesce(-sum(e.coin_delta) filter (where e.coin_delta < 0), 0)::bigint as coins_out
+                from public.coin_events e
+               where (p_from is null or e.created_at >= p_from) and e.created_at <= v_to
+                 and e.kind <> 'opening'
+               group by 1) d), '[]'::jsonb),
+    'players', coalesce((
+      select jsonb_agg(pl order by pl.earned desc, pl.display_name)
+        from (select p.id as user_id, p.display_name, p.coins as balance,
+                     coalesce(f.earned, 0)::bigint as earned,
+                     coalesce(f.spent, 0)::bigint as spent,
+                     f.top_source,
+                     (select count(*) from public.games g
+                       where g.user_id = p.id and g.status = 'finished'
+                         and g.finish_tag in ('beaten', 'completed')
+                         and (p_from is null or g.finished_at >= p_from)
+                         and g.finished_at <= v_to)::integer as clears
+                from public.profiles p
+                left join lateral (
+                  select sum(e.coin_delta) filter (where e.coin_delta > 0) as earned,
+                         -sum(e.coin_delta) filter (where e.coin_delta < 0) as spent,
+                         (select e2.kind from public.coin_events e2
+                           where e2.user_id = p.id and e2.coin_delta > 0 and e2.kind <> 'opening'
+                             and (p_from is null or e2.created_at >= p_from) and e2.created_at <= v_to
+                           group by e2.kind order by sum(e2.coin_delta) desc limit 1) as top_source
+                    from public.coin_events e
+                   where e.user_id = p.id and e.kind <> 'opening'
+                     and (p_from is null or e.created_at >= p_from) and e.created_at <= v_to
+                ) f on true
+               where f.earned is not null or f.spent is not null) pl), '[]'::jsonb)
+  );
+end;
+$$;
+revoke execute on function public.admin_economy_health(timestamptz, timestamptz) from public, anon;
+grant execute on function public.admin_economy_health(timestamptz, timestamptz) to authenticated;
+
 create or replace function public.admin_user_stats(
   p_user uuid, p_from timestamptz, p_to timestamptz
 )

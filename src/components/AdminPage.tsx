@@ -52,7 +52,7 @@ const TABS: { view: View; label: string; icon: LucideIcon; perms: Permission[] }
   { view: "catalog", label: "Catalog", icon: Library, perms: ["catalog.manage", "catalog.identity"] },
   { view: "taxonomy", label: "Taxonomy", icon: Tags, perms: ["taxonomy.manage"] },
   { view: "reports", label: "Reports", icon: Flag, perms: ["reports.moderate"] },
-  { view: "stats", label: "Stats", icon: BarChart3, perms: ["stats.view"] },
+  { view: "stats", label: "Stats", icon: BarChart3, perms: ["stats.view", "economy.insights"] },
   { view: "roles", label: "Roles", icon: UserCog, perms: ["roles.assign"] },
   { view: "admin", label: "Settings", icon: SlidersHorizontal, perms: ["site.maintenance"] },
 ];

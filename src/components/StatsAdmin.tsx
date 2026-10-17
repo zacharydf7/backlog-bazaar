@@ -23,6 +23,7 @@ import {
   type StatsTimeframe,
 } from "../lib/stats";
 import type { AdminUser, UserStats } from "../types";
+import { EconomyHealthPanel } from "./EconomyHealthPanel";
 
 const inputClass =
   "w-full rounded-lg border border-line bg-panel px-2 py-1.5 text-sm text-ink outline-none focus:border-brand";
@@ -104,6 +105,15 @@ export function StatsAdmin() {
   const net = useMemo(() => (stats ? netCoins(stats) : 0), [stats]);
 
   if (!can("stats.view")) {
+    // Economy health is its own permission: a holder without stats.view gets
+    // just that panel.
+    if (can("economy.insights")) {
+      return (
+        <div className="mx-auto flex w-full max-w-4xl flex-col gap-5">
+          <EconomyHealthPanel />
+        </div>
+      );
+    }
     return (
       <div className="mx-auto max-w-3xl rounded-2xl border border-dashed border-line py-16 text-center text-sm text-muted">
         You don&apos;t have access to the Stats dashboard.
@@ -113,6 +123,7 @@ export function StatsAdmin() {
 
   return (
     <div className="mx-auto flex w-full max-w-4xl flex-col gap-5">
+      {can("economy.insights") && <EconomyHealthPanel />}
       <div>
         <h2 className="inline-flex items-center gap-2 font-display text-xl text-ink">
           <BarChart3 size={18} className="text-accent" /> Stats

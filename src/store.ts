@@ -62,6 +62,7 @@ import {
   heldAtFinish,
   isVerifiedClear,
 } from "./lib/bountyHold";
+import { toEconomyHealth, type EconomyHealth } from "./lib/economyHealth";
 import {
   clampShadowConfig,
   rowToShadowAdjustment,
@@ -1828,6 +1829,8 @@ interface BazaarState {
   // Admin (economy.shadow): the shadow economy's settings, per-player standing
   // and overrides, and its private record of adjustments. Cloud-only; null/[]
   // on failure (the error banner says why).
+  // Admin (economy.insights): the economy over a window (from null = all time).
+  fetchEconomyHealth: (from: Date | null, to: Date) => Promise<EconomyHealth | null>;
   fetchShadowConfig: () => Promise<ShadowConfig | null>;
   saveShadowConfig: (cfg: ShadowConfig) => Promise<ShadowConfig | null>;
   fetchShadowOverview: () => Promise<ShadowPlayer[]>;
@@ -3999,6 +4002,19 @@ export const useStore = create<BazaarState>((set, get) => ({
     }
     set({ recBountyCap: next });
     toast(`Tastemaker Bounty cap set to ${next} coins`, HandCoins);
+  },
+
+  fetchEconomyHealth: async (from, to) => {
+    if (!supabase || !get().cloud) return null;
+    const { data, error } = await supabase.rpc("admin_economy_health", {
+      p_from: from ? from.toISOString() : null,
+      p_to: to.toISOString(),
+    });
+    if (error) {
+      set({ error: error.message });
+      return null;
+    }
+    return toEconomyHealth(data);
   },
 
   refreshBountyRate: async () => {

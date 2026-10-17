@@ -23,6 +23,7 @@ export type Permission =
   | "badges.grant"
   | "economy.edit"
   | "economy.shadow"
+  | "economy.insights"
   | "cosmetics.events.manage"
   | "shop.manage"
   | "shop.drafts"
@@ -138,6 +139,13 @@ export const PERMISSIONS: PermissionInfo[] = [
     key: "economy.edit",
     label: "Edit the economy",
     description: "Change the price/bounty formulas, rewards and other economy levers.",
+    group: "Economy & Site",
+  },
+  {
+    key: "economy.insights",
+    label: "View economy health",
+    description:
+      "See the whole economy at a glance on the Stats tab: coins in and out by source, a daily in/out chart, and each player's flows.",
     group: "Economy & Site",
   },
   {
