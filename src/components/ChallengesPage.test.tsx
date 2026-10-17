@@ -13,6 +13,7 @@ function state(over: Partial<ChallengesState> = {}): ChallengesState {
     endsAt: NOW + 10 * DAY,
     goalReward: 25,
     setBonus: 50,
+    countsFromPick: false,
     menu: [
       { key: "finish-two", name: "Two Clears", description: "Finish 2 games", icon: "trophy", target: 2, progress: 2 },
       { key: "log-twenty", name: "Twenty Hours", description: "Log 20 hours of play", icon: "clock", target: 20, progress: 6 },
@@ -71,6 +72,20 @@ describe("ChallengesPage — monthly goals", () => {
     expect(useStore.getState().pickMonthlyGoal).not.toHaveBeenCalled();
     fireEvent.click(within(row).getByRole("button", { name: "Confirm" }));
     expect(useStore.getState().pickMonthlyGoal).toHaveBeenCalledWith("log-twenty");
+  });
+
+  it("says a goal counts from the pick once the launch month is over", () => {
+    act(() =>
+      useStore.setState({
+        challenges: state({
+          countsFromPick: true,
+          menu: [{ key: "log-twenty", name: "Twenty Hours", description: "Log 20 hours of play", icon: "clock", target: 20, progress: null }],
+        }),
+      }),
+    );
+    render(<ChallengesPage />);
+    expect(screen.getByText(/a goal counts what you do after you pick it/)).toBeTruthy();
+    expect(screen.getByText(/counts from when you pick it/)).toBeTruthy();
   });
 
   it("shows the all-three bonus once three goals are picked, and hides the menu", () => {

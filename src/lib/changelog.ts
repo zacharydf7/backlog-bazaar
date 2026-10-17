@@ -101,6 +101,14 @@ export const RELEASES: Release[] = [
         tag: "fix",
       },
       {
+        text: "Goals now count what you do after you pick them (monthly) or receive them (daily and weekly). This first month and this first week still count from the start, since they arrived part-way through.",
+        tag: "improvement",
+      },
+      {
+        text: "Fresh Start now also gives up any unclaimed medal and challenge rewards, so a fresh start really starts fresh. Your medals stay.",
+        tag: "improvement",
+      },
+      {
         text: "Can't decide what to play? Mystery Pull now has Help me choose: say how long a game you want, on which platform, in what mood and what you're after, and get three games you can start right now, with why each one fits.",
         tag: "feature",
       },

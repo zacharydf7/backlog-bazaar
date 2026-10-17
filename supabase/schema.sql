@@ -14842,6 +14842,61 @@ create trigger game_submissions_validate_terms
 -- before-counts) records the reset; entity_id carries the uuid as text so the
 -- record stays identifiable even if the account is later deleted.
 -- ---------------------------------------------------------------------------
+-- Mark every unclaimed medal and challenge reward paid without paying it
+-- (owner, 2026-10-17: Fresh Start forfeits them), leaving one ledger note that
+-- says what was given up. Nothing is deleted, so the medals and goals stay.
+-- Returns {count, coins}. Internal: called by fresh_start.
+create or replace function public.forfeit_unclaimed_rewards(p_user uuid)
+returns jsonb
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  v_forfeit jsonb;
+  v_coins   integer;
+begin
+  with a as (
+    update public.user_achievements ua set reward_paid_at = now()
+      from public.achievements x
+     where ua.user_id = p_user and ua.reward_paid_at is null and x.id = ua.achievement_id and x.reward > 0
+    returning x.reward
+  ), m as (
+    update public.user_monthly_goals set reward_paid_at = now()
+     where user_id = p_user and completed_at is not null and reward_paid_at is null and reward > 0
+    returning reward
+  ), mb as (
+    update public.monthly_goal_bonuses set reward_paid_at = now()
+     where user_id = p_user and reward_paid_at is null and reward > 0
+    returning reward
+  ), q as (
+    update public.user_quick_goals set reward_paid_at = now()
+     where user_id = p_user and completed_at is not null and reward_paid_at is null and reward > 0
+    returning reward
+  ), qb as (
+    update public.weekly_sweep_bonuses set reward_paid_at = now()
+     where user_id = p_user and reward_paid_at is null and reward > 0
+    returning reward
+  ), s as (
+    update public.user_seasonal_challenges set reward_paid_at = now()
+     where user_id = p_user and reward_paid_at is null and reward > 0
+    returning reward
+  )
+  select jsonb_build_object('count', count(*), 'coins', coalesce(sum(r), 0)) into v_forfeit
+    from (select reward as r from a union all select reward from m union all select reward from mb
+          union all select reward from q union all select reward from qb union all select reward from s) x;
+  if (v_forfeit->>'count')::int > 0 then
+    select coins into v_coins from public.profiles where id = p_user;
+    perform public.log_coin_event(
+      p_user, 'rewards_forfeited', 0, 0, v_coins, 0, null, null,
+      (v_forfeit->>'count') || ' unclaimed rewards (' || (v_forfeit->>'coins') || ' coins) forfeited by Fresh Start',
+      v_forfeit
+    );
+  end if;
+  return v_forfeit;
+end;
+$$;
+revoke execute on function public.forfeit_unclaimed_rewards(uuid) from public, anon, authenticated;
+
 create or replace function public.fresh_start()
 returns jsonb
 language plpgsql
@@ -14855,6 +14910,7 @@ declare
   v_replay        integer;
   v_completionist integer;
   v_coins         integer;
+  v_forfeit       jsonb;
 begin
   if v_uid is null then
     raise exception 'Not signed in';
@@ -14937,11 +14993,14 @@ begin
     v_uid, 'opening', 0, 0, v_coins, 0, null, null, 'Opening balance'
   );
 
+  -- Unclaimed medal and challenge rewards don't carry into the fresh economy.
+  v_forfeit := public.forfeit_unclaimed_rewards(v_uid);
+
   insert into public.audit_events
     (actor_id, target_user, entity, entity_id, action, old_value, detail)
   values
     (v_uid, v_uid, 'account', v_uid::text, 'fresh_start', v_summary,
-     jsonb_build_object('source', 'self_service'));
+     jsonb_build_object('source', 'self_service', 'forfeited_rewards', v_forfeit));
 
   return v_summary;
 end;
@@ -19084,8 +19143,9 @@ grant execute on function public.claim_achievement_rewards(uuid) to authenticate
 -- Challenges (2026-10-17): monthly goals + seasonal events.
 --
 -- Monthly goals: each month a player picks 3 goals from a fixed menu
--- (challenge_goals). Progress counts everything logged since the 1st (in the
--- Rotation reset's timezone), and picks are final for the month. Each
+-- (challenge_goals). A goal counts what's done after it was picked
+-- (challenge_goal_start; October 2026 counted from the 1st), and picks are
+-- final for the month. Each
 -- completed goal pays challenge_goal_reward, and all three pay
 -- challenge_set_bonus on top. Seasonal events: an admin (challenges.manage)
 -- sets a goal, a target and dates; every player chases the target on their
@@ -19235,6 +19295,28 @@ as $$
     from m;
 $$;
 revoke execute on function public.challenge_month(timestamptz) from public, anon, authenticated;
+
+-- Where a goal's progress starts counting (owner, 2026-10-17): from when the
+-- goal was picked (monthly) or dealt (daily/weekly), so nothing done before
+-- you took a goal on completes it. Launch grace: October's monthly goals and
+-- the Oct 12–18 weekly goals count from the start of their month/week
+-- instead, since they arrived part-way through.
+create or replace function public.challenge_goal_start(p_cadence text, p_period date, p_since timestamptz)
+returns timestamptz
+language sql
+stable
+set search_path = public
+as $$
+  select case
+    when (p_cadence = 'monthly' and p_period <= date '2026-10-01')
+      or (p_cadence = 'weekly' and p_period <= date '2026-10-12')
+      then p_period::timestamp at time zone tz.tz
+    else p_since
+  end
+  from (select coalesce(nullif(btrim(c.rotation_reset_tz), ''), 'UTC') as tz
+          from public.app_config c where c.id = 1) tz;
+$$;
+revoke execute on function public.challenge_goal_start(text, date, timestamptz) from public, anon, authenticated;
 
 -- The monthly goal menu. Edited deliberately (not re-seeded); `active` retires
 -- a goal from future menus without touching anyone's picks.
@@ -19566,7 +19648,8 @@ begin
     select w.week_start into v_now from public.recap_week(now()) w;
   end if;
   if v_row.period <> v_now then raise exception 'That goal has ended'; end if;
-  if public.challenge_metric(v_me, v_row.metric, v_row.dealt_at,
+  if public.challenge_metric(v_me, v_row.metric,
+       public.challenge_goal_start(v_row.cadence, v_row.period, v_row.dealt_at),
        (v_row.period + case when v_row.cadence = 'daily' then 1 else 7 end)::timestamp
          at time zone coalesce((select nullif(btrim(c.rotation_reset_tz), '') from public.app_config c where c.id = 1), 'UTC'))
      >= v_row.target then
@@ -19711,10 +19794,12 @@ begin
     with done as (
       update public.user_quick_goals u
          set completed_at = now(),
-             value = public.challenge_metric(v_me, u.metric, u.dealt_at, v_m.ends)
+             value = public.challenge_metric(v_me, u.metric,
+                       public.challenge_goal_start(u.cadence, u.period, u.dealt_at), v_m.ends)
        where u.user_id = v_me and u.cadence = v_m.cadence and u.period = v_m.period
          and u.swapped_at is null and u.completed_at is null
-         and public.challenge_metric(v_me, u.metric, u.dealt_at, v_m.ends) >= u.target
+         and public.challenge_metric(v_me, u.metric,
+               public.challenge_goal_start(u.cadence, u.period, u.dealt_at), v_m.ends) >= u.target
       returning u.goal_name, u.reward
     )
     select v_m.cadence, d.goal_name, d.reward from done d;
@@ -19740,9 +19825,11 @@ begin
     with done as (
       update public.user_monthly_goals u
          set completed_at = now(),
-             value = public.challenge_metric(v_me, u.metric, v_m.starts, v_m.ends)
+             value = public.challenge_metric(v_me, u.metric,
+                       public.challenge_goal_start('monthly', u.month, u.picked_at), v_m.ends)
        where u.user_id = v_me and u.month = v_m.month and u.completed_at is null
-         and public.challenge_metric(v_me, u.metric, v_m.starts, v_m.ends) >= u.target
+         and public.challenge_metric(v_me, u.metric,
+               public.challenge_goal_start('monthly', u.month, u.picked_at), v_m.ends) >= u.target
       returning u.goal_name, u.reward
     )
     select 'goal'::text, d.goal_name, d.reward from done d;
@@ -19793,7 +19880,8 @@ as $$
     'id', u.id, 'cadence', u.cadence, 'goal_key', u.goal_key, 'name', u.goal_name,
     'description', u.description, 'icon', u.icon, 'target', u.target, 'reward', u.reward,
     'completed_at', u.completed_at, 'reward_paid_at', u.reward_paid_at,
-    'progress', coalesce(u.value, public.challenge_metric(p_user, u.metric, u.dealt_at, p_ends)));
+    'progress', coalesce(u.value, public.challenge_metric(p_user, u.metric,
+                  public.challenge_goal_start(u.cadence, u.period, u.dealt_at), p_ends)));
 $$;
 revoke execute on function public.quick_goal_json(uuid, public.user_quick_goals, timestamptz) from public, anon, authenticated;
 
@@ -19843,19 +19931,23 @@ begin
     'month', v_m.month,
     'ends_at', v_m.ends,
     'goal_reward', coalesce((select challenge_goal_reward from public.app_config where id = 1), 25),
+    -- True once monthly goals count only from their pick (after the launch month).
+    'counts_from_pick', public.challenge_goal_start('monthly', v_m.month, now()) >= now(),
     'set_bonus', coalesce((select challenge_set_bonus from public.app_config where id = 1), 50),
     'menu', coalesce((
       select jsonb_agg(jsonb_build_object(
                'key', g.key, 'name', g.name, 'description', g.description, 'icon', g.icon,
                'target', g.target,
-               'progress', public.challenge_metric(v_me, g.metric, v_m.starts, v_m.ends))
+               'progress', case when public.challenge_goal_start('monthly', v_m.month, now()) < now()
+                                then public.challenge_metric(v_me, g.metric, v_m.starts, v_m.ends) end)
              order by g.sort)
         from public.challenge_goals g where g.active), '[]'::jsonb),
     'picks', coalesce((
       select jsonb_agg(jsonb_build_object(
                'id', u.id, 'goal_key', u.goal_key, 'name', u.goal_name, 'target', u.target,
                'reward', u.reward, 'completed_at', u.completed_at, 'reward_paid_at', u.reward_paid_at,
-               'progress', coalesce(u.value, public.challenge_metric(v_me, u.metric, v_m.starts, v_m.ends)))
+               'progress', coalesce(u.value, public.challenge_metric(v_me, u.metric,
+                             public.challenge_goal_start('monthly', u.month, u.picked_at), v_m.ends)))
              order by u.picked_at)
         from public.user_monthly_goals u where u.user_id = v_me and u.month = v_m.month), '[]'::jsonb),
     'bonus', (
@@ -19932,7 +20024,7 @@ begin
   update public.user_monthly_goals u
      set completed_at = null, value = null
    where u.user_id = v_me and u.completed_at is not null and u.reward_paid_at is null
-     and public.challenge_metric(v_me, u.metric, u.month::timestamp at time zone v_tz,
+     and public.challenge_metric(v_me, u.metric, public.challenge_goal_start('monthly', u.month, u.picked_at),
            (u.month + interval '1 month')::timestamp at time zone v_tz) < u.target;
   delete from public.monthly_goal_bonuses b
    where b.user_id = v_me and b.reward_paid_at is null
@@ -19941,7 +20033,7 @@ begin
   update public.user_quick_goals q
      set completed_at = null, value = null
    where q.user_id = v_me and q.completed_at is not null and q.reward_paid_at is null
-     and public.challenge_metric(v_me, q.metric, q.dealt_at,
+     and public.challenge_metric(v_me, q.metric, public.challenge_goal_start(q.cadence, q.period, q.dealt_at),
            (q.period + case when q.cadence = 'daily' then 1 else 7 end)::timestamp at time zone v_tz) < q.target;
   delete from public.weekly_sweep_bonuses b
    where b.user_id = v_me and b.reward_paid_at is null

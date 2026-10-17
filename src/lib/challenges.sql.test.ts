@@ -88,6 +88,7 @@ beforeAll(async () => {
   await db.exec(fn("challenge_metric_keys"));
   await db.exec(fn("challenge_metric"));
   await db.exec(fn("challenge_month"));
+  await db.exec(fn("challenge_goal_start"));
   await db.exec(fn("challenge_day"));
   await db.exec(fn("recap_week"));
   await db.exec(fn("rotation_period_start"));
@@ -138,8 +139,10 @@ beforeAll(async () => {
     create table public.weekly_sweep_bonuses (id uuid primary key default gen_random_uuid(), user_id uuid,
       period date, reward integer not null default 0, completed_at timestamptz not null default now(),
       reward_paid_at timestamptz, unique (user_id, period));
+    create table public.achievements (id uuid primary key, reward integer not null default 0);
+    create table public.user_achievements (user_id uuid, achievement_id uuid, reward_paid_at timestamptz);
   `);
-  for (const name of ["quick_goal_applies", "deal_quick_goal", "deal_quick_goals", "quick_goal_json", "swap_quick_goal"]) {
+  for (const name of ["quick_goal_applies", "deal_quick_goal", "deal_quick_goals", "quick_goal_json", "swap_quick_goal", "forfeit_unclaimed_rewards"]) {
     await db.exec(fn(name));
   }
   for (const name of [
@@ -168,7 +171,7 @@ beforeEach(async () => {
     delete from public.games; delete from public.game_status_events; delete from public.playtime_events;
     delete from public.play_sessions; delete from public.review_events; delete from public.profiles;
     delete from public.action_undos; delete from public.user_quick_goals; delete from public.weekly_sweep_bonuses;
-    delete from public.rotation_checkins;
+    delete from public.rotation_checkins; delete from public.achievements; delete from public.user_achievements;
     insert into public.profiles (id, coins) values ('${ME}', 100), ('${OTHER}', 0);
     select set_config('test.uid', '${ME}', false);
     select set_config('test.manager', '', false);
@@ -176,8 +179,15 @@ beforeEach(async () => {
   `);
 });
 
+/** Pick a monthly goal. The pick is dated to the start of the month so these
+ *  tests don't depend on the launch-month grace; the from-the-pick rule is
+ *  tested on its own (challenge_goal_start). */
 async function pick(goal: string) {
   await db.query("select public.pick_monthly_goal($1)", [goal]);
+  await db.query(
+    "update public.user_monthly_goals set picked_at = date_trunc('month', now()) where goal_key = $1",
+    [goal],
+  );
 }
 
 async function evaluate() {
@@ -253,8 +263,10 @@ describe("evaluate_challenges + claim_challenge_rewards", () => {
     await pick("log-twenty");
     await pick("review-one");
 
-    expect((await evaluate()).map((r) => r.kind).sort()).toEqual(["bonus", "goal", "goal", "goal"]);
-    expect(await evaluate()).toEqual([]);
+    expect((await evaluateLongGoals()).map((r) => r.kind).sort()).toEqual(["bonus", "goal", "goal", "goal"]);
+    expect(await evaluateLongGoals()).toEqual([]);
+    // Monthly goals only: set aside the daily/weekly goals dealt alongside.
+    await db.exec("delete from public.user_quick_goals; delete from public.weekly_sweep_bonuses");
     expect(await claim()).toEqual({ paid: 125, claimed: 4, coins: 225 });
     expect(await claim()).toEqual({ paid: 0, claimed: 0, coins: 225 });
   });
@@ -391,6 +403,42 @@ describe("review fixes (2026-10-17)", () => {
       "select id from public.user_quick_goals where user_id = $1 and cadence = 'daily' and swapped_at is null", [ME])).rows;
     await db.exec(`insert into public.playtime_events (user_id, hours, created_at) values ('${ME}', 1, now() + interval '1 second')`);
     await expect(db.query("select public.swap_quick_goal($1)", [daily.id])).rejects.toThrow(/already done/);
+  });
+});
+
+describe("when goals start counting (owner, 2026-10-17)", () => {
+  const start = async (cadence: string, period: string, since: string) =>
+    new Date(
+      (await db.query<{ t: string }>("select public.challenge_goal_start($1, $2::date, $3::timestamptz) as t", [
+        cadence,
+        period,
+        since,
+      ])).rows[0].t,
+    ).toISOString();
+
+  it("counts from the pick or deal, with launch grace for October and the Oct 12 week", async () => {
+    const since = "2026-11-20T15:00:00.000Z";
+    expect(await start("monthly", "2026-10-01", "2026-10-17T12:00:00Z")).toBe("2026-10-01T00:00:00.000Z");
+    expect(await start("monthly", "2026-11-01", since)).toBe(since);
+    expect(await start("weekly", "2026-10-12", "2026-10-17T12:00:00Z")).toBe("2026-10-12T00:00:00.000Z");
+    expect(await start("weekly", "2026-10-19", since)).toBe(since);
+    expect(await start("daily", "2026-10-17", since)).toBe(since);
+  });
+});
+
+describe("Fresh Start forfeits unclaimed rewards", () => {
+  it("marks them paid without paying, notes it in the ledger, and leaves nothing to claim", async () => {
+    await db.exec(`
+      insert into public.achievements values ('00000000-0000-4000-8000-0000000000d1', 25);
+      insert into public.user_achievements values ('${ME}', '00000000-0000-4000-8000-0000000000d1', null);
+      insert into public.user_monthly_goals (user_id, month, goal_key, goal_name, metric, target, reward, completed_at)
+        values ('${ME}', date_trunc('month', now())::date, 'review-one', 'Say a Few Words', 'reviews_written', 1, 25, now());`);
+    const r = await db.query<{ f: { count: number; coins: number } }>("select public.forfeit_unclaimed_rewards($1) as f", [ME]);
+    expect(r.rows[0].f).toEqual({ count: 2, coins: 50 });
+    const ledger = await db.query("select kind, coin_delta from public.coin_events");
+    expect(ledger.rows).toEqual([{ kind: "rewards_forfeited", coin_delta: 0 }]);
+    const medal = await db.query("select reward_paid_at is not null as paid from public.user_achievements");
+    expect(medal.rows).toEqual([{ paid: true }]);
   });
 });
 

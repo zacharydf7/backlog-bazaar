@@ -166,7 +166,7 @@ function MenuRow({ goal, reward }: { goal: MenuGoal; reward: number }) {
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
   const Icon = GOAL_ICONS[goal.icon] ?? Target;
-  const met = goal.progress >= goal.target;
+  const met = goal.progress != null && goal.progress >= goal.target;
   return (
     <div className="flex items-center gap-3 rounded-xl border border-dashed border-line p-3">
       <span className="grid size-10 shrink-0 place-items-center rounded-full bg-panel text-muted">
@@ -175,7 +175,12 @@ function MenuRow({ goal, reward }: { goal: MenuGoal; reward: number }) {
       <div className="min-w-0 flex-1">
         <p className="text-sm font-semibold text-ink">{goal.description}</p>
         <p className="text-[11px] text-subtle">
-          {goal.name} · {met ? "already done this month" : `so far ${progressCount(goal.progress, goal.target)}`}
+          {goal.name} ·{" "}
+          {goal.progress == null
+            ? "counts from when you pick it"
+            : met
+              ? "already done this month"
+              : `so far ${progressCount(goal.progress, goal.target)}`}
           {reward > 0 && ` · ${reward} coins`}
         </p>
       </div>
@@ -391,7 +396,10 @@ export function ChallengesPage() {
         {openSlots > 0 && (
           <div className="flex flex-col gap-2">
             <p className="text-xs font-semibold uppercase tracking-wide text-subtle">
-              Pick {openSlots} more · progress counts from the 1st, and picks are final for the month
+              Pick {openSlots} more ·{" "}
+              {challenges.countsFromPick
+                ? "a goal counts what you do after you pick it, and picks are final for the month"
+                : "this month, everything since the 1st counts, and picks are final for the month"}
             </p>
             {challenges.menu
               .filter((g) => !picked.has(g.key))

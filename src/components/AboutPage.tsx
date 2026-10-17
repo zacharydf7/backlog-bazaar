@@ -231,8 +231,9 @@ export function AboutPage() {
               <Coin n={featureBonuses.weeklyGoalReward} /> each, plus{" "}
               <Coin n={featureBonuses.weeklySweepBonus} /> for all three), and you can swap one of
               each. You also pick three goals each
-              month (finish two games, play on ten different days…). Everything you log from the
-              1st counts, and your picks are final for the month. Each goal you complete pays{" "}
+              month (finish two games, play on ten different days…). Every goal counts what you do
+              after you pick it or it&apos;s dealt to you, and your monthly picks are final. Each
+              monthly goal you complete pays{" "}
               <Coin n={featureBonuses.goalReward} />, and finishing all three adds{" "}
               <Coin n={featureBonuses.goalSetBonus} />. Seasonal challenges run for a set time and
               can pay coins and a badge.

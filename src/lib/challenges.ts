@@ -22,14 +22,15 @@ export const CHALLENGE_METRICS = {
 
 export type ChallengeMetric = keyof typeof CHALLENGE_METRICS;
 
-/** A goal on this month's menu, with your progress on it so far. */
+/** A goal on this month's menu, with your progress on it so far (null once
+ *  goals only count from when they're picked). */
 export interface MenuGoal {
   key: string;
   name: string;
   description: string;
   icon: string;
   target: number;
-  progress: number;
+  progress: number | null;
 }
 
 /** One of your picked goals this month. */
@@ -89,6 +90,9 @@ export interface ChallengesState {
   endsAt: number;
   goalReward: number;
   setBonus: number;
+  /** Monthly goals count only what's done after they're picked (false during
+   *  the launch month, when everything since the 1st counts). */
+  countsFromPick: boolean;
   menu: MenuGoal[];
   picks: MonthlyPick[];
   bonus: { id: string; reward: number; completedAt: number; rewardPaidAt: number | null } | null;
@@ -168,13 +172,14 @@ export function coerceChallenges(raw: unknown): ChallengesState | null {
     endsAt: time(r.ends_at) ?? 0,
     goalReward: num(r.goal_reward),
     setBonus: num(r.set_bonus),
+    countsFromPick: r.counts_from_pick === true,
     menu: rows(r.menu).map((g) => ({
       key: str(g.key),
       name: str(g.name),
       description: str(g.description),
       icon: str(g.icon, "target"),
       target: num(g.target),
-      progress: num(g.progress),
+      progress: g.progress == null ? null : num(g.progress),
     })),
     picks: rows(r.picks).map((p) => ({
       id: str(p.id),
