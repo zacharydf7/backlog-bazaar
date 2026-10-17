@@ -40,6 +40,7 @@ function visit(over: Partial<ViewingSession> = {}): ViewingSession {
     accent: "violet",
     bg: null,
     games: [],
+    compilationGames: [],
     ...over,
   };
 }

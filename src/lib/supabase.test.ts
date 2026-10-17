@@ -188,6 +188,11 @@ describe("rowToGame", () => {
     );
     expect(rowToGame(baseRow).originalPlatform).toBeNull();
   });
+
+  it("maps a compilation's own game row (86fc0b4b)", () => {
+    expect(rowToGame({ ...baseRow, compilation_game_for: "comp-1" }).compilationGameFor).toBe("comp-1");
+    expect(rowToGame(baseRow).compilationGameFor).toBeNull();
+  });
 });
 
 describe("normalizeCopies", () => {

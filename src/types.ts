@@ -109,6 +109,7 @@ export interface Game extends GameMeta {
   familyPrimaryGameId?: string | null; // user-designated PRIMARY member the unified family card renders and routes data to (denormalized; null = representative fallback)
   compilationId?: string | null; // the compilation purchase this game belongs to (null = standalone)
   compilationName?: string; // denormalized compilation title, for the board badge
+  compilationGameFor?: string | null; // set on a compilation's OWN game row (issue 86fc0b4b): the compilation as a game — catalog link, review, like, cover, priority. Never played itself (its games carry the economy); kept in the store's compilationGames, never in games
   personalScreenshots?: string[]; // a bundled game's own screenshots (issue 86fc0b4b) — public covers-bucket URLs the owner uploaded; a bundled game has no catalog link to show shared ones
   originalPlatform?: string | null; // a bundled game's original console (issue 86fc0b4b) — a display label telling same-named versions apart; boards, filters and stats go by the bundle's copies
   private?: boolean; // hidden from visitors to your Bazaar (owner-only; never affects the economy)

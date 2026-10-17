@@ -63,6 +63,7 @@ import {
   personalShotPath,
 } from "./lib/personalScreenshots";
 import { templateSignature, templateGamesToChildDrafts } from "./lib/compilationTemplates";
+import { splitCompilationGames } from "./lib/compilationGrouping";
 import type {
   CompilationTemplate,
   CompilationTemplateSubmission,
@@ -830,6 +831,9 @@ export interface ViewingSession {
   cosmetics: Cosmetics;
   economyEnabled: boolean;
   games: Game[];
+  // The visited player's compilations as games (issue 86fc0b4b) — kept apart
+  // from games like the owner's own compilationGames.
+  compilationGames: Game[];
 }
 
 interface BazaarState {
@@ -945,6 +949,10 @@ interface BazaarState {
   onboardingVouchers: number; // vouchers granted to each new account (admin-configurable)
   games: Game[];
   compilations: Compilation[]; // the user's compilation purchases (the financial containers)
+  // Each compilation's own game row (issue 86fc0b4b): the compilation as a
+  // game — catalog link, review, like, cover, priority. Never in games: it is
+  // never played itself, so no board, lane, picker or stat ever sees one.
+  compilationGames: Game[];
   // Shared templates a moderator linked to a parent catalog game — the lookup
   // that lets an owned single card offer "Split into games". Cloud-only.
   parentTemplates: ParentTemplate[];
@@ -1902,6 +1910,7 @@ export const useStore = create<BazaarState>((set, get) => ({
   onboardingVouchers: DEFAULT_ONBOARDING_VOUCHERS,
   games: [],
   compilations: [],
+  compilationGames: [],
   parentTemplates: [],
   ledger: [],
   celebration: null,
@@ -2163,6 +2172,7 @@ export const useStore = create<BazaarState>((set, get) => ({
         onboardingVouchersGrantedAt: null,
         accountCreatedAt: null,
         games: [],
+        compilationGames: [],
         notifications: [],
         notificationsHasMore: false,
         notificationsLoadingMore: false,
@@ -2362,7 +2372,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       myTargetedSlots: ((slotRows ?? []) as unknown as UserSlotRow[])
         .map(rowToTargetedSlot)
         .filter((s): s is TargetedSlot => s !== null),
-      games: rows.map(rowToGame),
+      ...splitCompilationGames(rows.map(rowToGame)),
       compilations: ((compRows ?? []) as CompilationRow[]).map(rowToCompilation),
       notifications: ((notes ?? []) as NotificationRow[]).map(rowToNotification),
       notificationsHasMore: (notes ?? []).length === NOTIF_PAGE,
@@ -2617,6 +2627,7 @@ export const useStore = create<BazaarState>((set, get) => ({
         vouchers: 0,
         games: [],
         compilations: [],
+        compilationGames: [],
         ledger: [openingEvent(STARTING_COINS)],
         myPlatforms: [],
         customPlatforms: [],
@@ -3200,9 +3211,9 @@ export const useStore = create<BazaarState>((set, get) => ({
       return;
     }
     const header = rowToViewProfile(profileRes.data as ViewProfileRow);
-    const games = libraryRows.map(rowToGame);
+    const { games, compilationGames } = splitCompilationGames(libraryRows.map(rowToGame));
     set({
-      viewing: { userId, games, ...header },
+      viewing: { userId, games, compilationGames, ...header },
       viewingLoading: false,
     });
     applyThemeId(header.theme || "midnight");
@@ -7989,7 +8000,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       const lib = await fetchAllRows<GameRow>((from, to) =>
         supabase!.rpc("player_library", { p_user: userId }).range(from, to),
       ).catch(() => null);
-      if (lib) set({ games: lib.map(rowToGame) });
+      if (lib) set(splitCompilationGames(lib.map(rowToGame)));
       toast("Saved — your changes are live for everyone.", Trophy);
       void get().refreshSubmissionCount();
       return true;
@@ -9319,7 +9330,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       const rows = await fetchAllRows<GameRow>((from, to) =>
         supabase!.rpc("player_library", { p_user: playerId }).range(from, to),
       );
-      return rows.map(rowToGame);
+      return splitCompilationGames(rows.map(rowToGame)).games;
     } catch (e) {
       set({ error: e instanceof Error ? e.message : String(e) });
       return [];

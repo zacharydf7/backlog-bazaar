@@ -58,6 +58,7 @@ const visit: ViewingSession = {
   accent: null,
   bg: null,
   games: [],
+  compilationGames: [],
 };
 
 afterEach(() => {

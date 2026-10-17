@@ -1217,6 +1217,9 @@ begin
                     and g.user_id = new.user_id) then
     raise exception 'Prerequisite game not found';
   end if;
+  -- A compilation game is never finished itself, so it can't be a story lock
+  -- (issue 86fc0b4b); lock on the game inside it instead.
+  perform public.assert_not_compilation_game(new.prerequisite_game_id);
   v_cursor := new.prerequisite_game_id;
   while v_cursor is not null loop
     v_hops := v_hops + 1;
@@ -1815,6 +1818,235 @@ alter table public.games add column if not exists personal_screenshots jsonb not
 alter table public.games drop constraint if exists games_personal_screenshots_check;
 alter table public.games add constraint games_personal_screenshots_check
   check (jsonb_typeof(personal_screenshots) = 'array' and jsonb_array_length(personal_screenshots) <= 12);
+
+-- Compilation games (issue 86fc0b4b): a compilation's OWN game row — the
+-- compilation as a game in the library, linked to the shared catalog like any
+-- other game, so it carries the community stats, review, like, cover and
+-- priority. Its games stay the rows with compilation_id set and keep their own
+-- economy (Buy & Start, Now Playing, bounty). The compilation game never takes
+-- part in that economy: its stored status stays 'backlog' (the app shows a
+-- status derived from its games), its lane/coin columns stay empty, and it is
+-- written only through the definer functions below. compilation_id stays null
+-- on it, so nothing that lists a compilation's games ever picks it up.
+alter table public.games add column if not exists compilation_game_for uuid
+  references public.compilations (id) on delete cascade;
+create unique index if not exists games_compilation_game_for_key
+  on public.games (compilation_game_for) where compilation_game_for is not null;
+
+-- Keeps compilation games out of the economy. Making or unmaking one needs the
+-- app.compilation_game flag the definer functions below set for their own
+-- write; any other change to its status, lane, coin, playtime, family,
+-- prerequisite or pre-order columns is refused, so every economy RPC (buy,
+-- finish, log time, lanes, shelve, retire…) fails whole on one — its coin row
+-- with it. ongoing is shed rather than refused: catalog edits cascade it onto
+-- every copy of a game and must not fail for this one.
+create or replace function public.games_guard_compilation_game()
+returns trigger
+language plpgsql
+set search_path = public
+as $$
+declare
+  v_managed boolean := coalesce(current_setting('app.compilation_game', true), '') = '1';
+begin
+  if not v_managed
+     and ((tg_op = 'INSERT' and new.compilation_game_for is not null)
+       or (tg_op = 'UPDATE' and new.compilation_game_for is distinct from old.compilation_game_for)) then
+    raise exception 'COMPILATION_GAME: a compilation game is managed by its compilation';
+  end if;
+  if tg_op = 'UPDATE' and old.compilation_game_for is not null and not v_managed then
+    new.ongoing := old.ongoing;
+    if new.status is distinct from old.status
+       or new.finish_tag is distinct from old.finish_tag
+       or new.started_at is distinct from old.started_at
+       or new.finished_at is distinct from old.finished_at
+       or new.reward is distinct from old.reward
+       or new.price_paid is distinct from old.price_paid
+       or new.played_hours is distinct from old.played_hours
+       or new.slot_id is distinct from old.slot_id
+       or new.in_rotation is distinct from old.in_rotation
+       or new.rotation_origin is distinct from old.rotation_origin
+       or new.pre_rotation_ongoing is distinct from old.pre_rotation_ongoing
+       or new.completionist is distinct from old.completionist
+       or new.co_op is distinct from old.co_op
+       or new.resumed is distinct from old.resumed
+       or new.personal_hours is distinct from old.personal_hours
+       or new.length_premium_owed is distinct from old.length_premium_owed
+       or new.started_economy_off is distinct from old.started_economy_off
+       or new.started_story_locked is distinct from old.started_story_locked
+       or new.family_id is distinct from old.family_id
+       or new.family_primary_game_id is distinct from old.family_primary_game_id
+       or new.family_cover_game_id is distinct from old.family_cover_game_id
+       or new.prerequisite_game_id is distinct from old.prerequisite_game_id
+       or new.compilation_id is distinct from old.compilation_id
+       or new.preordered_at is distinct from old.preordered_at
+       or new.preorder_expected_on is distinct from old.preorder_expected_on
+    then
+      raise exception 'COMPILATION_GAME: a compilation is played through the games inside it';
+    end if;
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists games_guard_compilation_game on public.games;
+create trigger games_guard_compilation_game
+  before insert or update on public.games
+  for each row execute function public.games_guard_compilation_game();
+
+-- For the definer RPCs that act on a game without updating its row (they add a
+-- sponsorship, a loan, a session, a pact…): refuse a compilation game.
+create or replace function public.assert_not_compilation_game(p_game uuid)
+returns void
+language plpgsql
+stable
+security definer set search_path = public
+as $$
+begin
+  if exists (select 1 from public.games where id = p_game and compilation_game_for is not null) then
+    raise exception 'COMPILATION_GAME: a compilation is played through the games inside it';
+  end if;
+end;
+$$;
+
+-- Create or refresh a compilation's game row and return its id. Identity: the
+-- ids passed win; otherwise the shared template's linked catalog game, if any.
+-- The title, release date and copies follow the compilation; copies carry
+-- platform and format only (the cost stays split across the games inside, so
+-- spending is never counted twice), with off-list platforms dropped. Cover: the
+-- owner's compilation cover, else the template's; a catalog link then
+-- converges the stock cover as for any game. Internal: no ownership check
+-- (ensure_compilation_game and the migration below call it).
+create or replace function public.upsert_compilation_game(
+  p_compilation uuid,
+  p_rawg_id integer default null,
+  p_igdb_id integer default null,
+  p_catalog_id uuid default null
+)
+returns uuid
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  c         public.compilations%rowtype;
+  v_tpl_img text;
+  v_tpl_cat uuid;
+  v_rawg    integer := p_rawg_id;
+  v_igdb    integer := p_igdb_id;
+  v_cat     uuid := p_catalog_id;
+  v_copies  jsonb;
+  v_id      uuid;
+begin
+  select * into c from public.compilations where id = p_compilation;
+  if not found then
+    raise exception 'NOT_FOUND';
+  end if;
+  select t.image, t.parent_catalog_id into v_tpl_img, v_tpl_cat
+    from public.compilation_templates t where t.id = c.template_id;
+  if v_rawg is null and v_igdb is null and v_cat is null and v_tpl_cat is not null then
+    select cg.id, cg.rawg_id, cg.igdb_id into v_cat, v_rawg, v_igdb
+      from public.catalog_games cg where cg.id = v_tpl_cat;
+  end if;
+  select coalesce(jsonb_agg(jsonb_strip_nulls(jsonb_build_object(
+           'id', gen_random_uuid()::text,
+           'platform', public.canonical_platform_terms(jsonb_build_array(e->>'platform'))->>0,
+           'format', nullif(btrim(coalesce(e->>'format', '')), '')))), '[]'::jsonb)
+    into v_copies
+    from jsonb_array_elements(coalesce(c.copies, '[]'::jsonb)) e;
+
+  perform set_config('app.compilation_game', '1', true);
+  select id into v_id from public.games where compilation_game_for = p_compilation;
+  if v_id is null then
+    insert into public.games
+      (user_id, title, status, image, stock_image, original_image, rawg_id, igdb_id,
+       catalog_id, copies, released, added_at, played_hours, compilation_game_for)
+    values
+      (c.user_id, c.title, 'backlog', coalesce(c.parent_image, v_tpl_img), v_tpl_img, v_tpl_img,
+       v_rawg, v_igdb, v_cat, v_copies, c.released, c.created_at, 0, p_compilation)
+    returning id into v_id;
+  else
+    update public.games
+       set title = c.title,
+           copies = v_copies,
+           released = coalesce(released, c.released),
+           rawg_id = coalesce(v_rawg, rawg_id),
+           igdb_id = coalesce(v_igdb, igdb_id),
+           catalog_id = coalesce(v_cat, catalog_id)
+     where id = v_id;
+  end if;
+  perform set_config('app.compilation_game', '', true);
+  return v_id;
+end;
+$$;
+
+-- The owner's entry point: create or refresh their compilation's game row (and
+-- optionally link it to a catalog game), returning the row. Self-gated.
+create or replace function public.ensure_compilation_game(
+  p_compilation uuid,
+  p_rawg_id integer default null,
+  p_igdb_id integer default null,
+  p_catalog_id uuid default null
+)
+returns setof public.games
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  v_id uuid;
+begin
+  if not exists (select 1 from public.compilations
+                  where id = p_compilation and user_id = auth.uid()) then
+    raise exception 'NOT_FOUND';
+  end if;
+  v_id := public.upsert_compilation_game(p_compilation, p_rawg_id, p_igdb_id, p_catalog_id);
+  return query select * from public.games where id = v_id;
+end;
+$$;
+
+-- One-off migration (NOT called by this file): give every compilation that
+-- lacks one its game row. p_dry_run (the default) only lists what it would
+-- create — owner, title, catalog link, cover — so the rows can be reviewed
+-- before anything is written. Run over a direct connection; the app roles can't
+-- execute it (revoke at the end of the file). Undo: delete the games rows with
+-- compilation_game_for set.
+create or replace function public.migrate_compilation_games(p_dry_run boolean default true)
+returns table (
+  compilation_id uuid,
+  user_id        uuid,
+  title          text,
+  catalog_id     uuid,
+  rawg_id        integer,
+  igdb_id        integer,
+  image          text,
+  game_id        uuid
+)
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  r record;
+begin
+  for r in
+    select k.id, k.user_id as owner, k.title as comp_title, k.parent_image,
+           t.image as tpl_image, cg.id as cat_id, cg.rawg_id as cat_rawg,
+           cg.igdb_id as cat_igdb, cg.image as cat_image
+      from public.compilations k
+      left join public.compilation_templates t on t.id = k.template_id
+      left join public.catalog_games cg on cg.id = t.parent_catalog_id
+     where not exists (select 1 from public.games g where g.compilation_game_for = k.id)
+     order by k.user_id, k.created_at
+  loop
+    compilation_id := r.id;
+    user_id := r.owner;
+    title := r.comp_title;
+    catalog_id := r.cat_id;
+    rawg_id := r.cat_rawg;
+    igdb_id := r.cat_igdb;
+    image := coalesce(r.parent_image, r.tpl_image, r.cat_image);
+    game_id := case when p_dry_run then null else public.upsert_compilation_game(r.id) end;
+    return next;
+  end loop;
+end;
+$$;
 
 -- Expandable/collapsible grouping (all additive; existing rows keep today's
 -- always-expanded rendering):
@@ -8667,6 +8899,7 @@ begin
     from public.games g
    where g.user_id = auth.uid() and g.id <> p_game
      and g.compilation_id is null
+     and g.compilation_game_for is null  -- never a compilation game (86fc0b4b)
      and g.status in ('backlog', 'playing', 'finished')
      and ((v_rawg is not null and g.rawg_id = v_rawg)
        or (v_rawg is null and v_igdb is not null
@@ -8869,6 +9102,9 @@ declare
   v_name     text;
   v_playing  uuid;
 begin
+  -- A compilation game is played through its games (issue 86fc0b4b).
+  perform public.assert_not_compilation_game(p_game);
+  perform public.assert_not_compilation_game(p_other);
   if p_game = p_other then
     raise exception 'Cannot link a game to itself';
   end if;
@@ -9834,6 +10070,8 @@ declare
   v_child_id  uuid;
   v_child_ids uuid[] := '{}';
 begin
+  -- A compilation game is played through its games (issue 86fc0b4b).
+  perform public.assert_not_compilation_game(p_game);
   if auth.uid() is null then raise exception 'Not authenticated'; end if;
 
   select * into g from public.games
@@ -9844,6 +10082,16 @@ begin
   end if;
   if g.compilation_id is not null then
     raise exception 'This game is already part of a compilation';
+  end if;
+  -- The card becomes the compilation's own game (below), which can't be a
+  -- family edition or in a co-op pact (issue 86fc0b4b).
+  if g.family_id is not null then
+    raise exception 'Unlink this game''s editions before splitting it into its games';
+  end if;
+  if exists (select 1 from public.co_op_pacts cp
+              where cp.status in ('pending', 'active')
+                and (cp.inviter_game = p_game or cp.invitee_game = p_game)) then
+    raise exception 'Finish or leave the co-op pact on this game before splitting it into its games';
   end if;
 
   select * into t from public.compilation_templates where id = p_template;
@@ -9967,7 +10215,29 @@ begin
     select coins into v_coins from public.profiles where id = auth.uid();
   end if;
 
-  delete from public.games where id = p_game and user_id = auth.uid();
+  -- The card itself becomes the compilation's game (issue 86fc0b4b) instead of
+  -- being deleted: its id, catalog link, review, like, priority and history
+  -- stay. It leaves the economy — its fee was refunded above and its hours now
+  -- count in the bundle total (carryover_hours) — and keeps platform/format
+  -- copies only, the cost having moved to the games inside. Muted like a
+  -- platform split, so the reset isn't logged as a shelve or a playtime
+  -- correction.
+  perform set_config('app.split_in_progress', '1', true);
+  perform set_config('app.compilation_game', '1', true);
+  update public.games
+     set compilation_game_for = v_comp_id,
+         status = 'backlog', finish_tag = null, started_at = null, finished_at = null,
+         reward = null, price_paid = null, played_hours = 0, slot_id = null,
+         in_rotation = false, rotation_origin = null, pre_rotation_ongoing = null,
+         completionist = false, co_op = false, resumed = false,
+         personal_hours = null, length_premium_owed = 0,
+         started_economy_off = false, started_story_locked = false,
+         prerequisite_game_id = null, preordered_at = null, preorder_expected_on = null,
+         copies = (select coalesce(jsonb_agg(e - 'cost'), '[]'::jsonb)
+                     from jsonb_array_elements(coalesce(g.copies, '[]'::jsonb)) e)
+   where id = p_game and user_id = auth.uid();
+  perform set_config('app.compilation_game', '', true);
+  perform set_config('app.split_in_progress', '', true);
 
   insert into public.compilation_events
     (user_id, compilation_id, event_type, title, total_cost, child_count)
@@ -11763,9 +12033,12 @@ language plpgsql
 security definer set search_path = public
 as $$
 begin
+  -- A compilation game is never played itself (issue 86fc0b4b): adding one
+  -- isn't a new game to play, so it never breaks the streak.
   if coalesce(current_setting('app.split_in_progress', true), '') = '1'
      or coalesce(current_setting('app.co_op_join', true), '') = '1'
-     or coalesce(new.stealth, false) then
+     or coalesce(new.stealth, false)
+     or new.compilation_game_for is not null then
     return coalesce(new, old);
   end if;
   -- Modifier-only exemption (fourth carve-out above): at least one base copy,
@@ -11969,6 +12242,8 @@ as $$
 declare
   v_title text;
 begin
+  -- A compilation game is played through its games (issue 86fc0b4b).
+  perform public.assert_not_compilation_game(p_game_id);
   if p_kind not in ('play', 'complete') then
     raise exception 'Unknown pull kind';
   end if;
@@ -15317,6 +15592,7 @@ begin
          exists (
            select 1 from public.games g
             where g.user_id = p.id and g.status <> 'wishlist'
+              and g.compilation_game_for is null  -- never a compilation game (86fc0b4b)
               -- A stealth copy must not leak ownership to a friend browsing the
               -- invite picker (issue 4604769c); the friend just sees "doesn't
               -- own it" and can offer to cover the fee.
@@ -15367,6 +15643,8 @@ declare
   v_partner_game uuid;
   v_platform     text;
 begin
+  -- A compilation game is played through its games (issue 86fc0b4b).
+  perform public.assert_not_compilation_game(p_game);
   if v_me is null then raise exception 'Not authenticated'; end if;
   if p_partner = v_me then raise exception 'You can''t pact with yourself'; end if;
   if not public.are_friends(v_me, p_partner) then
@@ -15611,6 +15889,7 @@ begin
   select g.* into v_game
     from public.games g
    where g.user_id = v_me and g.status <> 'wishlist'
+     and g.compilation_game_for is null  -- never a compilation game (86fc0b4b)
      and v_pact.game_key = any(public.game_identity_keys(g.rawg_id, g.igdb_id, g.catalog_id))
      and public.co_op_card_on_platform(g.copies, v_platform)
      and (p_game is null or g.id = p_game)
@@ -15927,6 +16206,7 @@ begin
   left join lateral (
     select g.id from public.games g
      where g.user_id = v_me and g.status <> 'wishlist'
+       and g.compilation_game_for is null  -- never a compilation game (86fc0b4b)
        and (case when cp.inviter = v_me then cp.inviter_game else cp.invitee_game end) is null
        and cp.game_key = any(public.game_identity_keys(g.rawg_id, g.igdb_id, g.catalog_id))
        and public.co_op_card_on_platform(g.copies,
@@ -17599,6 +17879,9 @@ as $$
                  'g:' || g.id::text))::numeric
     from public.games g
    where g.user_id = p_user and g.status <> 'wishlist'
+     -- A compilation's own game row isn't another owned game: its games
+     -- already count, one each (issue 86fc0b4b).
+     and g.compilation_game_for is null
   union all
   select 'games_reviewed',
          count(distinct coalesce(
@@ -17832,6 +18115,7 @@ begin
     select g.*
       from public.games g
      where g.compilation_id is null
+       and g.compilation_game_for is null
        and (select count(distinct btrim(c ->> 'platform'))
               from jsonb_array_elements(coalesce(g.copies, '[]'::jsonb)) c
              where btrim(coalesce(c ->> 'platform', '')) <> '') > 1
@@ -17946,6 +18230,11 @@ $$;
 
 -- Admin-only migration tooling — never callable from a client.
 revoke execute on function public.split_platform_instances(boolean) from public, anon, authenticated;
+-- Compilation games (issue 86fc0b4b): the internal upsert has no ownership
+-- check (ensure_compilation_game is the owner's gated door) and the migration
+-- is a one-off run over a direct connection.
+revoke execute on function public.upsert_compilation_game(uuid, integer, integer, uuid) from public, anon, authenticated;
+revoke execute on function public.migrate_compilation_games(boolean) from public, anon, authenticated;
 
 -- ============================================================================
 -- Pre-orders (2026-07-18; reworked to the Bazaar model same day): games you
@@ -18743,6 +19032,8 @@ declare
   v_id        uuid;
   v_my_name   text;
 begin
+  -- A compilation game is played through its games (issue 86fc0b4b).
+  perform public.assert_not_compilation_game(p_game);
   if v_me is null then raise exception 'Not authenticated'; end if;
   if p_amount is null or p_amount < 1 then raise exception 'Stake must be at least 1 coin'; end if;
 
@@ -19591,6 +19882,8 @@ declare
   v_id      uuid;
   v_my_name text;
 begin
+  -- A compilation game is played through its games (issue 86fc0b4b).
+  perform public.assert_not_compilation_game(p_game);
   if v_me is null then raise exception 'Not authenticated'; end if;
   if p_lender is null or p_lender = v_me then
     raise exception 'Pick a friend to ask';
@@ -20191,6 +20484,8 @@ declare
   v_id    uuid;
   v_my_name text;
 begin
+  -- A compilation game is played through its games (issue 86fc0b4b).
+  perform public.assert_not_compilation_game(p_game);
   if v_me is null then raise exception 'Not authenticated'; end if;
   if p_receiver = v_me then raise exception 'Pick a friend, not yourself'; end if;
 

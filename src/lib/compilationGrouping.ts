@@ -271,3 +271,14 @@ export function findExpandTemplate(
   }
   return null;
 }
+
+/** Split loaded library rows into the playable games and the compilations' own
+ *  game rows (issue 86fc0b4b). A compilation game is never played itself, so it
+ *  is kept out of the games list every board, lane, picker and stat reads, and
+ *  only the places that show a compilation as a game look it up. */
+export function splitCompilationGames(rows: Game[]): { games: Game[]; compilationGames: Game[] } {
+  const games: Game[] = [];
+  const compilationGames: Game[] = [];
+  for (const g of rows) (g.compilationGameFor ? compilationGames : games).push(g);
+  return { games, compilationGames };
+}

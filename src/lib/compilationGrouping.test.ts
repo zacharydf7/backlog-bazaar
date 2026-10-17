@@ -12,6 +12,7 @@ import {
   groupCollapsedCompilations,
   inheritedCover,
   ownershipUnits,
+  splitCompilationGames,
   orderCompilationChildren,
 } from "./compilationGrouping";
 
@@ -379,5 +380,16 @@ describe("ownershipUnits (86fc0b4b)", () => {
   it("returns the input untouched when nothing is bundled", () => {
     const games = [game({ id: "a" }), game({ id: "b" })];
     expect(ownershipUnits(games)).toBe(games);
+  });
+});
+
+describe("splitCompilationGames (86fc0b4b)", () => {
+  it("keeps compilation game rows out of the playable games, in load order", () => {
+    const a = game({ id: "a" });
+    const kh = game({ id: "kh", compilationGameFor: "KH" });
+    const b = game({ id: "b", compilationId: "KH" });
+    const { games, compilationGames } = splitCompilationGames([a, kh, b]);
+    expect(games.map((g) => g.id)).toEqual(["a", "b"]);
+    expect(compilationGames.map((g) => g.id)).toEqual(["kh"]);
   });
 });

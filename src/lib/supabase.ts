@@ -115,6 +115,7 @@ export interface GameRow {
   stealth: boolean | null;
   priority: string | null;
   original_platform: string | null;
+  compilation_game_for?: string | null;
   personal_screenshots?: unknown;
   resumed: boolean | null;
   prerequisite_game_id: string | null;
@@ -204,6 +205,7 @@ export function rowToGame(r: GameRow): Game {
     stealth: r.stealth ?? false,
     priority: coerceGamePriority(r.priority),
     originalPlatform: r.original_platform ?? null,
+    compilationGameFor: r.compilation_game_for ?? null,
     personalScreenshots: coercePersonalScreenshots(r.personal_screenshots),
     resumed: r.resumed ?? false,
     prerequisiteGameId: r.prerequisite_game_id ?? null,

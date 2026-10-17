@@ -40,6 +40,7 @@ function visitingSession(games: Game[]): ViewingSession {
     accent: null,
     bg: null,
     games,
+    compilationGames: [],
   };
 }
 
