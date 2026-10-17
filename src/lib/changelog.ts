@@ -93,6 +93,10 @@ export const RELEASES: Release[] = [
         tag: "feature",
       },
       {
+        text: "Your Clear Streak now grows with Verified clears. A finish with too little time logged won't add to it, but won't break it either.",
+        tag: "improvement",
+      },
+      {
         text: "A Family's cover picker names each edition's platform, so editions with the same name are easy to tell apart.",
         tag: "fix",
       },

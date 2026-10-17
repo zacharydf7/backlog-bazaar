@@ -60,6 +60,7 @@ import {
   bountyGateHours,
   bountyRelease,
   heldAtFinish,
+  isVerifiedClear,
 } from "./lib/bountyHold";
 import {
   splitEvenly,
@@ -9013,6 +9014,8 @@ export const useStore = create<BazaarState>((set, get) => ({
       held > 0
         ? { bountyHeld: held, bountyHeldTotal: total, bountyGateHours: gateHours ?? undefined }
         : { bountyHeld: 0, bountyHeldTotal: undefined, bountyGateHours: undefined };
+    // Too little logged to count toward the Clear Streak (mirrors apply_finish).
+    const unverifiedFinish = isVerifiedClear(game, get().bountyGatePct) === false;
     const heldToast = (held: number) => {
       if (held > 0) toast(`${held} more coins unlock as you log your time on ${game.title}`, Clock);
     };
@@ -9095,12 +9098,13 @@ export const useStore = create<BazaarState>((set, get) => ({
       if (localHeld > 0) {
         led = [localEvent("bounty_held", -localHeld, nc, game.title), ...led];
       }
-      // Clear Streak (offline mirror of apply_finish): a genuinely new clear extends
-      // the streak; a resumed re-finish of an already-finished game does not, and
-      // neither does a stealth game (streak-inert both ways — issue 4604769c). The
-      // counter advances regardless of economy mode; the coin bonus is gated like the
-      // bounty. The all-time best is a running max.
-      const inertFinish = game.resumed === true || game.stealth === true;
+      // Clear Streak (offline mirror of apply_finish): a genuinely new, VERIFIED
+      // clear extends the streak; a resumed re-finish of an already-finished game
+      // does not, nor a stealth game (streak-inert both ways — issue 4604769c), nor
+      // one with too little of its length logged (neither extends nor breaks it).
+      // The counter advances regardless of economy mode; the coin bonus is gated
+      // like the bounty. The all-time best is a running max.
+      const inertFinish = game.resumed === true || game.stealth === true || unverifiedFinish;
       const prevStreak = get().clearStreak;
       const prevBest = get().clearStreakBest;
       let nextStreak = prevStreak;
@@ -9184,10 +9188,10 @@ export const useStore = create<BazaarState>((set, get) => ({
     const held = heldRaw ?? 0;
     const paidBonuses = { storyOrder: storyBonus ?? 0, collectorsRecord: collectorBonus ?? 0 };
     // The server is authoritative for the Clear Streak: it decides whether this
-    // finish extended it (a resumed re-finish doesn't, nor does a stealth game —
-    // streak-inert, issue 4604769c), pays the escalating bonus, and reports the
-    // new count + all-time best. `best` is a running max.
-    const inertFinish = game.resumed === true || game.stealth === true;
+    // finish extended it (a resumed re-finish doesn't, nor a stealth game —
+    // streak-inert, issue 4604769c — nor an unverified clear), pays the escalating
+    // bonus, and reports the new count + all-time best. `best` is a running max.
+    const inertFinish = game.resumed === true || game.stealth === true || unverifiedFinish;
     const streakInfo = { streak, bonus: streakBonus ?? 0, newRecord: newRecord === true };
     set({
       coins: newCoins,

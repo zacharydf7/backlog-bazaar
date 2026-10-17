@@ -67,6 +67,39 @@ describe("Clear Streak — offline finishGame", () => {
   });
 });
 
+describe("Clear Streak — only Verified clears extend it (2026-10-17)", () => {
+  const timed = (id: string, playedHours: number): Game => ({ ...playing(id), hours: 40, playedHours });
+
+  it("an unverified clear neither extends nor breaks the streak", async () => {
+    useStore.setState({
+      clearStreak: 4,
+      clearStreakBest: 4,
+      bountyGatePct: 25,
+      games: [timed("thin", 1), timed("solid", 12)],
+    });
+    await store().finishGame("thin"); // 1h of a 40h game — short of the 10h bar
+    expect(store().clearStreak).toBe(4);
+    expect(store().ledger.some((e) => e.kind === "clear_streak_bonus")).toBe(false);
+
+    await store().finishGame("solid"); // 12h logged — verified
+    expect(store().clearStreak).toBe(5);
+    expect(store().ledger.some((e) => e.kind === "clear_streak_bonus")).toBe(true);
+  });
+
+  it("counts every clear while the gate is off", async () => {
+    useStore.setState({ bountyGatePct: 0, games: [timed("thin", 0)] });
+    await store().finishGame("thin");
+    expect(store().clearStreak).toBe(1);
+  });
+
+  it("is enforced server-side in apply_finish", () => {
+    const schema = readFileSync(resolve(process.cwd(), "supabase/schema.sql"), "utf8");
+    const start = schema.indexOf("create or replace function public.apply_finish(");
+    const fn = schema.slice(start, schema.indexOf("\n$$;", start));
+    expect(fn).toContain("if not coalesce(v_resumed, false) and not v_stealth and not v_unverified then");
+  });
+});
+
 describe("Clear Streak — the break condition (a new game to play)", () => {
   it("resets the streak to zero when a game to play is added, keeping the best", async () => {
     await store().finishGame("a");

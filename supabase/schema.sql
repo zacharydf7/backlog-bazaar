@@ -7423,6 +7423,7 @@ declare
   v_gate_pct     integer;
   v_gate         real;     -- logged hours that release the whole bounty
   v_held         integer := 0;
+  v_unverified   boolean := false; -- too little logged to extend the Clear Streak
 begin
   -- Snapshot the pre-action reversible state (slot/lane flags + tag) so undo_action
   -- can restore the game exactly; the update below destroys these.
@@ -7579,11 +7580,18 @@ begin
   -- The counter is play state: it advances even while the economy is frozen. Only
   -- the coin bonus it pays is gated exactly like the bounty. The all-time best is a
   -- running max, so it survives the next break and flags a new personal record here.
+  -- Only a VERIFIED clear extends it (2026-10-17): one with at least the gate share
+  -- of its length logged (bounty_gate_pct, the same bar as the Verified mark). An
+  -- unverified finish neither extends nor breaks the streak; a game with no length,
+  -- or the gate turned off, counts as before.
   select coalesce(clear_streak, 0), coalesce(clear_streak_best, 0)
     into v_streak_prev, v_streak_best
     from public.profiles where id = auth.uid();
+  select bounty_gate_pct into v_gate_pct from public.app_config where id = 1;
+  v_unverified := coalesce(v_length, 0) > 0 and coalesce(v_gate_pct, 25) > 0
+                  and v_played < coalesce(v_gate_pct, 25) / 100.0 * v_length;
   v_streak := v_streak_prev;
-  if not coalesce(v_resumed, false) and not v_stealth then
+  if not coalesce(v_resumed, false) and not v_stealth and not v_unverified then
     v_streak := v_streak_prev + 1;
     v_new_record := v_streak > v_streak_best;
     select clear_streak_threshold, clear_streak_bonus_base,

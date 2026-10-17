@@ -69,7 +69,8 @@ export function FinishCheckModal({
           You&apos;ve logged {formatPlaytime(played)} of about {formatPlaytime(length)} on{" "}
           <span className="font-medium text-ink">{game.title}</span>. Finishing now pays{" "}
           <CoinIcon size={12} /> {payNow}; the other <CoinIcon size={12} /> {held} unlock as you
-          log your time, all of it at {formatPlaytime(gateHours)}.
+          log your time, all of it at {formatPlaytime(gateHours)}. A clear with that much logged
+          also counts toward your Clear Streak.
         </p>
 
         <div className="mt-4 rounded-xl border border-line bg-panel/40 p-3">

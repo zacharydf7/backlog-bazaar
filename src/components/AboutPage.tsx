@@ -173,7 +173,10 @@ export function AboutPage() {
             </p>
             <p>
               Finish games back-to-back and you build a{" "}
-              <strong className="text-ink">Clear Streak</strong>. Your{" "}
+              <strong className="text-ink">Clear Streak</strong> — every{" "}
+              <strong className="text-ink">Verified</strong> clear (one with at least{" "}
+              {bountyGatePct}% of its length logged) adds to it, while a clear with less logged
+              neither adds to nor breaks it. Your{" "}
               {clearStreak_cfg.threshold === 3
                 ? "third"
                 : `${clearStreak_cfg.threshold}th`}{" "}
