@@ -302,6 +302,29 @@ describe("Owned On details the hub's members (9f420872)", () => {
 });
 
 describe("Family cover picker (9f420872)", () => {
+  it("names each same-titled edition by its platform (cfe7f69a)", () => {
+    const a = game({
+      id: "a",
+      title: "Ball x Pit",
+      familyId: "F",
+      familyPrimaryGameId: "a",
+      copies: [{ id: "c1", platform: "Nintendo Switch" }],
+    });
+    const b = game({
+      id: "b",
+      title: "BALL x PIT",
+      familyId: "F",
+      familyPrimaryGameId: "a",
+      copies: [{ id: "c2", platform: "Nintendo Switch 2" }],
+    });
+    render(<OverviewTab game={a} screenshots={[]} members={[a, b]} />);
+    const options = within(screen.getByRole("combobox", { name: "Family cover" }))
+      .getAllByRole("option")
+      .map((o) => o.textContent);
+    expect(options).toContain("Ball x Pit (Nintendo Switch)");
+    expect(options).toContain("BALL x PIT (Nintendo Switch 2)");
+  });
+
   it("lets the owner front the family with any member's art", () => {
     const setFamilyCover = vi.fn().mockResolvedValue(undefined);
     const a = game({ id: "a", title: "Original", familyId: "F", familyPrimaryGameId: "a" });

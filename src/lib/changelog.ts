@@ -81,6 +81,14 @@ export const RELEASES: Release[] = [
         tag: "fix",
       },
       {
+        text: "The × in library search clears what you typed (tap it again to close).",
+        tag: "improvement",
+      },
+      {
+        text: "A Family's cover picker names each edition's platform, so editions with the same name are easy to tell apart.",
+        tag: "fix",
+      },
+      {
         text: "A compilation now has a page like any game's: its own cover, details, review, likes and community stats, shared with everyone who owns it, plus a Games tab listing what's inside.",
         tag: "feature",
       },

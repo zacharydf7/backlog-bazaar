@@ -16,7 +16,7 @@ import {
   spendRowGroups,
 } from "../../lib/copies";
 import { valueStatusOf } from "../../lib/valueMetrics";
-import { ownedTitleGroups } from "../../lib/gameHub";
+import { familyMemberLabel, ownedTitleGroups } from "../../lib/gameHub";
 import { ValuePlayedNote } from "../ValueBadge";
 import { SuggestEditButton } from "../GameSubmissionForm";
 import { ScreenshotGallery } from "../ScreenshotGallery";
@@ -115,9 +115,11 @@ function FamilyCoverPicker({ game, members }: { game: Game; members: Game[] }) {
         className="w-full rounded-lg border border-line bg-panel px-2 py-1.5 text-sm text-ink outline-none transition focus:border-brand sm:max-w-xs"
       >
         <option value="">Primary edition&apos;s cover (default)</option>
+        {/* Editions of one game share a title, so each names its platform(s),
+            as the Journey/Review member pickers do (issue cfe7f69a). */}
         {fam.map((m) => (
           <option key={m.id} value={m.id}>
-            {m.title}
+            {familyMemberLabel(m)}
           </option>
         ))}
       </select>
