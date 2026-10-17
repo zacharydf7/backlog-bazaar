@@ -6,11 +6,11 @@ import { effectiveLength } from "../lib/personalLength";
 import { isVerifiedClear } from "../lib/bountyHold";
 import { CoinIcon } from "./CoinIcon";
 
-/** A clear's logged time against its length (coin outliers, 2026-10-17), with
- *  a verified mark once the logged time reaches the bounty gate's share of the
- *  length. Shown on finished cards — yours and the ones you visit. A retired
- *  or endless game isn't a clear, and a game with no length has nothing to
- *  measure against, so neither shows one. */
+/** A clear's Verified / Unverified mark (coin outliers, 2026-10-17): verified
+ *  once its logged time reaches the bounty gate's share of the length (the
+ *  hours themselves sit in the tooltip). Shown on finished cards — yours and
+ *  the ones you visit. A retired or endless game isn't a clear, and a game with
+ *  no length has nothing to measure against, so neither shows one. */
 export function ClearLogChip({ game }: { game: Game }) {
   const gatePct = useStore((s) => s.bountyGatePct);
   const length = effectiveLength(game);
@@ -19,21 +19,21 @@ export function ClearLogChip({ game }: { game: Game }) {
     return null;
   }
   const Icon = verified ? BadgeCheck : Clock;
+  const logged = `${formatPlaytime(game.playedHours ?? 0)} of ${formatPlaytime(length)} logged`;
   return (
     <span
       title={
         verified
-          ? `Verified clear: at least ${gatePct}% of the game's length logged`
-          : `${formatPlaytime(game.playedHours ?? 0)} logged of a ${formatPlaytime(length)} game`
+          ? `${logged} — at least ${gatePct}% of the game's length`
+          : `${logged} — Verified at ${gatePct}% of the game's length`
       }
       className={
-        "inline-flex items-center gap-1 whitespace-nowrap rounded border px-1.5 py-0.5 font-mono text-[10px] " +
+        "inline-flex items-center gap-1 whitespace-nowrap rounded border px-1.5 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-[0.08em] " +
         (verified ? "border-success/40 bg-success/10 text-success" : "border-line bg-panel text-subtle")
       }
     >
       <Icon size={11} className="shrink-0" />
-      {verified && <span className="font-semibold">Verified ·</span>}
-      {formatPlaytime(game.playedHours ?? 0)} / {formatPlaytime(length)}
+      {verified ? "Verified" : "Unverified"}
     </span>
   );
 }

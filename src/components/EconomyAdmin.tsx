@@ -926,10 +926,10 @@ function PreordersCard() {
   );
 }
 
-/** Admin editor for the logged-time gate on finish bounties (coin outliers,
- *  2026-10-17): the share of a game's length a finish must have logged to pay
- *  its whole bounty at once. Below it the activation refund pays now and the
- *  rest unlocks as time is logged. */
+/** Admin editor for the logged-time gate (coin outliers, 2026-10-17): the share
+ *  of a game's length a finish must have logged to pay its whole bounty at
+ *  once — and to wear the Verified mark. Below it the activation refund pays
+ *  now and the rest unlocks as time is logged. */
 function BountyGateCard() {
   const { bountyGatePct, setBountyGatePct } = useStore();
   const [pct, setPct] = useState(String(bountyGatePct));
@@ -948,17 +948,17 @@ function BountyGateCard() {
     <div className="rounded-2xl border border-line bg-surface p-4">
       <div className="mb-3">
         <h3 className="inline-flex items-center gap-2 font-display text-lg text-ink">
-          <SlidersHorizontal size={16} className="text-accent" /> Logged-time gate
+          <SlidersHorizontal size={16} className="text-accent" /> Verified clears &amp; logged time
         </h3>
         <p className="text-xs text-muted">
-          A finish with less than this share of the game&apos;s length logged pays back its
-          activation cost now; the rest of the bounty unlocks as the player logs their time. Nothing
-          is ever taken away.
+          A finished game is <span className="font-medium text-ink">Verified</span> once this
+          share of its length is logged. A finish with less pays back its activation cost now, and
+          the rest of the bounty unlocks as the player logs their time. Nothing is ever taken away.
         </p>
       </div>
       <RateField
-        label="Logged time for the full bounty (% of length)"
-        hint="0 pays every bounty in full at finish."
+        label="Logged time to verify (% of length)"
+        hint="Also the logged time for a full bounty at finish. 0 turns both off: every bounty pays in full and no clears are marked."
         min={0}
         max={100}
         value={pct}

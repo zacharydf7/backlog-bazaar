@@ -69,7 +69,7 @@ export const RELEASES: Release[] = [
         tag: "feature",
       },
       {
-        text: "Finished games show how much of their length you logged, with a Verified mark once it's enough.",
+        text: "Finished games are marked Verified once you've logged enough of their length, or Unverified until then.",
         tag: "improvement",
       },
       {

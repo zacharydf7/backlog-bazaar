@@ -23,16 +23,22 @@ beforeEach(() => {
 });
 
 describe("ClearLogChip (coin outliers, 2026-10-17)", () => {
-  it("marks a clear verified once enough of its length is logged", () => {
+  it("marks a clear Verified once enough of its length is logged", () => {
     render(<ClearLogChip game={finished()} />);
-    expect(screen.getByText(/Verified/)).toBeTruthy();
-    expect(screen.getByText(/26h 36m \/ 27h/)).toBeTruthy();
+    const chip = screen.getByText("Verified");
+    expect(chip.getAttribute("title")).toMatch(/26h 36m of 27h logged/);
   });
 
-  it("shows logged time without the mark when too little is logged", () => {
+  it("marks it Unverified when too little is logged, naming the bar in the tooltip", () => {
     render(<ClearLogChip game={finished({ title: "Granblue", hours: 130, playedHours: 1 })} />);
-    expect(screen.queryByText(/Verified/)).toBeNull();
-    expect(screen.getByText(/1h \/ 130h/)).toBeTruthy();
+    const chip = screen.getByText("Unverified");
+    expect(chip.getAttribute("title")).toMatch(/1h of 130h logged — Verified at 25%/);
+  });
+
+  it("follows the admin-set percentage", () => {
+    act(() => useStore.setState({ bountyGatePct: 50 }));
+    render(<ClearLogChip game={finished({ hours: 40, playedHours: 15 })} />);
+    expect(screen.getByText("Unverified")).toBeTruthy();
   });
 
   it("shows nothing for a retired game, an endless one, or one with no length", () => {

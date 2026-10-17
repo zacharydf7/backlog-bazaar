@@ -144,8 +144,9 @@ export function AboutPage() {
               least <Coin n={bountyBase} />) and move it to your trophy shelf. The bounty follows
               your logged time: with at least {bountyGatePct}% of the game&apos;s length logged it
               pays in full, and with less your activation coins come straight back while the rest
-              unlocks as you log your time. Finished cards show your logged time, with a{" "}
-              <strong className="text-ink">Verified</strong> mark once it&apos;s enough. Spend those
+              unlocks as you log your time. Finished cards are marked{" "}
+              <strong className="text-ink">Verified</strong> once that much is logged, or Unverified
+              until then. Spend those
               coins on your next game, and repeat. Hit it by mistake? For about 15 seconds an{" "}
               <strong className="text-ink">Undo</strong> button on the confirmation puts the game
               back exactly where it was and refunds the coins.
