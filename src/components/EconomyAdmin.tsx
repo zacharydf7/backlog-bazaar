@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Coins,
   RotateCcw,
@@ -11,12 +11,21 @@ import {
   Infinity as InfinityIcon,
   Flame,
   Sparkles,
+  EyeOff,
 } from "lucide-react";
 import { useStore } from "../store";
 import { CoinIcon } from "./CoinIcon";
 import { formatPlaytime } from "../lib/playtime";
 import { rotationResetSummary, resetDayLabel } from "../lib/rotation";
 import type { FeatureBonusConfig } from "../lib/featureBonuses";
+import {
+  clampShadowConfig,
+  shadowStandingLabel,
+  type ShadowAdjustment,
+  type ShadowConfig,
+  type ShadowOverrideMode,
+  type ShadowPlayer,
+} from "../lib/shadowEconomy";
 import {
   formulaBreakdown,
   cloneFormula,
@@ -1309,6 +1318,294 @@ function FeatureBonusesCard() {
   );
 }
 
+/** Hidden payout adjustments — the shadow economy (owner-designed
+ *  2026-10-17). Players are never told: engaged players (most recent paid
+ *  clears Verified) get an automatic bounty buff, and a nerf, custom buff or
+ *  exemption is set here per player. Everything on this card — settings,
+ *  overrides, the record of adjustments — is admin-only (economy.shadow). */
+function ShadowEconomyCard() {
+  const {
+    fetchShadowConfig,
+    saveShadowConfig,
+    fetchShadowOverview,
+    setShadowOverride,
+    fetchShadowAdjustments,
+  } = useStore();
+  const [saved, setSaved] = useState<ShadowConfig | null>(null);
+  const [draft, setDraft] = useState<Record<keyof ShadowConfig, string> | null>(null);
+  const [enabled, setEnabled] = useState(false);
+  const [players, setPlayers] = useState<ShadowPlayer[]>([]);
+  const [adjustments, setAdjustments] = useState<ShadowAdjustment[]>([]);
+  const [saving, setSaving] = useState(false);
+
+  const toDraft = (c: ShadowConfig) => ({
+    enabled: String(c.enabled),
+    buffPct: String(c.buffPct),
+    nerfPct: String(c.nerfPct),
+    windowClears: String(c.windowClears),
+    minClears: String(c.minClears),
+    verifiedShare: String(c.verifiedShare),
+  });
+
+  const reload = async () => {
+    const [cfg, list, recent] = await Promise.all([
+      fetchShadowConfig(),
+      fetchShadowOverview(),
+      fetchShadowAdjustments(25),
+    ]);
+    if (cfg) {
+      setSaved(cfg);
+      setDraft(toDraft(cfg));
+      setEnabled(cfg.enabled);
+    }
+    setPlayers(list);
+    setAdjustments(recent);
+  };
+  useEffect(() => {
+    void reload();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  if (!saved || !draft) {
+    return (
+      <div className="rounded-2xl border border-line bg-surface p-4 text-sm text-muted">
+        Loading hidden adjustments…
+      </div>
+    );
+  }
+
+  const next = clampShadowConfig({
+    enabled,
+    buffPct: num(draft.buffPct),
+    nerfPct: num(draft.nerfPct),
+    windowClears: num(draft.windowClears),
+    minClears: num(draft.minClears),
+    verifiedShare: num(draft.verifiedShare),
+  });
+  const dirty = JSON.stringify(next) !== JSON.stringify(saved);
+  const field = (k: keyof ShadowConfig) => ({
+    value: draft[k],
+    onChange: (v: string) => setDraft({ ...draft, [k]: v }),
+  });
+
+  async function save() {
+    setSaving(true);
+    const cfg = await saveShadowConfig(next);
+    setSaving(false);
+    if (cfg) await reload();
+  }
+
+  return (
+    <div className="rounded-2xl border border-line bg-surface p-4">
+      <div className="mb-3">
+        <h3 className="inline-flex items-center gap-2 font-display text-lg text-ink">
+          <EyeOff size={16} className="text-accent" /> Hidden adjustments
+        </h3>
+        <p className="text-xs text-muted">
+          Quietly raises or lowers a player&apos;s finish bounty. Players only ever see the final
+          amount; these settings, the per-player overrides and the record below are visible to
+          admins with this permission alone.
+        </p>
+      </div>
+
+      <label className="mb-3 flex items-center gap-2 text-sm text-ink">
+        <input
+          type="checkbox"
+          checked={enabled}
+          onChange={(e) => setEnabled(e.target.checked)}
+          className="h-4 w-4 accent-[var(--brand)]"
+        />
+        On — apply adjustments to finishes
+      </label>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <RateField
+          label="Engaged buff"
+          hint="Added to an engaged player's bounty, and the default for a manual buff."
+          percent
+          min={0}
+          max={100}
+          {...field("buffPct")}
+        />
+        <RateField
+          label="Manual nerf"
+          hint="Taken off the bounty of a player you set to Nerf (unless you give them their own %)."
+          percent
+          min={0}
+          max={100}
+          {...field("nerfPct")}
+        />
+        <RateField
+          label="Clears looked at"
+          hint="How many of a player's most recent paid clears decide whether they're engaged."
+          min={1}
+          max={100}
+          {...field("windowClears")}
+        />
+        <RateField
+          label="Fewest clears to judge"
+          hint="Below this many paid clears, nobody gets the automatic buff yet."
+          min={1}
+          max={100}
+          {...field("minClears")}
+        />
+        <RateField
+          label="Verified share for engaged"
+          hint="The share of those clears that must be Verified."
+          percent
+          min={0}
+          max={100}
+          {...field("verifiedShare")}
+        />
+      </div>
+      <div className="mt-3 flex justify-end gap-2">
+        <button
+          onClick={() => {
+            setDraft(toDraft(saved));
+            setEnabled(saved.enabled);
+          }}
+          disabled={!dirty || saving}
+          className="rounded-xl border border-line px-3 py-2 text-sm font-medium text-ink transition hover:bg-panel disabled:opacity-50"
+        >
+          Revert
+        </button>
+        <button
+          onClick={() => void save()}
+          disabled={!dirty || saving}
+          className="inline-flex items-center gap-1.5 rounded-xl bg-brand px-4 py-2 text-sm font-semibold text-brand-fg shadow-sm transition hover:brightness-105 disabled:opacity-50"
+        >
+          {saving ? "Saving…" : "Save"}
+        </button>
+      </div>
+
+      <h4 className="mt-5 text-sm font-semibold text-ink">Players</h4>
+      <p className="text-[11px] text-subtle">
+        {saved.enabled
+          ? "What each player's next finish would get."
+          : "Off right now — this is what each player would get once it's on."}
+      </p>
+      <div className="mt-2 flex flex-col gap-2">
+        {players.length === 0 ? (
+          <p className="text-xs text-subtle">No players with paid clears yet.</p>
+        ) : (
+          players.map((p) => (
+            <ShadowPlayerRow
+              key={p.userId}
+              player={p}
+              onSave={async (mode, pct, note) => {
+                if (await setShadowOverride(p.userId, mode, pct, note)) await reload();
+              }}
+            />
+          ))
+        )}
+      </div>
+
+      <h4 className="mt-5 text-sm font-semibold text-ink">Recent adjustments</h4>
+      {adjustments.length === 0 ? (
+        <p className="mt-1 text-xs text-subtle">None yet.</p>
+      ) : (
+        <ul className="mt-2 flex flex-col gap-1 text-xs text-muted">
+          {adjustments.map((a) => (
+            <li key={a.id} className="flex flex-wrap items-baseline justify-between gap-x-3">
+              <span className="min-w-0 truncate">
+                <span className="text-ink">{a.displayName}</span> · {a.gameTitle ?? "a deleted game"}
+                {a.kind === "reversed" ? " · undone" : ""}
+              </span>
+              <span className="shrink-0 font-mono">
+                {a.base} → {a.adjusted} ({a.delta > 0 ? "+" : ""}
+                {a.delta}, {a.pct > 0 ? "+" : ""}
+                {a.pct}% {a.source})
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+/** One player's standing and their override editor. */
+function ShadowPlayerRow({
+  player,
+  onSave,
+}: {
+  player: ShadowPlayer;
+  onSave: (mode: ShadowOverrideMode | null, pct: number | null, note: string) => Promise<void>;
+}) {
+  const [mode, setMode] = useState<ShadowOverrideMode | "">(player.overrideMode ?? "");
+  const [pct, setPct] = useState(player.overridePct == null ? "" : String(player.overridePct));
+  const [note, setNote] = useState(player.overrideNote ?? "");
+  const [saving, setSaving] = useState(false);
+  const dirty =
+    (mode || null) !== player.overrideMode ||
+    (pct.trim() === "" ? null : num(pct)) !== player.overridePct ||
+    note.trim() !== (player.overrideNote ?? "");
+
+  return (
+    <div className="rounded-xl border border-line bg-panel/40 p-2.5">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
+        <span className="font-medium text-ink">{player.displayName}</span>
+        <span className="text-xs text-muted">{shadowStandingLabel(player)}</span>
+      </div>
+      {player.adjustments > 0 && (
+        <p className="text-[11px] text-subtle">
+          {player.adjustments} adjusted finish{player.adjustments === 1 ? "" : "es"} · net{" "}
+          {player.adjustedCoins > 0 ? "+" : ""}
+          {player.adjustedCoins} coins
+        </p>
+      )}
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        <select
+          value={mode}
+          onChange={(e) => setMode(e.target.value as ShadowOverrideMode | "")}
+          aria-label={`Override for ${player.displayName}`}
+          className={inputClass + " w-auto"}
+        >
+          <option value="">Automatic</option>
+          <option value="buff">Buff</option>
+          <option value="nerf">Nerf</option>
+          <option value="exempt">Exempt</option>
+        </select>
+        {(mode === "buff" || mode === "nerf") && (
+          <input
+            type="number"
+            min={0}
+            max={100}
+            value={pct}
+            onChange={(e) => setPct(e.target.value)}
+            placeholder="Default %"
+            aria-label={`Custom % for ${player.displayName}`}
+            className={inputClass + " w-28"}
+          />
+        )}
+        {mode && (
+          <input
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder="Private note (why)"
+            aria-label={`Note for ${player.displayName}`}
+            className={inputClass + " min-w-0 flex-1"}
+          />
+        )}
+        <button
+          onClick={async () => {
+            setSaving(true);
+            await onSave(
+              mode || null,
+              pct.trim() === "" ? null : Math.max(0, Math.min(100, Math.round(num(pct)))),
+              note,
+            );
+            setSaving(false);
+          }}
+          disabled={!dirty || saving}
+          className="rounded-lg bg-brand px-3 py-1.5 text-xs font-semibold text-brand-fg transition hover:brightness-105 disabled:opacity-50"
+        >
+          {saving ? "Saving…" : "Save"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function EconomyAdmin() {
   const { economy, setEconomyFormulas, can, games } = useStore();
   const [price, setPrice] = useState<FormulaConfig>(() => cloneFormula(economy.price));
@@ -1325,6 +1622,15 @@ export function EconomyAdmin() {
     JSON.stringify({ price, bounty }) !== JSON.stringify({ price: economy.price, bounty: economy.bounty });
 
   if (!can("economy.edit")) {
+    // Hidden adjustments are their own permission: a holder without economy.edit
+    // gets just that card.
+    if (can("economy.shadow")) {
+      return (
+        <div className="mx-auto flex w-full max-w-4xl flex-col gap-5">
+          <ShadowEconomyCard />
+        </div>
+      );
+    }
     return (
       <div className="mx-auto max-w-3xl rounded-2xl border border-dashed border-line py-16 text-center text-sm text-muted">
         You don&apos;t have access to the Economy settings.
@@ -1398,6 +1704,7 @@ export function EconomyAdmin() {
 
       <PreordersCard />
       <BountyGateCard />
+      {can("economy.shadow") && <ShadowEconomyCard />}
       <OnboardingCard />
       <LaneDefaultsCard />
       <RotationCard />

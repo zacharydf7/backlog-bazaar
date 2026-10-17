@@ -41,7 +41,7 @@ import type { Permission } from "../lib/permissions";
 // delegate or a super-admin.
 const TABS: { view: View; label: string; icon: LucideIcon; perms: Permission[] }[] = [
   { view: "users", label: "Users", icon: Shield, perms: ["users.view"] },
-  { view: "economy", label: "Economy", icon: Coins, perms: ["economy.edit"] },
+  { view: "economy", label: "Economy", icon: Coins, perms: ["economy.edit", "economy.shadow"] },
   { view: "shopmanager", label: "Shop", icon: ShoppingBag, perms: ["shop.manage"] },
   {
     view: "submissions",

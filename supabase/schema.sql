@@ -258,6 +258,7 @@ as $$
     'users.onboarding',
     'badges.grant',
     'economy.edit',
+    'economy.shadow',
     'shop.manage',
     'shop.drafts',
     'shop.publish',
@@ -7324,6 +7325,289 @@ begin
 end;
 $$;
 
+-- ---------------------------------------------------------------------------
+-- Shadow economy (owner-designed 2026-10-17): unannounced adjustments to a
+-- player's finish bounty. An engaged player — most recent paid clears
+-- Verified — earns an automatic buff; a nerf (or a custom buff, or an
+-- exemption) is only ever set per player by an admin. The player sees the
+-- adjusted amount on their bounty row and nothing else: the settings, the
+-- per-player overrides and every adjustment live in these admin-only tables,
+-- readable and writable solely through the economy.shadow definer RPCs below
+-- (RLS on, no policies, client grants revoked). The adjustments table is the
+-- append-only record of every payout changed (CLAUDE.md audit rule), and
+-- shadow_economy_events the record of every settings/override change.
+-- ---------------------------------------------------------------------------
+create table if not exists public.shadow_economy_config (
+  id             integer primary key default 1 check (id = 1),
+  enabled        boolean not null default false,
+  buff_pct       integer not null default 10 check (buff_pct between 0 and 100),
+  nerf_pct       integer not null default 10 check (nerf_pct between 0 and 100),
+  -- "Engaged": at least verified_share % of the last window_clears paid clears
+  -- Verified, with at least min_clears of them to judge by.
+  window_clears  integer not null default 10 check (window_clears between 1 and 100),
+  min_clears     integer not null default 3 check (min_clears between 1 and 100),
+  verified_share integer not null default 80 check (verified_share between 0 and 100),
+  updated_at     timestamptz not null default now(),
+  updated_by     uuid references auth.users (id) on delete set null
+);
+insert into public.shadow_economy_config (id) values (1) on conflict (id) do nothing;
+
+create table if not exists public.shadow_economy_overrides (
+  user_id    uuid primary key references auth.users (id) on delete cascade,
+  mode       text not null check (mode in ('buff', 'nerf', 'exempt')),
+  pct        integer check (pct between 0 and 100), -- null = the config's buff/nerf %
+  note       text,
+  set_by     uuid references auth.users (id) on delete set null,
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.shadow_economy_events (
+  id         uuid primary key default gen_random_uuid(),
+  actor      uuid references auth.users (id) on delete set null,
+  target     uuid references auth.users (id) on delete set null,
+  action     text not null check (action in ('config', 'override_set', 'override_cleared')),
+  detail     jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists public.shadow_economy_adjustments (
+  id         uuid primary key default gen_random_uuid(),
+  user_id    uuid not null references auth.users (id) on delete cascade,
+  game_id    uuid references public.games (id) on delete set null,
+  game_title text,
+  kind       text not null default 'applied' check (kind in ('applied', 'reversed')),
+  source     text not null check (source in ('auto', 'override')),
+  pct        integer not null,  -- signed: +10 buff, -10 nerf
+  base       integer not null,  -- the finish's bounty before the adjustment
+  adjusted   integer not null,  -- and after
+  delta      integer not null,  -- adjusted - base (negated on a reversal)
+  undo_id    uuid,              -- the finish's action_undos row
+  created_at timestamptz not null default now()
+);
+create index if not exists shadow_economy_adjustments_user_idx
+  on public.shadow_economy_adjustments (user_id, created_at desc);
+create index if not exists shadow_economy_adjustments_recent_idx
+  on public.shadow_economy_adjustments (created_at desc);
+
+alter table public.shadow_economy_config      enable row level security;
+alter table public.shadow_economy_overrides   enable row level security;
+alter table public.shadow_economy_events      enable row level security;
+alter table public.shadow_economy_adjustments enable row level security;
+revoke all on public.shadow_economy_config      from anon, authenticated;
+revoke all on public.shadow_economy_overrides   from anon, authenticated;
+revoke all on public.shadow_economy_events      from anon, authenticated;
+revoke all on public.shadow_economy_adjustments from anon, authenticated;
+
+-- A player's standing, ignoring the on/off switch (the admin overview shows
+-- what WOULD apply): an override wins; otherwise the auto buff when their
+-- recent paid clears are Verified enough. A clear is Verified with at least
+-- app_config.bounty_gate_pct of its length logged; one with no length can't
+-- be measured and counts as Verified. p_exclude leaves out the game being
+-- finished (it isn't finished yet when apply_finish asks).
+create or replace function public.shadow_economy_status(p_user uuid, p_exclude uuid default null)
+returns table (pct integer, source text, recent_clears integer, verified_clears integer)
+language plpgsql stable security definer set search_path = public
+as $$
+declare
+  v_cfg   public.shadow_economy_config%rowtype;
+  v_ovr   public.shadow_economy_overrides%rowtype;
+  v_gate  integer;
+  v_n     integer;
+  v_ok    integer;
+begin
+  select * into v_cfg from public.shadow_economy_config where id = 1;
+  select bounty_gate_pct into v_gate from public.app_config where id = 1;
+  select count(*)::integer,
+         count(*) filter (where coalesce(r.len, 0) <= 0
+                             or r.played >= coalesce(v_gate, 25) / 100.0 * r.len)::integer
+    into v_n, v_ok
+    from (select coalesce(g.played_hours, 0) as played, coalesce(g.personal_hours, g.hours) as len
+            from public.games g
+           where g.user_id = p_user and g.status = 'finished'
+             and g.finish_tag in ('beaten', 'completed') and coalesce(g.reward, 0) > 0
+             and g.id is distinct from p_exclude
+           order by g.finished_at desc nulls last
+           limit coalesce(v_cfg.window_clears, 10)) r;
+
+  select * into v_ovr from public.shadow_economy_overrides o where o.user_id = p_user;
+  if found then
+    return query select
+      case v_ovr.mode
+        when 'buff' then coalesce(v_ovr.pct, v_cfg.buff_pct, 10)
+        when 'nerf' then -coalesce(v_ovr.pct, v_cfg.nerf_pct, 10)
+        else 0 end,
+      'override'::text, v_n, v_ok;
+    return;
+  end if;
+
+  if v_n >= coalesce(v_cfg.min_clears, 3)
+     and v_ok * 100 >= coalesce(v_cfg.verified_share, 80) * v_n then
+    return query select coalesce(v_cfg.buff_pct, 10), 'auto'::text, v_n, v_ok;
+  else
+    return query select 0, null::text, v_n, v_ok;
+  end if;
+end;
+$$;
+
+-- What a finish applies right now: the standing above, or nothing while the
+-- shadow economy is switched off. Called by apply_finish.
+create or replace function public.shadow_economy_pct(p_user uuid, p_exclude uuid default null)
+returns table (pct integer, source text)
+language plpgsql stable security definer set search_path = public
+as $$
+begin
+  if not coalesce((select enabled from public.shadow_economy_config where id = 1), false) then
+    return query select 0, null::text;
+    return;
+  end if;
+  return query select s.pct, s.source from public.shadow_economy_status(p_user, p_exclude) s;
+end;
+$$;
+
+-- Admin: the settings.
+create or replace function public.admin_shadow_config()
+returns setof public.shadow_economy_config
+language plpgsql stable security definer set search_path = public
+as $$
+begin
+  if not public.has_permission('economy.shadow') then
+    raise exception 'Not authorized';
+  end if;
+  return query select * from public.shadow_economy_config where id = 1;
+end;
+$$;
+
+create or replace function public.admin_set_shadow_config(
+  p_enabled boolean, p_buff_pct integer, p_nerf_pct integer,
+  p_window_clears integer, p_min_clears integer, p_verified_share integer
+)
+returns setof public.shadow_economy_config
+language plpgsql security definer set search_path = public
+as $$
+declare
+  v_old public.shadow_economy_config%rowtype;
+begin
+  if not public.has_permission('economy.shadow') then
+    raise exception 'Not authorized';
+  end if;
+  select * into v_old from public.shadow_economy_config where id = 1 for update;
+  update public.shadow_economy_config
+     set enabled = p_enabled, buff_pct = p_buff_pct, nerf_pct = p_nerf_pct,
+         window_clears = p_window_clears, min_clears = p_min_clears,
+         verified_share = p_verified_share, updated_at = now(), updated_by = auth.uid()
+   where id = 1;
+  insert into public.shadow_economy_events (actor, action, detail)
+  values (auth.uid(), 'config', jsonb_build_object(
+    'old', to_jsonb(v_old) - 'updated_at' - 'updated_by',
+    'new', jsonb_build_object('enabled', p_enabled, 'buff_pct', p_buff_pct,
+                              'nerf_pct', p_nerf_pct, 'window_clears', p_window_clears,
+                              'min_clears', p_min_clears, 'verified_share', p_verified_share)));
+  return query select * from public.shadow_economy_config where id = 1;
+end;
+$$;
+
+-- Admin: set (mode buff/nerf/exempt, optional custom %) or clear (null mode) a
+-- player's override.
+create or replace function public.admin_set_shadow_override(
+  p_user uuid, p_mode text, p_pct integer default null, p_note text default null
+)
+returns void
+language plpgsql security definer set search_path = public
+as $$
+declare
+  v_old public.shadow_economy_overrides%rowtype;
+begin
+  if not public.has_permission('economy.shadow') then
+    raise exception 'Not authorized';
+  end if;
+  select * into v_old from public.shadow_economy_overrides where user_id = p_user;
+  if p_mode is null then
+    delete from public.shadow_economy_overrides where user_id = p_user;
+    if v_old.user_id is not null then
+      insert into public.shadow_economy_events (actor, target, action, detail)
+      values (auth.uid(), p_user, 'override_cleared',
+              jsonb_build_object('old', to_jsonb(v_old) - 'user_id'));
+    end if;
+    return;
+  end if;
+  insert into public.shadow_economy_overrides (user_id, mode, pct, note, set_by, updated_at)
+  values (p_user, p_mode, p_pct, nullif(btrim(p_note), ''), auth.uid(), now())
+  on conflict (user_id) do update
+     set mode = excluded.mode, pct = excluded.pct, note = excluded.note,
+         set_by = excluded.set_by, updated_at = excluded.updated_at;
+  insert into public.shadow_economy_events (actor, target, action, detail)
+  values (auth.uid(), p_user, 'override_set', jsonb_build_object(
+    'old', case when v_old.user_id is null then null else to_jsonb(v_old) - 'user_id' end,
+    'new', jsonb_build_object('mode', p_mode, 'pct', p_pct, 'note', nullif(btrim(p_note), ''))));
+end;
+$$;
+
+-- Admin: every player who has finished a paid clear or carries an override,
+-- with their override, standing, and the coins adjustments moved for them.
+create or replace function public.admin_shadow_overview()
+returns table (
+  user_id uuid, display_name text, override_mode text, override_pct integer,
+  override_note text, pct integer, source text, recent_clears integer,
+  verified_clears integer, adjusted_coins integer, adjustments integer
+)
+language plpgsql stable security definer set search_path = public
+as $$
+#variable_conflict use_column
+begin
+  if not public.has_permission('economy.shadow') then
+    raise exception 'Not authorized';
+  end if;
+  return query
+  select p.id, p.display_name, o.mode, o.pct, o.note, s.pct, s.source,
+         s.recent_clears, s.verified_clears,
+         coalesce((select sum(a.delta) from public.shadow_economy_adjustments a
+                    where a.user_id = p.id), 0)::integer,
+         coalesce((select count(*) from public.shadow_economy_adjustments a
+                    where a.user_id = p.id and a.kind = 'applied'), 0)::integer
+    from public.profiles p
+    left join public.shadow_economy_overrides o on o.user_id = p.id
+    cross join lateral public.shadow_economy_status(p.id, null) s
+   where o.user_id is not null or s.recent_clears > 0
+   order by p.display_name;
+end;
+$$;
+
+-- Admin: the most recent adjustments, newest first.
+create or replace function public.admin_shadow_adjustments(p_limit integer default 50)
+returns table (
+  id uuid, created_at timestamptz, display_name text, game_title text, kind text,
+  source text, pct integer, base integer, adjusted integer, delta integer
+)
+language plpgsql stable security definer set search_path = public
+as $$
+#variable_conflict use_column
+begin
+  if not public.has_permission('economy.shadow') then
+    raise exception 'Not authorized';
+  end if;
+  return query
+  select a.id, a.created_at, p.display_name, a.game_title, a.kind, a.source, a.pct,
+         a.base, a.adjusted, a.delta
+    from public.shadow_economy_adjustments a
+    left join public.profiles p on p.id = a.user_id
+   order by a.created_at desc
+   limit greatest(1, least(coalesce(p_limit, 50), 500));
+end;
+$$;
+
+revoke execute on function public.shadow_economy_status(uuid, uuid) from public, anon, authenticated;
+revoke execute on function public.shadow_economy_pct(uuid, uuid)    from public, anon, authenticated;
+revoke execute on function public.admin_shadow_config()             from public, anon;
+revoke execute on function public.admin_set_shadow_config(boolean, integer, integer, integer, integer, integer) from public, anon;
+revoke execute on function public.admin_set_shadow_override(uuid, text, integer, text) from public, anon;
+revoke execute on function public.admin_shadow_overview()           from public, anon;
+revoke execute on function public.admin_shadow_adjustments(integer) from public, anon;
+grant execute on function public.admin_shadow_config()             to authenticated;
+grant execute on function public.admin_set_shadow_config(boolean, integer, integer, integer, integer, integer) to authenticated;
+grant execute on function public.admin_set_shadow_override(uuid, text, integer, text) to authenticated;
+grant execute on function public.admin_shadow_overview()           to authenticated;
+grant execute on function public.admin_shadow_adjustments(integer) to authenticated;
+
 -- Finish a game: flip status + award coins, atomically. The reward is decided
 -- HERE so the client can't farm full payouts off linked editions: a finish pays
 -- p_full_reward only if it's the FIRST clear in the game's family; once any
@@ -7424,6 +7708,10 @@ declare
   v_gate         real;     -- logged hours that release the whole bounty
   v_held         integer := 0;
   v_unverified   boolean := false; -- too little logged to extend the Clear Streak
+  -- Shadow economy (admin-only; see shadow_economy_config).
+  v_shadow_pct   integer := 0;
+  v_shadow_src   text;
+  v_shadow_base  integer := 0;
 begin
   -- Snapshot the pre-action reversible state (slot/lane flags + tag) so undo_action
   -- can restore the game exactly; the update below destroys these.
@@ -7470,6 +7758,19 @@ begin
   if not v_econ or v_free_start then
     v_base  := 0;
     v_bonus := 0;
+  end if;
+  -- Shadow economy: an unannounced buff/nerf on a paying bounty. The ledger
+  -- rows below carry the adjusted amounts; the adjustment itself is recorded
+  -- only in the admin-only shadow_economy_adjustments (after the undo row).
+  if v_base + v_bonus > 0 then
+    select s.pct, s.source into v_shadow_pct, v_shadow_src
+      from public.shadow_economy_pct(auth.uid(), p_game) s;
+    v_shadow_pct := coalesce(v_shadow_pct, 0);
+    if v_shadow_pct <> 0 then
+      v_shadow_base := v_base + v_bonus;
+      v_base  := greatest(0, round(v_base  * (100 + v_shadow_pct) / 100.0)::integer);
+      v_bonus := greatest(0, round(v_bonus * (100 + v_shadow_pct) / 100.0)::integer);
+    end if;
   end if;
   v_award := v_base + v_bonus; -- gross
 
@@ -7676,6 +7977,13 @@ begin
     )
   )
   returning id into v_undo;
+
+  if v_shadow_pct <> 0 then
+    insert into public.shadow_economy_adjustments
+      (user_id, game_id, game_title, source, pct, base, adjusted, delta, undo_id)
+    values (auth.uid(), p_game, v_title, v_shadow_src, v_shadow_pct, v_shadow_base,
+            v_base + v_bonus, v_base + v_bonus - v_shadow_base, v_undo);
+  end if;
 
   return query select v_coins, v_net, v_replay, v_undo, v_streak, v_streak_bonus, v_new_record,
                       v_story_bonus, v_collector_bonus, v_held;
@@ -8653,6 +8961,15 @@ begin
   delete from public.activity_events
    where actor = auth.uid() and game_id = v_game
      and kind = 'bounty_claimed' and created_at >= v_created;
+
+  -- A shadow adjustment on the undone finish is reversed by its own row
+  -- (append-only), so the admin record nets out with the player's coins.
+  insert into public.shadow_economy_adjustments
+    (user_id, game_id, game_title, kind, source, pct, base, adjusted, delta, undo_id)
+  select a.user_id, a.game_id, a.game_title, 'reversed', a.source, a.pct, a.base,
+         a.adjusted, -a.delta, a.undo_id
+    from public.shadow_economy_adjustments a
+   where a.undo_id = p_undo and a.kind = 'applied';
 
   update public.action_undos set undone_at = now() where id = p_undo;
 

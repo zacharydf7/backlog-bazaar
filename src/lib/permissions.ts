@@ -22,6 +22,7 @@ export type Permission =
   | "users.onboarding"
   | "badges.grant"
   | "economy.edit"
+  | "economy.shadow"
   | "cosmetics.events.manage"
   | "shop.manage"
   | "shop.drafts"
@@ -137,6 +138,13 @@ export const PERMISSIONS: PermissionInfo[] = [
     key: "economy.edit",
     label: "Edit the economy",
     description: "Change the price/bounty formulas, rewards and other economy levers.",
+    group: "Economy & Site",
+  },
+  {
+    key: "economy.shadow",
+    label: "Manage hidden payout adjustments",
+    description:
+      "Turn the unannounced bounty buffs/nerfs on or off, tune them, set per-player overrides, and read the private record of every adjustment.",
     group: "Economy & Site",
   },
   {

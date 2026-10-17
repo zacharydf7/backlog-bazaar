@@ -63,6 +63,16 @@ import {
   isVerifiedClear,
 } from "./lib/bountyHold";
 import {
+  clampShadowConfig,
+  rowToShadowAdjustment,
+  rowToShadowConfig,
+  rowToShadowPlayer,
+  type ShadowAdjustment,
+  type ShadowConfig,
+  type ShadowOverrideMode,
+  type ShadowPlayer,
+} from "./lib/shadowEconomy";
+import {
   splitEvenly,
   toCents,
   fromCents,
@@ -1807,6 +1817,19 @@ interface BazaarState {
   setPreorderStripDays: (days: number) => Promise<void>;
   // Admin: the logged-time gate on finish bounties (economy.edit).
   setBountyGatePct: (pct: number) => Promise<void>;
+  // Admin (economy.shadow): the shadow economy's settings, per-player standing
+  // and overrides, and its private record of adjustments. Cloud-only; null/[]
+  // on failure (the error banner says why).
+  fetchShadowConfig: () => Promise<ShadowConfig | null>;
+  saveShadowConfig: (cfg: ShadowConfig) => Promise<ShadowConfig | null>;
+  fetchShadowOverview: () => Promise<ShadowPlayer[]>;
+  setShadowOverride: (
+    userId: string,
+    mode: ShadowOverrideMode | null,
+    pct: number | null,
+    note: string,
+  ) => Promise<boolean>;
+  fetchShadowAdjustments: (limit?: number) => Promise<ShadowAdjustment[]>;
   // Re-read a finished game's held bounty and the balance after its logged
   // hours changed server-side, announcing any coins the time released.
   refreshHeldBounty: (id: string) => Promise<void>;
@@ -3961,6 +3984,73 @@ export const useStore = create<BazaarState>((set, get) => ({
     }
     set({ recBountyCap: next });
     toast(`Tastemaker Bounty cap set to ${next} coins`, HandCoins);
+  },
+
+  fetchShadowConfig: async () => {
+    if (!supabase || !get().cloud) return null;
+    const { data, error } = await supabase.rpc("admin_shadow_config");
+    if (error) {
+      set({ error: error.message });
+      return null;
+    }
+    const row = ((data ?? []) as Record<string, unknown>[])[0];
+    return row ? rowToShadowConfig(row) : null;
+  },
+
+  saveShadowConfig: async (cfg) => {
+    if (!supabase || !get().cloud) return null;
+    const next = clampShadowConfig(cfg);
+    const { data, error } = await supabase.rpc("admin_set_shadow_config", {
+      p_enabled: next.enabled,
+      p_buff_pct: next.buffPct,
+      p_nerf_pct: next.nerfPct,
+      p_window_clears: next.windowClears,
+      p_min_clears: next.minClears,
+      p_verified_share: next.verifiedShare,
+    });
+    if (error) {
+      set({ error: error.message });
+      return null;
+    }
+    toast(next.enabled ? "Hidden adjustments saved — on" : "Hidden adjustments saved — off", Coins);
+    const row = ((data ?? []) as Record<string, unknown>[])[0];
+    return row ? rowToShadowConfig(row) : next;
+  },
+
+  fetchShadowOverview: async () => {
+    if (!supabase || !get().cloud) return [];
+    const { data, error } = await supabase.rpc("admin_shadow_overview");
+    if (error) {
+      set({ error: error.message });
+      return [];
+    }
+    return ((data ?? []) as Record<string, unknown>[]).map(rowToShadowPlayer);
+  },
+
+  setShadowOverride: async (userId, mode, pct, note) => {
+    if (!supabase || !get().cloud) return false;
+    const { error } = await supabase.rpc("admin_set_shadow_override", {
+      p_user: userId,
+      p_mode: mode,
+      p_pct: mode == null || mode === "exempt" ? null : pct,
+      p_note: note,
+    });
+    if (error) {
+      set({ error: error.message });
+      return false;
+    }
+    toast(mode == null ? "Override cleared" : "Override saved", Coins);
+    return true;
+  },
+
+  fetchShadowAdjustments: async (limit = 50) => {
+    if (!supabase || !get().cloud) return [];
+    const { data, error } = await supabase.rpc("admin_shadow_adjustments", { p_limit: limit });
+    if (error) {
+      set({ error: error.message });
+      return [];
+    }
+    return ((data ?? []) as Record<string, unknown>[]).map(rowToShadowAdjustment);
   },
 
   setBountyGatePct: async (pct) => {
