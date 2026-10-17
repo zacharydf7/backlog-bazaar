@@ -8,6 +8,7 @@ import {
   editionKeyOf,
   editionLabel,
   familyMemberLabel,
+  ownedTitleGroups,
 } from "./gameHub";
 
 function game(over: Partial<Game> = {}): Game {
@@ -249,5 +250,31 @@ describe("familyMemberLabel (issue 3a0ccacc)", () => {
         }),
       ),
     ).toBe("AC Shadows (PC) — part of Ubisoft Pack");
+  });
+});
+
+describe("ownedTitleGroups (issue 08ce60bc)", () => {
+  const ps5 = { id: "c1", platform: "PlayStation 5" };
+  const ns2 = { id: "c2", platform: "Nintendo Switch 2" };
+  const pc = { id: "c3", platform: "PC" };
+
+  it("merges same-named records into one group with every copy", () => {
+    const groups = ownedTitleGroups([
+      game({ id: "a", title: "Assassin's Creed Shadows", copies: [ps5] }),
+      game({ id: "b", title: " assassin's creed shadows ", copies: [ns2] }),
+    ]);
+    expect(groups).toEqual([{ title: "Assassin's Creed Shadows", copies: [ps5, ns2] }]);
+  });
+
+  it("keeps differently named editions apart, in first-seen order", () => {
+    const groups = ownedTitleGroups([
+      game({ id: "a", title: "Shin Megami Tensei V", copies: [ns2] }),
+      game({ id: "b", title: "Shin Megami Tensei V: Vengeance", copies: [ps5] }),
+      game({ id: "c", title: "Shin Megami Tensei V", copies: [pc] }),
+    ]);
+    expect(groups.map((g) => [g.title, g.copies.map((c) => c.platform)])).toEqual([
+      ["Shin Megami Tensei V", ["Nintendo Switch 2", "PC"]],
+      ["Shin Megami Tensei V: Vengeance", ["PlayStation 5"]],
+    ]);
   });
 });

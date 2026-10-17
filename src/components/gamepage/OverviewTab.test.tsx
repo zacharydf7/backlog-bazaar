@@ -268,6 +268,24 @@ describe("Owned On details the hub's members (9f420872)", () => {
     expect(within(veng.parentElement as HTMLElement).getByText("PlayStation 5")).toBeTruthy();
   });
 
+  it("lists same-named copies by platform alone, without repeating the name (08ce60bc)", () => {
+    const a = game({
+      id: "a",
+      title: "Assassin's Creed Shadows",
+      copies: [{ id: "c1", platform: "PlayStation 5", format: "digital" }],
+    });
+    const b = game({
+      id: "b",
+      title: "Assassin's Creed Shadows",
+      copies: [{ id: "c2", platform: "Nintendo Switch 2", format: "physical" }],
+    });
+    render(<ReadOnlyOverview game={a} hideSpend members={[a, b]} />);
+    const ownedBlock = screen.getByText("Owned on").closest("div") as HTMLElement;
+    expect(within(ownedBlock).queryByText("Assassin's Creed Shadows")).toBeNull();
+    expect(within(ownedBlock).getByText("PlayStation 5")).toBeTruthy();
+    expect(within(ownedBlock).getByText("Nintendo Switch 2")).toBeTruthy();
+  });
+
   it("keeps the plain merged tags for a single-record game", () => {
     const solo = game({
       copies: [

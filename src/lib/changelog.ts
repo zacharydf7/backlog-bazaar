@@ -84,6 +84,10 @@ export const RELEASES: Release[] = [
         text: "Game search no longer lists the same game several times, and a game no longer flips between a \"community\" and a plain version as you type.",
         tag: "fix",
       },
+      {
+        text: "When you own a game on several platforms, its Owned On section lists the platforms once instead of repeating the game's name for each.",
+        tag: "improvement",
+      },
     ],
   },
   {

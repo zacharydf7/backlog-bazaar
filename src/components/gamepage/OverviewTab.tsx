@@ -16,6 +16,7 @@ import {
   spendRowGroups,
 } from "../../lib/copies";
 import { valueStatusOf } from "../../lib/valueMetrics";
+import { ownedTitleGroups } from "../../lib/gameHub";
 import { ValuePlayedNote } from "../ValueBadge";
 import { SuggestEditButton } from "../GameSubmissionForm";
 import { ScreenshotGallery } from "../ScreenshotGallery";
@@ -231,6 +232,7 @@ function OwnershipRollup({ members, hideSpend }: { members: Game[]; hideSpend: b
     .filter((m) => m.status === "wishlist")
     .flatMap((m) => m.copies ?? []);
   const owned = ownedPlatformSummary(ownedCopies);
+  const titleGroups = ownedTitleGroups(ownedGames);
   const wanted = ownedPlatformSummary(wantedCopies);
   // Which bundles the owned instances came in (issue 2ebfcb7a) — named as
   // group headers in the spend breakdown, or as a plain note when there are no
@@ -253,16 +255,16 @@ function OwnershipRollup({ members, hideSpend }: { members: Game[]; hideSpend: b
       {owned.length > 0 && (
         <div className="flex flex-col gap-1">
           <span className="text-[10px] uppercase tracking-wide text-subtle">Owned on</span>
-          {ownedGames.length > 1 ? (
-            // Several connected records (family editions, per-platform
-            // instances): each on its own line with its OWN platforms, so a
-            // family reads as its members, not one anonymous tag soup
-            // (issue 9f420872).
+          {titleGroups.length > 1 ? (
+            // Differently named editions (a family's remaster): a line per
+            // name with its OWN platforms, so a family reads as its members,
+            // not one anonymous tag soup (issue 9f420872). Same-named copies
+            // share their line, so no name repeats (issue 08ce60bc).
             <div className="flex flex-col gap-1">
-              {ownedGames.map((m) => (
-                <div key={m.id} className="flex flex-wrap items-center gap-1">
-                  <span className="text-[11px] text-muted">{m.title}</span>
-                  {ownedPlatformSummary(m.copies ?? []).map((o) => (
+              {titleGroups.map((group) => (
+                <div key={group.title} className="flex flex-wrap items-center gap-1">
+                  <span className="text-[11px] text-muted">{group.title}</span>
+                  {ownedPlatformSummary(group.copies).map((o) => (
                     <PlatformBadge key={o.platform} label={o.platform} formats={o.formats} />
                   ))}
                 </div>

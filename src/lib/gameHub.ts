@@ -9,7 +9,7 @@
 // and Review tabs pick which record to show through an edition selector.
 // Pure helpers; unit-tested offline.
 
-import type { Game } from "../types";
+import type { Game, GameCopy } from "../types";
 import { catalogKey } from "./ownershipMerge";
 import { familyPrimary, familyName, representativeMember } from "./families";
 import { compilationSource, ownedPlatformSummary } from "./copies";
@@ -123,6 +123,22 @@ export function familyMemberLabel(member: Game): string {
   const base = withOrigin(platforms ? `${member.title} (${platforms})` : member.title, member);
   const bundle = compilationSource(member);
   return bundle ? `${base} — part of ${bundle}` : base;
+}
+
+/** The hub's owned records grouped by title, for the Owned On lines: records
+ *  sharing a name (per-platform instances of one game) merge into one line, so
+ *  the name isn't repeated (issue 08ce60bc), while differently named editions
+ *  (a remaster in a family) keep a line each (issue 9f420872). Groups keep
+ *  first-seen order; titles match ignoring case and surrounding spaces. */
+export function ownedTitleGroups(games: Game[]): { title: string; copies: GameCopy[] }[] {
+  const groups = new Map<string, { title: string; copies: GameCopy[] }>();
+  for (const g of games) {
+    const key = g.title.trim().toLowerCase();
+    const group = groups.get(key);
+    if (group) group.copies.push(...(g.copies ?? []));
+    else groups.set(key, { title: g.title, copies: [...(g.copies ?? [])] });
+  }
+  return [...groups.values()];
 }
 
 /** Append a bundled game's original platform (issue 86fc0b4b), which tells
