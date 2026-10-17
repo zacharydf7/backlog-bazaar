@@ -21,7 +21,7 @@ import {
 import { useStore } from "../../store";
 import { toast } from "../../lib/toast";
 import { gameHash, listHash } from "../../lib/route";
-import { searchGameSuggestions } from "../../lib/gameSearch";
+import { searchGameSuggestions, suggestionKey } from "../../lib/gameSearch";
 import {
   isPendingRemoval,
   listActivityLabel,
@@ -249,7 +249,7 @@ function AddGameSearch({
             const inList = listHasGame(items, r);
             return (
               <button
-                key={r.rawgId ?? r.igdbId ?? r.catalogId ?? r.title}
+                key={suggestionKey(r)}
                 onClick={() =>
                   // All three identity axes — dropping igdbId here left IGDB
                   // adds identity-less, and a later suggest-edit then minted a

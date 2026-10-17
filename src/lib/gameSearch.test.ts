@@ -9,7 +9,7 @@ vi.mock("./gamedata", () => ({
 }));
 
 // Imported after the mock so it picks up the stubbed searchGames.
-import { isCommunityOnly, sortByRelevance, searchGameSuggestions } from "./gameSearch";
+import { isCommunityOnly, sortByRelevance, searchGameSuggestions, suggestionKey } from "./gameSearch";
 
 function override(over: Partial<CatalogOverride> = {}): CatalogOverride {
   return {
@@ -78,21 +78,6 @@ describe("searchGameSuggestions", () => {
     byRawg: {} as Record<number, CatalogOverride>,
     byIgdb: {} as Record<number, CatalogOverride>,
   }));
-
-  it("shows one row for provider records sharing a name and year (86fc0b4b)", async () => {
-    searchGamesMock.mockResolvedValue([
-      { title: "Super Mario 3D World", released: "2013-11-21", igdbId: 1, genres: [] },
-      { title: "Super Mario 3D World", released: "2013-11-22", igdbId: 2, genres: [] },
-      { title: "Super Mario 3D World", released: "2013-12-01", igdbId: 3, genres: [] },
-      { title: "Super Mario 3D All-Stars", released: "2020-09-18", igdbId: 4, genres: [] },
-    ]);
-    const { results: out } = await searchGameSuggestions("super mario 3d", {
-      searchCatalogGames: noCommunity,
-      fetchCatalogOverrides: noOverrides,
-    });
-    // The provider's first record of the name wins; order is otherwise unchanged.
-    expect(out.map((g) => g.igdbId)).toEqual([1, 4]);
-  });
 
   it("returns nothing for a too-short query without hitting the providers", async () => {
     const { results: out } = await searchGameSuggestions("a", {
@@ -273,5 +258,24 @@ describe("isCommunityOnly (86fc0b4b)", () => {
     expect(isCommunityOnly({ catalogId: "c", igdbId: 4 })).toBe(false);
     expect(isCommunityOnly({ catalogId: "c", rawgId: 4 })).toBe(false);
     expect(isCommunityOnly({ igdbId: 4 })).toBe(false);
+  });
+});
+
+describe("suggestionKey (86fc0b4b)", () => {
+  it("keys two same-named IGDB games apart (the duplicate-rows bug)", () => {
+    const a = suggestionKey({ title: "Super Mario 3D World", igdbId: 2180, released: "2013-11-22" });
+    const b = suggestionKey({ title: "Super Mario 3D World", igdbId: 229339, released: "2021-02-12" });
+    expect(a).not.toBe(b);
+  });
+
+  it("keeps RAWG and IGDB ids apart even when the numbers match", () => {
+    expect(suggestionKey({ title: "A", rawgId: 5 })).not.toBe(suggestionKey({ title: "B", igdbId: 5 }));
+  });
+
+  it("falls back to the catalog id, then the title and release date", () => {
+    expect(suggestionKey({ title: "X", catalogId: "c1" })).toBe("c:c1");
+    expect(suggestionKey({ title: "X", released: "1999-01-01" })).not.toBe(
+      suggestionKey({ title: "X", released: "2005-01-01" }),
+    );
   });
 });

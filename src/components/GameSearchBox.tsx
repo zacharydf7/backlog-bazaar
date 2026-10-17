@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { GameMeta } from "../types";
 import { useStore } from "../store";
-import { isCommunityOnly, searchGameSuggestions } from "../lib/gameSearch";
+import { isCommunityOnly, searchGameSuggestions, suggestionKey } from "../lib/gameSearch";
 import { formatPlaytime } from "../lib/playtime";
 
 function year(date?: string): string {
@@ -143,7 +143,7 @@ export function GameSearchBox({
           <ul role="listbox" className="max-h-60 overflow-y-auto">
             {results.map((r, i) => (
               <li
-                key={r.rawgId ?? r.catalogId ?? r.title}
+                key={suggestionKey(r)}
                 role="option"
                 aria-selected={i === highlight}
                 onMouseEnter={() => setHighlight(i)}

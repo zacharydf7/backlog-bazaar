@@ -10,7 +10,13 @@ import {
   fetchHltbTimes,
   type HltbTimes,
 } from "../lib/gamedata";
-import { searchGameSuggestions, sortByRelevance, PROVIDER_DOWN_MESSAGE } from "../lib/gameSearch";
+import {
+  isCommunityOnly,
+  suggestionKey,
+  searchGameSuggestions,
+  sortByRelevance,
+  PROVIDER_DOWN_MESSAGE,
+} from "../lib/gameSearch";
 import { computeFormula } from "../lib/economy";
 import { parsePlaytime, formatPlaytime, formatLength } from "../lib/playtime";
 import { copyPlatformOptions, canonicalizeTerms, missingFromVerified } from "../lib/taxonomy";
@@ -337,7 +343,7 @@ export function AddGameModal({
     setOngoing(Boolean(meta.ongoing)); // catalog-flagged live-service games seed the toggle
     // Community-added games (catalog id, no provider id) load screenshots
     // directly; provider-backed games get them from the catalog overlay below.
-    if (meta.catalogId && !meta.rawgId && !meta.igdbId) {
+    if (isCommunityOnly(meta)) {
       void fetchGameScreenshots({ catalogId: meta.catalogId }).then(setPreviewShots);
     }
 
@@ -837,7 +843,7 @@ export function AddGameModal({
                     const presence = libraryPresence(games, r);
                     return (
                       <li
-                        key={r.rawgId ?? r.catalogId ?? r.title}
+                        key={suggestionKey(r)}
                         role="option"
                         aria-selected={i === highlight}
                         onMouseEnter={() => setHighlight(i)}
@@ -859,7 +865,7 @@ export function AddGameModal({
                           <div className="truncate text-sm text-ink">{r.title}</div>
                           <div className="text-xs text-subtle">
                             {year(r.released)} · {r.hours ? formatPlaytime(r.hours) : "length ?"}
-                            {r.catalogId && !r.rawgId ? " · community" : ""}
+                            {isCommunityOnly(r) ? " · community" : ""}
                             {presence ? ` · ${PRESENCE_LABEL[presence]}` : ""}
                           </div>
                         </div>
