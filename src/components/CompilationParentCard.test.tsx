@@ -157,6 +157,18 @@ describe("CompilationParentCard (86fc0b4b)", () => {
     expect(sequel.textContent).toMatch(/finish Prequel first/);
   });
 
+  it("wears the Well spent chip once the bundle's hours pay off its cost (86fc0b4b)", () => {
+    // $45 over 10h (5 + 2 + 3 carryover): met at $4.50/hr, not at $4/hr.
+    act(() => useStore.setState({ targetCostPerHour: 4.5 }));
+    const { unmount } = render(card("backlog"));
+    expect(screen.getByText("Well spent")).toBeTruthy();
+    unmount();
+    act(() => useStore.setState({ targetCostPerHour: 4 }));
+    render(card("backlog"));
+    expect(screen.queryByText("Well spent")).toBeNull();
+    act(() => useStore.setState({ targetCostPerHour: null }));
+  });
+
   it("shows owned platforms with little format glyphs (physical / DLC)", () => {
     const withCopies: Compilation = {
       ...comp,

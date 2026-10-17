@@ -26,6 +26,8 @@ import { FinishTagBadge } from "./FinishTagBadge";
 import { GamePriorityBadge } from "./GamePriorityBadge";
 import { PlatformBadge } from "./PlatformBadge";
 import { TitleWithOrigin } from "./TitleWithOrigin";
+import { ValueBadge } from "./ValueBadge";
+import { valueStatusOf } from "../lib/valueMetrics";
 import { useViewing } from "../lib/viewContext";
 
 /** A compilation's board card — ONE card standing in for the bundle's games on
@@ -47,6 +49,9 @@ export function CompilationParentCard({ collapsed }: { collapsed: CollapsedCompi
     collapsed;
   const ownedCopySummary = ownedPlatformSummary(compilationCopiesOf(compilation));
   const tray = compilationTray(collapsed);
+  // Money Well Spent for the whole bundle, like a game card's chip.
+  const targetCostPerHour = useStore((s) => s.targetCostPerHour);
+  const value = valueStatusOf(compilation.totalCost, totalPlayedHours, targetCostPerHour);
 
   useEffect(() => {
     function onDocClick(e: MouseEvent) {
@@ -189,6 +194,7 @@ export function CompilationParentCard({ collapsed }: { collapsed: CollapsedCompi
                 {formatUsd(compilation.totalCost)} spent
               </span>
             )}
+            {value && <ValueBadge status={value} target={targetCostPerHour!} />}
             {ownedCopySummary.map((o) => (
               <PlatformBadge key={o.platform} label={o.platform} formats={o.formats} />
             ))}

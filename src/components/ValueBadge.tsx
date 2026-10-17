@@ -1,9 +1,11 @@
 import { Gem } from "lucide-react";
 import type { Game } from "../types";
 import { useStore } from "../store";
-import { totalCost } from "../lib/copies";
+import { formatUsd, totalCost } from "../lib/copies";
+import { formatPlaytime } from "../lib/playtime";
 import {
   gameValueStatus,
+  valuePlayedTooltip,
   valueStatusOf,
   valueTooltip,
   type ValueStatus,
@@ -49,4 +51,20 @@ export function GameValueBadge({ game, members }: { game: Game; members?: Game[]
         );
   if (!status) return null;
   return <ValueBadge status={status} target={target} />;
+}
+
+/** "Value played" for a spend breakdown: the dollars of play banked so far at
+ *  the target rate. Goal-met styling once it covers the spend; until then it
+ *  also names the playtime still needed to get there. Shared by the game
+ *  page's ownership rollup and the compilation page's spend box. */
+export function ValuePlayedNote({ status, target }: { status: ValueStatus; target: number }) {
+  return (
+    <span
+      title={valuePlayedTooltip(status, target)}
+      className={"inline-flex items-center gap-1 " + (status.met ? "text-success" : "text-subtle")}
+    >
+      {status.met && <Gem size={11} />} {formatUsd(status.valuePlayed)} value played
+      {!status.met && <> · {formatPlaytime(status.remainingHours)} to well spent</>}
+    </span>
+  );
 }

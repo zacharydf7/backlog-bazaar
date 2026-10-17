@@ -93,6 +93,10 @@ export const RELEASES: Release[] = [
         tag: "improvement",
       },
       {
+        text: "A compilation's spending box now shows the whole compilation's played time and its Money Well Spent value, and the compilation's card and page wear the Well spent badge once your hours have paid it off.",
+        tag: "improvement",
+      },
+      {
         text: "The compilation progress bar now shows games in play alongside finished ones. Expand / Collapse is gone, because compilations no longer split into separate cards.",
         tag: "improvement",
       },

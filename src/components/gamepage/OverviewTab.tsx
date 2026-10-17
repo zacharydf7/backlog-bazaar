@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ImagePlus, Trash2, RotateCcw, Banknote, ChevronsUp, Gem, Package, Timer, Pencil } from "lucide-react";
+import { ImagePlus, Trash2, RotateCcw, Banknote, ChevronsUp, Package, Timer, Pencil } from "lucide-react";
 import type { Game } from "../../types";
 import { useStore } from "../../store";
 import { fetchGameCover } from "../../lib/gamedata";
@@ -15,7 +15,8 @@ import {
   formatUsd,
   spendRowGroups,
 } from "../../lib/copies";
-import { valueStatusOf, valuePlayedTooltip } from "../../lib/valueMetrics";
+import { valueStatusOf } from "../../lib/valueMetrics";
+import { ValuePlayedNote } from "../ValueBadge";
 import { SuggestEditButton } from "../GameSubmissionForm";
 import { ScreenshotGallery } from "../ScreenshotGallery";
 import { PlatformBadge } from "../PlatformBadge";
@@ -375,20 +376,7 @@ function OwnershipRollup({ members, hideSpend }: { members: Game[]; hideSpend: b
             <span className="inline-flex items-center gap-1 text-accent">
               <Banknote size={12} /> Spent {formatUsd(spend)}
             </span>
-            {/* Value played: the dollars of play banked so far at your target
-                rate. Goal-met styling once it covers the spend; until then it
-                also names the playtime still needed to get there. */}
-            {value != null && (
-              <span
-                title={valuePlayedTooltip(value, target!)}
-                className={
-                  "inline-flex items-center gap-1 " + (value.met ? "text-success" : "text-subtle")
-                }
-              >
-                {value.met && <Gem size={11} />} {formatUsd(value.valuePlayed)} value played
-                {!value.met && <> · {formatPlaytime(value.remainingHours)} to well spent</>}
-              </span>
-            )}
+            {value != null && <ValuePlayedNote status={value} target={target!} />}
           </div>
           {/* Copies grouped by source — standalone purchases first, then each
               bundle under its own header — so two same-platform rows read

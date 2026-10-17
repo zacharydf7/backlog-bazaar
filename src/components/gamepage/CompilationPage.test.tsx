@@ -36,6 +36,7 @@ const children = [
 
 beforeEach(() => {
   window.history.replaceState(null, "", "/");
+  act(() => useStore.setState({ targetCostPerHour: null }));
   // jsdom doesn't implement scrollTo; framer-motion's Reorder touches it on mount.
   window.scrollTo = () => {};
   act(() =>
@@ -54,7 +55,7 @@ describe("CompilationPage", () => {
     expect(screen.getByRole("heading", { name: "Trilogy Collection" })).toBeTruthy();
     expect(screen.getByText(/Compilation · 2 games · 1 finished/)).toBeTruthy();
     // 5 + 2 child hours + 3 carryover = 10h.
-    expect(screen.getByText(/10h played/)).toBeTruthy();
+    expect(screen.getByText("10h played")).toBeTruthy(); // the header chip
     expect(screen.getByText(/\$45 spent/)).toBeTruthy();
     expect(screen.getByText("1/2")).toBeTruthy();
     expect(screen.getByText("Nintendo Switch")).toBeTruthy();
@@ -182,6 +183,22 @@ describe("CompilationPage", () => {
     // Part 2 is still in the Bazaar, so the bundle can start a game.
     fireEvent.click(screen.getByRole("button", { name: /Play a game/i }));
     expect(screen.getByRole("dialog", { name: /Play a game from Trilogy Collection/ })).toBeTruthy();
+  });
+
+  it("totals the bundle's played time and judges its Money Well Spent value (86fc0b4b)", () => {
+    // $45 spent; 5h + 2h + 3h carryover = 10h played. At $4.50/hr, 10h pays it off.
+    act(() => useStore.setState({ targetCostPerHour: 4.5 }));
+    const { unmount } = render(<CompilationPage compilationId="C" onBack={() => {}} />);
+    expect(screen.getByText(/· 10h played/)).toBeTruthy();
+    expect(screen.getByText(/value played/).textContent).not.toMatch(/to well spent/);
+    expect(screen.getByText("Well spent")).toBeTruthy(); // header chip
+    unmount();
+
+    // At $1/hr the bundle needs 45h: not yet — the box names the hours to go.
+    act(() => useStore.setState({ targetCostPerHour: 1 }));
+    render(<CompilationPage compilationId="C" onBack={() => {}} />);
+    expect(screen.getByText(/value played/).textContent).toMatch(/35h to well spent/);
+    expect(screen.queryByText("Well spent")).toBeNull();
   });
 
   it("hides Play a game once no game is left in the Bazaar", () => {

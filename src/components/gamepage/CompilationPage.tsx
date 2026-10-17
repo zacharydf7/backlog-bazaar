@@ -39,6 +39,8 @@ import { PlatformBadge } from "../PlatformBadge";
 import { ConfirmDialog } from "../ConfirmDialog";
 import { AddCompilationModal } from "../AddCompilationModal";
 import { BundleProgress } from "../CompilationParentCard";
+import { ValueBadge, ValuePlayedNote } from "../ValueBadge";
+import { valueStatusOf, type ValueStatus } from "../../lib/valueMetrics";
 import { CompilationPlayPicker } from "../CompilationPlayPicker";
 import { MilestonesSection } from "../MilestonesSection";
 import {
@@ -177,6 +179,11 @@ function CompilationPageBody({
   const canPlay = children.some((g) => g.status === "backlog");
   const carryover = compilation.carryoverHours ?? 0;
   const totalPlayed = children.reduce((sum, g) => sum + (g.playedHours ?? 0), 0) + carryover;
+  // "Money Well Spent" for the whole bundle: its total spend against every
+  // game's hours (plus any carryover), at your target rate — the same verdict
+  // the game page gives one game. The page is owner-only, so it's always yours.
+  const targetCostPerHour = useStore((s) => s.targetCostPerHour);
+  const value = valueStatusOf(compilation.totalCost, totalPlayed, targetCostPerHour);
   const ownedCopySummary = ownedPlatformSummary(compilationCopiesOf(compilation));
 
   return (
@@ -233,6 +240,7 @@ function CompilationPageBody({
                 {formatUsd(compilation.totalCost)} spent
               </span>
             )}
+            {value && <ValueBadge status={value} target={targetCostPerHour!} />}
             {ownedCopySummary.map((o) => (
               <PlatformBadge key={o.platform} label={o.platform} formats={o.formats} />
             ))}
@@ -299,6 +307,9 @@ function CompilationPageBody({
           compilation={compilation}
           children={children}
           carryover={carryover}
+          totalPlayed={totalPlayed}
+          value={value}
+          target={targetCostPerHour}
           cover={cover}
           cloud={cloud}
           onReorderChildren={(ids) => void setCompilationChildOrder(compilation.id, ids)}
@@ -490,6 +501,9 @@ function OverviewPane({
   compilation,
   children,
   carryover,
+  totalPlayed,
+  value,
+  target,
   cover,
   cloud,
   onReorderChildren,
@@ -499,6 +513,11 @@ function OverviewPane({
   compilation: Compilation;
   children: Game[];
   carryover: number;
+  totalPlayed: number;
+  /** The bundle's Money Well Spent verdict, or null when no target is set or
+   *  nothing was spent. */
+  value: ValueStatus | null;
+  target: number | null;
   cover: string | undefined;
   cloud: boolean;
   onReorderChildren: (orderedIds: string[]) => void;
@@ -524,11 +543,17 @@ function OverviewPane({
         )}
       </div>
 
-      {/* Per-copy spend breakdown, like the game page's ownership rollup. */}
+      {/* Per-copy spend breakdown, like the game page's ownership rollup —
+          with the whole bundle's played time and its Money Well Spent value
+          (issue 86fc0b4b). */}
       {copies.length > 0 && compilation.totalCost > 0 && (
         <div className="rounded-lg bg-panel p-2 text-[11px] text-muted">
-          <div className="mb-1 inline-flex items-center gap-1 text-accent">
-            <Banknote size={12} /> Spent {formatUsd(compilation.totalCost)}
+          <div className="mb-1 flex flex-wrap items-center justify-between gap-x-2 gap-y-0.5">
+            <span className="inline-flex items-center gap-1 text-accent">
+              <Banknote size={12} /> Spent {formatUsd(compilation.totalCost)}
+              <span className="text-subtle">· {formatPlaytime(totalPlayed)} played</span>
+            </span>
+            {value && <ValuePlayedNote status={value} target={target!} />}
           </div>
           {copies.map((c) => (
             <div key={c.id} className="flex justify-between gap-2">
