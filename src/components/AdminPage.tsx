@@ -13,6 +13,7 @@ import {
   UserCog,
   Tags,
   Flag,
+  Target,
   type LucideIcon,
 } from "lucide-react";
 import { useStore } from "../store";
@@ -28,6 +29,7 @@ import { ShopManager } from "./ShopManager";
 import { StatsAdmin } from "./StatsAdmin";
 import { RoleManagement } from "./RoleManagement";
 import { ReportsQueue } from "./ReportsQueue";
+import { SeasonalChallengesAdmin } from "./SeasonalChallengesAdmin";
 import type { Permission } from "../lib/permissions";
 
 // One consolidated admin console. Rather than bouncing to separate full pages,
@@ -53,6 +55,7 @@ const TABS: { view: View; label: string; icon: LucideIcon; perms: Permission[] }
   { view: "taxonomy", label: "Taxonomy", icon: Tags, perms: ["taxonomy.manage"] },
   { view: "reports", label: "Reports", icon: Flag, perms: ["reports.moderate"] },
   { view: "stats", label: "Stats", icon: BarChart3, perms: ["stats.view", "economy.insights"] },
+  { view: "challengeadmin", label: "Challenges", icon: Target, perms: ["challenges.manage"] },
   { view: "roles", label: "Roles", icon: UserCog, perms: ["roles.assign"] },
   { view: "admin", label: "Settings", icon: SlidersHorizontal, perms: ["site.maintenance"] },
 ];
@@ -147,6 +150,8 @@ export function AdminPage({
           <ReportsQueue />
         ) : active.view === "stats" ? (
           <StatsAdmin />
+        ) : active.view === "challengeadmin" ? (
+          <SeasonalChallengesAdmin />
         ) : active.view === "roles" ? (
           <RoleManagement />
         ) : (

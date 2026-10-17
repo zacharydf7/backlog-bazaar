@@ -260,6 +260,7 @@ as $$
     'economy.edit',
     'economy.shadow',
     'economy.insights',
+    'challenges.manage',
     'shop.manage',
     'shop.drafts',
     'shop.publish',
@@ -18984,6 +18985,553 @@ revoke execute on function public.claim_achievement_rewards(uuid) from public, a
 grant execute on function public.evaluate_achievements()     to authenticated;
 grant execute on function public.list_achievements(uuid)     to authenticated;
 grant execute on function public.claim_achievement_rewards(uuid) to authenticated;
+
+-- ---------------------------------------------------------------------------
+-- Challenges (2026-10-17): monthly goals + seasonal events.
+--
+-- Monthly goals: each month a player picks 3 goals from a fixed menu
+-- (challenge_goals). Progress counts everything logged since the 1st (in the
+-- Rotation reset's timezone), and picks are final for the month. Each
+-- completed goal pays challenge_goal_reward, and all three pay
+-- challenge_set_bonus on top. Seasonal events: an admin (challenges.manage)
+-- sets a goal, a target and dates; every player chases the target on their
+-- own, and completing it pays the event's reward and grants its badge, if any.
+--
+-- Progress is computed from the append-only event logs (status moves,
+-- playtime, stopwatch sessions, reviews), never from editable game dates, so a
+-- backdated card can't complete a goal. Like achievements, completions are
+-- recorded by evaluate_challenges() (called at boot and after actions) and
+-- rewards are claimed by hand (claim_challenge_rewards), paused while the
+-- player's coin economy is off. Additive + idempotent; nothing retroactive.
+-- ---------------------------------------------------------------------------
+alter table public.app_config add column if not exists challenge_goal_reward integer not null default 25;
+alter table public.app_config add column if not exists challenge_set_bonus integer not null default 50;
+alter table public.app_config drop constraint if exists app_config_challenge_rewards_range;
+alter table public.app_config add constraint app_config_challenge_rewards_range
+  check (challenge_goal_reward between 0 and 100000 and challenge_set_bonus between 0 and 100000);
+
+-- Every metric a challenge can count, in one place for the checks below.
+create or replace function public.challenge_metric_keys()
+returns text[]
+language sql
+immutable
+as $$
+  select array[
+    'games_finished', 'verified_clears', 'backlog_clears', 'hours_logged',
+    'play_days', 'stopwatch_sessions', 'reviews_written', 'rotation_checkins'
+  ]::text[];
+$$;
+
+-- One player's progress on one metric inside [p_from, p_to). Clears are games
+-- whose finish was logged in the window and that are still beaten/completed
+-- (an undone or retired finish doesn't count).
+create or replace function public.challenge_metric(
+  p_user uuid, p_metric text, p_from timestamptz, p_to timestamptz
+)
+returns numeric
+language sql
+stable
+security definer set search_path = public
+as $$
+  with cfg as (
+    select coalesce(nullif(btrim(c.rotation_reset_tz), ''), 'UTC') as tz,
+           coalesce(c.bounty_gate_pct, 25) as gate
+      from public.app_config c where c.id = 1
+  ),
+  clears as (
+    select g.id, g.added_at, min(e.created_at) as finished,
+           coalesce(g.played_hours, 0) as played,
+           coalesce(g.personal_hours, g.hours, 0) as len
+      from public.game_status_events e
+      join public.games g on g.id = e.game_id
+     where p_metric in ('games_finished', 'verified_clears', 'backlog_clears')
+       and e.user_id = p_user and e.to_status = 'finished'
+       and e.created_at >= p_from and e.created_at < p_to
+       and g.user_id = p_user and g.status = 'finished'
+       and g.finish_tag in ('beaten', 'completed')
+     group by g.id
+  )
+  select (case p_metric
+    when 'games_finished' then (select count(*) from clears)
+    when 'verified_clears' then
+      (select count(*) from clears c, cfg where c.len > 0 and c.played >= cfg.gate / 100.0 * c.len)
+    when 'backlog_clears' then
+      (select count(*) from clears c where c.finished - c.added_at >= interval '365 days')
+    when 'hours_logged' then
+      (select coalesce(sum(e.hours), 0) from public.playtime_events e
+        where e.user_id = p_user and e.created_at >= p_from and e.created_at < p_to)
+    when 'play_days' then
+      (select count(distinct (e.created_at at time zone cfg.tz)::date)
+         from public.playtime_events e, cfg
+        where e.user_id = p_user and e.hours > 0 and e.created_at >= p_from and e.created_at < p_to)
+    when 'stopwatch_sessions' then
+      (select count(*) from public.play_sessions s
+        where s.user_id = p_user and s.status = 'logged' and s.ended_at >= p_from and s.ended_at < p_to)
+    when 'reviews_written' then
+      (select count(distinct r.game_id) from public.review_events r
+        where r.user_id = p_user and r.review is not null and r.created_at >= p_from and r.created_at < p_to)
+    when 'rotation_checkins' then
+      (select count(*) from public.rotation_checkins r
+        where r.user_id = p_user and r.created_at >= p_from and r.created_at < p_to)
+    else 0
+  end)::numeric;
+$$;
+revoke execute on function public.challenge_metric(uuid, text, timestamptz, timestamptz) from public, anon, authenticated;
+
+-- The first day of the month `p_at` falls in, and that month's bounds, in the
+-- Rotation reset's timezone.
+create or replace function public.challenge_month(p_at timestamptz default now())
+returns table (month date, starts timestamptz, ends timestamptz)
+language sql
+stable
+set search_path = public
+as $$
+  with tz as (
+    select coalesce(nullif(btrim(c.rotation_reset_tz), ''), 'UTC') as tz
+      from public.app_config c where c.id = 1
+  ),
+  m as (
+    select date_trunc('month', p_at at time zone tz.tz)::date as month, tz.tz from tz
+  )
+  select m.month, m.month::timestamp at time zone m.tz,
+         (m.month + interval '1 month')::timestamp at time zone m.tz
+    from m;
+$$;
+revoke execute on function public.challenge_month(timestamptz) from public, anon, authenticated;
+
+-- The monthly goal menu. Edited deliberately (not re-seeded); `active` retires
+-- a goal from future menus without touching anyone's picks.
+create table if not exists public.challenge_goals (
+  key         text primary key,
+  name        text not null,
+  description text not null,
+  icon        text not null default 'target',
+  metric      text not null check (metric = any (public.challenge_metric_keys())),
+  target      numeric not null check (target > 0),
+  sort        integer not null default 0,
+  active      boolean not null default true,
+  created_at  timestamptz not null default now()
+);
+alter table public.challenge_goals enable row level security;
+drop policy if exists "challenge_goals_select" on public.challenge_goals;
+create policy "challenge_goals_select" on public.challenge_goals
+  for select to authenticated using (true);
+
+insert into public.challenge_goals (key, name, description, icon, metric, target, sort) values
+  ('finish-two',     'Two Clears',       'Finish 2 games',                           'trophy',      'games_finished',     2,  1),
+  ('verified-clear', 'Done Properly',    'Earn a Verified clear',                    'badge-check', 'verified_clears',    1,  2),
+  ('log-twenty',     'Twenty Hours',     'Log 20 hours of play',                     'clock',       'hours_logged',       20, 3),
+  ('play-ten-days',  'Regular Hours',    'Play on 10 different days',                'calendar',    'play_days',          10, 4),
+  ('dust-off',       'Dust It Off',      'Clear a game that waited a year or more',  'shovel',      'backlog_clears',     1,  5),
+  ('stopwatch-eight','On the Clock',     'Log 8 stopwatch sessions',                 'timer',       'stopwatch_sessions', 8,  6),
+  ('review-one',     'Say a Few Words',  'Review a game',                            'star',        'reviews_written',    1,  7)
+on conflict (key) do nothing;
+
+-- A player's picks, one row per goal per month. The goal's name, metric,
+-- target and reward are snapshotted at pick time, so later menu edits never
+-- move a commitment already made.
+create table if not exists public.user_monthly_goals (
+  id             uuid primary key default gen_random_uuid(),
+  user_id        uuid not null references auth.users (id) on delete cascade,
+  month          date not null,
+  goal_key       text not null,
+  goal_name      text not null,
+  metric         text not null,
+  target         numeric not null,
+  reward         integer not null default 0,
+  picked_at      timestamptz not null default now(),
+  completed_at   timestamptz,
+  value          numeric,
+  reward_paid_at timestamptz,
+  unique (user_id, month, goal_key)
+);
+create index if not exists user_monthly_goals_user_idx on public.user_monthly_goals (user_id, month);
+
+-- The bonus for completing all three of a month's goals.
+create table if not exists public.monthly_goal_bonuses (
+  id             uuid primary key default gen_random_uuid(),
+  user_id        uuid not null references auth.users (id) on delete cascade,
+  month          date not null,
+  reward         integer not null default 0,
+  completed_at   timestamptz not null default now(),
+  reward_paid_at timestamptz,
+  unique (user_id, month)
+);
+
+-- Admin-created seasonal events. Archived rather than deleted, so completions
+-- keep their event.
+create table if not exists public.seasonal_challenges (
+  id          uuid primary key default gen_random_uuid(),
+  name        text not null check (char_length(btrim(name)) between 1 and 80),
+  description text not null default '' check (char_length(description) <= 500),
+  metric      text not null check (metric = any (public.challenge_metric_keys())),
+  target      numeric not null check (target > 0),
+  starts_at   timestamptz not null,
+  ends_at     timestamptz not null,
+  reward      integer not null default 0 check (reward between 0 and 100000),
+  badge_id    uuid references public.badges (id) on delete set null,
+  created_by  uuid references auth.users (id) on delete set null,
+  created_at  timestamptz not null default now(),
+  updated_at  timestamptz not null default now(),
+  archived_at timestamptz,
+  check (ends_at > starts_at)
+);
+create index if not exists seasonal_challenges_window_idx on public.seasonal_challenges (starts_at, ends_at);
+
+-- One row per player per event they completed.
+create table if not exists public.user_seasonal_challenges (
+  id             uuid primary key default gen_random_uuid(),
+  user_id        uuid not null references auth.users (id) on delete cascade,
+  challenge_id   uuid references public.seasonal_challenges (id) on delete set null,
+  challenge_name text not null,
+  value          numeric,
+  reward         integer not null default 0,
+  completed_at   timestamptz not null default now(),
+  reward_paid_at timestamptz,
+  unique (user_id, challenge_id)
+);
+
+alter table public.user_monthly_goals       enable row level security;
+alter table public.monthly_goal_bonuses     enable row level security;
+alter table public.seasonal_challenges      enable row level security;
+alter table public.user_seasonal_challenges enable row level security;
+
+-- Read-own; every write goes through the definer RPCs below.
+drop policy if exists "user_monthly_goals_select_own" on public.user_monthly_goals;
+create policy "user_monthly_goals_select_own" on public.user_monthly_goals
+  for select to authenticated using (auth.uid() = user_id);
+drop policy if exists "monthly_goal_bonuses_select_own" on public.monthly_goal_bonuses;
+create policy "monthly_goal_bonuses_select_own" on public.monthly_goal_bonuses
+  for select to authenticated using (auth.uid() = user_id);
+drop policy if exists "user_seasonal_challenges_select_own" on public.user_seasonal_challenges;
+create policy "user_seasonal_challenges_select_own" on public.user_seasonal_challenges
+  for select to authenticated using (auth.uid() = user_id);
+-- Events are public once live; managers also see archived ones.
+drop policy if exists "seasonal_challenges_select" on public.seasonal_challenges;
+create policy "seasonal_challenges_select" on public.seasonal_challenges
+  for select to authenticated
+  using (archived_at is null or public.has_permission('challenges.manage'));
+
+revoke insert, update, delete on public.challenge_goals          from anon, authenticated;
+revoke insert, update, delete on public.user_monthly_goals       from anon, authenticated;
+revoke insert, update, delete on public.monthly_goal_bonuses     from anon, authenticated;
+revoke insert, update, delete on public.seasonal_challenges      from anon, authenticated;
+revoke insert, update, delete on public.user_seasonal_challenges from anon, authenticated;
+
+-- Pick one of this month's goals (up to 3; picks are final for the month).
+create or replace function public.pick_monthly_goal(p_goal text)
+returns void
+language plpgsql security definer set search_path = public
+as $$
+declare
+  v_me    uuid := auth.uid();
+  v_month date;
+  v_goal  public.challenge_goals%rowtype;
+begin
+  if v_me is null then raise exception 'Not authenticated'; end if;
+  perform 1 from public.profiles where id = v_me for update;
+  select m.month into v_month from public.challenge_month() m;
+  select * into v_goal from public.challenge_goals where key = p_goal and active;
+  if not found then raise exception 'That goal isn''t on this month''s menu'; end if;
+  if exists (select 1 from public.user_monthly_goals
+              where user_id = v_me and month = v_month and goal_key = p_goal) then
+    raise exception 'You already picked that goal this month';
+  end if;
+  if (select count(*) from public.user_monthly_goals where user_id = v_me and month = v_month) >= 3 then
+    raise exception 'You''ve already picked 3 goals this month';
+  end if;
+  insert into public.user_monthly_goals (user_id, month, goal_key, goal_name, metric, target, reward)
+  values (v_me, v_month, v_goal.key, v_goal.name, v_goal.metric, v_goal.target,
+          coalesce((select challenge_goal_reward from public.app_config where id = 1), 25));
+end;
+$$;
+
+-- Record the caller's newly completed goals (this month and last, so a goal
+-- finished on the last evening still lands), the all-three bonus, and seasonal
+-- events (live ones, plus any that ended in the last 35 days), granting an
+-- event's badge on completion. Returns the new completions for the toast.
+-- Idempotent; safe to call at any frequency.
+create or replace function public.evaluate_challenges()
+returns table (kind text, name text, reward integer)
+language plpgsql security definer set search_path = public
+as $$
+#variable_conflict use_column
+declare
+  v_me    uuid := auth.uid();
+  v_m     record;
+  v_ev    record;
+  v_val   numeric;
+begin
+  if v_me is null then raise exception 'Not authenticated'; end if;
+
+  for v_m in
+    select * from public.challenge_month(now())
+    union all
+    select * from public.challenge_month((select starts from public.challenge_month(now())) - interval '1 second')
+  loop
+    return query
+    with done as (
+      update public.user_monthly_goals u
+         set completed_at = now(),
+             value = public.challenge_metric(v_me, u.metric, v_m.starts, v_m.ends)
+       where u.user_id = v_me and u.month = v_m.month and u.completed_at is null
+         and public.challenge_metric(v_me, u.metric, v_m.starts, v_m.ends) >= u.target
+      returning u.goal_name, u.reward
+    )
+    select 'goal'::text, d.goal_name, d.reward from done d;
+
+    if (select count(*) from public.user_monthly_goals
+         where user_id = v_me and month = v_m.month and completed_at is not null) >= 3 then
+      return query
+      insert into public.monthly_goal_bonuses (user_id, month, reward)
+      values (v_me, v_m.month, coalesce((select challenge_set_bonus from public.app_config where id = 1), 50))
+      on conflict (user_id, month) do nothing
+      returning 'bonus'::text, 'All three goals'::text, monthly_goal_bonuses.reward;
+    end if;
+  end loop;
+
+  for v_ev in
+    select c.* from public.seasonal_challenges c
+     where c.archived_at is null and c.starts_at <= now() and c.ends_at > now() - interval '35 days'
+       and not exists (select 1 from public.user_seasonal_challenges u
+                        where u.user_id = v_me and u.challenge_id = c.id)
+  loop
+    v_val := public.challenge_metric(v_me, v_ev.metric, v_ev.starts_at, v_ev.ends_at);
+    if v_val >= v_ev.target then
+      insert into public.user_seasonal_challenges (user_id, challenge_id, challenge_name, value, reward)
+      values (v_me, v_ev.id, v_ev.name, v_val, v_ev.reward)
+      on conflict (user_id, challenge_id) do nothing;
+      if found then
+        if v_ev.badge_id is not null then
+          insert into public.user_badges (user_id, badge_id, source)
+          values (v_me, v_ev.badge_id, 'auto')
+          on conflict (user_id, badge_id) do nothing;
+        end if;
+        kind := 'seasonal'; name := v_ev.name; reward := v_ev.reward;
+        return next;
+      end if;
+    end if;
+  end loop;
+end;
+$$;
+
+-- Everything the Challenges page shows, as one JSON document: this month's
+-- menu with live progress, the caller's picks and bonus, and seasonal events
+-- (upcoming within 14 days, live, or ended in the last 35) with progress and
+-- completion state.
+create or replace function public.list_challenges()
+returns jsonb
+language plpgsql security definer set search_path = public
+as $$
+declare
+  v_me uuid := auth.uid();
+  v_m  record;
+begin
+  if v_me is null then raise exception 'Not authenticated'; end if;
+  select * into v_m from public.challenge_month(now());
+  return jsonb_build_object(
+    'month', v_m.month,
+    'ends_at', v_m.ends,
+    'goal_reward', coalesce((select challenge_goal_reward from public.app_config where id = 1), 25),
+    'set_bonus', coalesce((select challenge_set_bonus from public.app_config where id = 1), 50),
+    'menu', coalesce((
+      select jsonb_agg(jsonb_build_object(
+               'key', g.key, 'name', g.name, 'description', g.description, 'icon', g.icon,
+               'target', g.target,
+               'progress', public.challenge_metric(v_me, g.metric, v_m.starts, v_m.ends))
+             order by g.sort)
+        from public.challenge_goals g where g.active), '[]'::jsonb),
+    'picks', coalesce((
+      select jsonb_agg(jsonb_build_object(
+               'id', u.id, 'goal_key', u.goal_key, 'name', u.goal_name, 'target', u.target,
+               'reward', u.reward, 'completed_at', u.completed_at, 'reward_paid_at', u.reward_paid_at,
+               'progress', coalesce(u.value, public.challenge_metric(v_me, u.metric, v_m.starts, v_m.ends)))
+             order by u.picked_at)
+        from public.user_monthly_goals u where u.user_id = v_me and u.month = v_m.month), '[]'::jsonb),
+    'bonus', (
+      select jsonb_build_object('id', b.id, 'reward', b.reward, 'completed_at', b.completed_at,
+                                'reward_paid_at', b.reward_paid_at)
+        from public.monthly_goal_bonuses b where b.user_id = v_me and b.month = v_m.month),
+    -- Last month's unclaimed rewards, so a goal finished at month's end can
+    -- still be claimed after the menu resets.
+    'unclaimed_earlier', coalesce((
+      select jsonb_agg(jsonb_build_object('id', x.id, 'name', x.name, 'reward', x.reward))
+        from (select u.id, u.goal_name as name, u.reward from public.user_monthly_goals u
+               where u.user_id = v_me and u.month < v_m.month and u.completed_at is not null
+                 and u.reward_paid_at is null and u.reward > 0
+              union all
+              select b.id, 'All three goals', b.reward from public.monthly_goal_bonuses b
+               where b.user_id = v_me and b.month < v_m.month and b.reward_paid_at is null and b.reward > 0) x),
+      '[]'::jsonb),
+    'seasonal', coalesce((
+      select jsonb_agg(jsonb_build_object(
+               'id', c.id, 'name', c.name, 'description', c.description, 'metric', c.metric,
+               'target', c.target, 'starts_at', c.starts_at, 'ends_at', c.ends_at, 'reward', c.reward,
+               'badge', (select jsonb_build_object('name', bd.name, 'icon', bd.icon)
+                           from public.badges bd where bd.id = c.badge_id),
+               'progress', case when c.starts_at <= now()
+                                then coalesce(u.value, public.challenge_metric(v_me, c.metric, c.starts_at, c.ends_at))
+                                else 0 end,
+               'entry_id', u.id, 'completed_at', u.completed_at, 'reward_paid_at', u.reward_paid_at)
+             order by c.ends_at)
+        from public.seasonal_challenges c
+        left join public.user_seasonal_challenges u on u.challenge_id = c.id and u.user_id = v_me
+       where c.archived_at is null
+         and c.starts_at <= now() + interval '14 days'
+         and (c.ends_at > now() - interval '35 days' or (u.id is not null and u.reward_paid_at is null))),
+      '[]'::jsonb)
+  );
+end;
+$$;
+
+-- Claim the coin reward on one completed goal, bonus or event (by its row id)
+-- or on everything waiting (null). Each payout is its own ledger row and
+-- reward_paid_at stops it paying twice; the profile lock serializes claims.
+-- Paused while the coin economy is off (rewards keep waiting).
+create or replace function public.claim_challenge_rewards(p_id uuid default null)
+returns table (paid integer, claimed integer, coins integer)
+language plpgsql security definer set search_path = public
+as $$
+#variable_conflict use_column
+declare
+  v_me    uuid := auth.uid();
+  v_coins integer;
+  v_paid  integer := 0;
+  v_n     integer := 0;
+  r       record;
+begin
+  if v_me is null then raise exception 'Not authenticated'; end if;
+  select pr.coins into v_coins from public.profiles pr where pr.id = v_me for update;
+  if not public.economy_enabled(v_me) then
+    raise exception 'Challenge rewards are paused while your coin economy is off';
+  end if;
+  for r in
+    select 'monthly_goal' as kind, u.id, u.goal_name as label, u.reward, u.completed_at,
+           jsonb_build_object('goal', u.goal_key, 'month', u.month) as detail
+      from public.user_monthly_goals u
+     where u.user_id = v_me and u.completed_at is not null and u.reward_paid_at is null and u.reward > 0
+       and (p_id is null or u.id = p_id)
+    union all
+    select 'monthly_goal_bonus', b.id, 'All three goals', b.reward, b.completed_at,
+           jsonb_build_object('month', b.month)
+      from public.monthly_goal_bonuses b
+     where b.user_id = v_me and b.reward_paid_at is null and b.reward > 0
+       and (p_id is null or b.id = p_id)
+    union all
+    select 'seasonal_challenge', s.id, s.challenge_name, s.reward, s.completed_at,
+           jsonb_build_object('challenge', s.challenge_id)
+      from public.user_seasonal_challenges s
+     where s.user_id = v_me and s.reward_paid_at is null and s.reward > 0
+       and (p_id is null or s.id = p_id)
+     order by 5
+  loop
+    if r.kind = 'monthly_goal' then
+      update public.user_monthly_goals set reward_paid_at = now() where id = r.id;
+    elsif r.kind = 'monthly_goal_bonus' then
+      update public.monthly_goal_bonuses set reward_paid_at = now() where id = r.id;
+    else
+      update public.user_seasonal_challenges set reward_paid_at = now() where id = r.id;
+    end if;
+    update public.profiles set coins = coins + r.reward where id = v_me returning coins into v_coins;
+    perform public.log_coin_event(v_me, r.kind, r.reward, 0, v_coins, null, null, null, r.label, r.detail);
+    v_paid := v_paid + r.reward;
+    v_n := v_n + 1;
+  end loop;
+  return query select v_paid, v_n, v_coins;
+end;
+$$;
+
+-- Create (p_id null) or edit a seasonal event. challenges.manage only; every
+-- change is written to audit_events with the before/after rows.
+create or replace function public.admin_save_seasonal_challenge(
+  p_id uuid, p_name text, p_description text, p_metric text, p_target numeric,
+  p_starts_at timestamptz, p_ends_at timestamptz, p_reward integer, p_badge uuid
+)
+returns uuid
+language plpgsql security definer set search_path = public
+as $$
+declare
+  v_old public.seasonal_challenges%rowtype;
+  v_new public.seasonal_challenges%rowtype;
+begin
+  if not public.has_permission('challenges.manage') then raise exception 'Not authorized'; end if;
+  if p_id is null then
+    insert into public.seasonal_challenges
+      (name, description, metric, target, starts_at, ends_at, reward, badge_id, created_by)
+    values (btrim(p_name), coalesce(p_description, ''), p_metric, p_target, p_starts_at, p_ends_at,
+            coalesce(p_reward, 0), p_badge, auth.uid())
+    returning * into v_new;
+  else
+    select * into v_old from public.seasonal_challenges where id = p_id for update;
+    if not found then raise exception 'Challenge not found'; end if;
+    update public.seasonal_challenges
+       set name = btrim(p_name), description = coalesce(p_description, ''), metric = p_metric,
+           target = p_target, starts_at = p_starts_at, ends_at = p_ends_at,
+           reward = coalesce(p_reward, 0), badge_id = p_badge, updated_at = now()
+     where id = p_id
+    returning * into v_new;
+  end if;
+  insert into public.audit_events (actor_id, entity, entity_id, action, old_value, new_value)
+  values (auth.uid(), 'seasonal_challenge', v_new.id::text,
+          case when p_id is null then 'create' else 'update' end,
+          case when p_id is null then null else to_jsonb(v_old) end, to_jsonb(v_new));
+  return v_new.id;
+end;
+$$;
+
+-- Archive (p_archived true) or restore a seasonal event. Completions and
+-- unclaimed rewards are untouched.
+create or replace function public.admin_archive_seasonal_challenge(p_id uuid, p_archived boolean default true)
+returns void
+language plpgsql security definer set search_path = public
+as $$
+begin
+  if not public.has_permission('challenges.manage') then raise exception 'Not authorized'; end if;
+  update public.seasonal_challenges
+     set archived_at = case when p_archived then coalesce(archived_at, now()) end, updated_at = now()
+   where id = p_id;
+  if not found then raise exception 'Challenge not found'; end if;
+  insert into public.audit_events (actor_id, entity, entity_id, action, detail)
+  values (auth.uid(), 'seasonal_challenge', p_id::text,
+          case when p_archived then 'archive' else 'restore' end, '{}'::jsonb);
+end;
+$$;
+
+-- Every seasonal event (archived included) with how many players completed it.
+create or replace function public.admin_list_seasonal_challenges()
+returns table (
+  id uuid, name text, description text, metric text, target numeric,
+  starts_at timestamptz, ends_at timestamptz, reward integer, badge_id uuid,
+  archived_at timestamptz, completions bigint
+)
+language plpgsql security definer set search_path = public
+as $$
+#variable_conflict use_column
+begin
+  if not public.has_permission('challenges.manage') then raise exception 'Not authorized'; end if;
+  return query
+  select c.id, c.name, c.description, c.metric, c.target, c.starts_at, c.ends_at, c.reward,
+         c.badge_id, c.archived_at,
+         (select count(*) from public.user_seasonal_challenges u where u.challenge_id = c.id)
+    from public.seasonal_challenges c
+   order by c.starts_at desc;
+end;
+$$;
+
+revoke execute on function public.pick_monthly_goal(text) from public, anon;
+revoke execute on function public.evaluate_challenges() from public, anon;
+revoke execute on function public.list_challenges() from public, anon;
+revoke execute on function public.claim_challenge_rewards(uuid) from public, anon;
+revoke execute on function public.admin_save_seasonal_challenge(uuid, text, text, text, numeric, timestamptz, timestamptz, integer, uuid) from public, anon;
+revoke execute on function public.admin_archive_seasonal_challenge(uuid, boolean) from public, anon;
+revoke execute on function public.admin_list_seasonal_challenges() from public, anon;
+grant execute on function public.pick_monthly_goal(text) to authenticated;
+grant execute on function public.evaluate_challenges() to authenticated;
+grant execute on function public.list_challenges() to authenticated;
+grant execute on function public.claim_challenge_rewards(uuid) to authenticated;
+grant execute on function public.admin_save_seasonal_challenge(uuid, text, text, text, numeric, timestamptz, timestamptz, integer, uuid) to authenticated;
+grant execute on function public.admin_archive_seasonal_challenge(uuid, boolean) to authenticated;
+grant execute on function public.admin_list_seasonal_challenges() to authenticated;
 
 -- ---------------------------------------------------------------------------
 -- Instance isolation: per-platform game instances (issues a2b0bcf4 + 5a320005).

@@ -1231,6 +1231,8 @@ function FeatureBonusesCard() {
     dailySession: amt(draft.dailySession),
     dailySessionMinMinutes: Math.max(0, Math.min(1440, Math.round(num(draft.dailySessionMinMinutes)))),
     dailySessionCap: Math.max(1, Math.min(24, Math.round(num(draft.dailySessionCap)))),
+    goalReward: amt(draft.goalReward),
+    goalSetBonus: amt(draft.goalSetBonus),
   };
   const dirty = JSON.stringify(parsed) !== JSON.stringify(featureBonuses);
   const field = (key: keyof FeatureBonusConfig) => ({
@@ -1304,6 +1306,20 @@ function FeatureBonusesCard() {
           min={1}
           max={24}
           {...field("dailySessionCap")}
+        />
+        <RateField
+          label="Monthly goal (coins)"
+          hint="Paid for each monthly goal a player completes. A goal keeps the amount set when it was picked."
+          min={0}
+          max={100000}
+          {...field("goalReward")}
+        />
+        <RateField
+          label="All three goals (coins)"
+          hint="Extra coins for completing all three of a month's goals."
+          min={0}
+          max={100000}
+          {...field("goalSetBonus")}
         />
       </div>
       <div className="mt-3 flex justify-end gap-2">

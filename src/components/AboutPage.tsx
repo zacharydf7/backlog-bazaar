@@ -221,6 +221,14 @@ export function AboutPage() {
               up to your achievement score, shown on your profile.
             </p>
             <p>
+              On the <strong className="text-ink">Challenges</strong> page, pick three goals each
+              month (finish two games, play on ten different days…). Everything you log from the
+              1st counts, and your picks are final for the month. Each goal you complete pays{" "}
+              <Coin n={featureBonuses.goalReward} />, and finishing all three adds{" "}
+              <Coin n={featureBonuses.goalSetBonus} />. Seasonal challenges run for a set time and
+              can pay coins and a badge.
+            </p>
+            <p>
               A game&apos;s length comes from a shared estimate, but you can set{" "}
               <strong className="text-ink">your own length</strong> on its Overview — mainlining it,
               or going for 100% — and it drives your price and bounty instead, without changing the

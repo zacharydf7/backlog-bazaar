@@ -20,6 +20,7 @@ function chromeProps(): ChromeProps {
     onCommunityMessages: () => {},
     onShop: () => {},
     onAchievements: () => {},
+    onChallenges: () => {},
     onLists: () => {},
     onSubscriptions: () => {},
     onRequests: () => {},

@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
-import { Medal, Lock, Coins, Check, EyeOff } from "lucide-react";
+import { useEffect } from "react";
+import { Medal, Lock, EyeOff } from "lucide-react";
 import { useStore } from "../store";
 import { SealMedal } from "./SealMedal";
+import { ClaimAllBanner, RewardClaim } from "./RewardClaim";
 import {
   TIER_META,
   tierLabel,
@@ -24,62 +25,11 @@ function earnedDateLabel(earnedAt: number): string {
   });
 }
 
-/** A medal's coin reward: a Claim button while it waits, a quiet "claimed"
- *  mark once paid, or the reward on offer while the medal is still locked.
- *  With the coin economy off, earned rewards say they're waiting instead. */
-function RewardTag({ achievement }: { achievement: Achievement }) {
-  const economyEnabled = useStore((s) => s.economyEnabled);
-  const claim = useStore((s) => s.claimAchievementRewards);
-  const [busy, setBusy] = useState(false);
-  const { reward } = achievement;
-  if (reward <= 0) return null;
-  if (isClaimable(achievement)) {
-    if (!economyEnabled) {
-      return (
-        <span
-          className="inline-flex shrink-0 items-center gap-1 text-[11px] text-subtle"
-          title="Rewards wait while your coin economy is off"
-        >
-          <Coins size={11} /> {reward} waiting
-        </span>
-      );
-    }
-    return (
-      <button
-        type="button"
-        disabled={busy}
-        onClick={async () => {
-          setBusy(true);
-          await claim(achievement.id);
-          setBusy(false);
-        }}
-        className="inline-flex shrink-0 items-center gap-1 rounded-full bg-brand px-3 py-1.5 text-xs font-semibold text-brand-fg shadow-sm transition hover:opacity-90 disabled:opacity-60"
-      >
-        <Coins size={12} /> Claim +{reward}
-      </button>
-    );
-  }
-  if (achievement.earnedAt != null) {
-    return (
-      <span className="inline-flex shrink-0 items-center gap-1 text-[11px] font-medium text-success">
-        <Check size={11} /> +{reward} claimed
-      </span>
-    );
-  }
-  return (
-    <span
-      className="inline-flex shrink-0 items-center gap-1 text-[11px] text-subtle"
-      title={`Pays ${reward} coins when earned`}
-    >
-      <Coins size={11} /> {reward}
-    </span>
-  );
-}
-
 /** One tier's row inside a family card: medal, name + requirement, then the
  *  earn date (earned), a progress bar (the next target), or a lock (further
  *  tiers); the reward sits on the right. */
 function TierRow({ achievement, isNext }: { achievement: Achievement; isNext: boolean }) {
+  const claim = useStore((s) => s.claimAchievementRewards);
   const earned = achievement.earnedAt != null;
   const tier = TIER_META[achievement.tier];
   const progress = achievementProgress(achievement);
@@ -129,7 +79,11 @@ function TierRow({ achievement, isNext }: { achievement: Achievement; isNext: bo
           </p>
         )}
       </div>
-      <RewardTag achievement={achievement} />
+      <RewardClaim
+        reward={achievement.reward}
+        state={isClaimable(achievement) ? "claimable" : earned ? "claimed" : "locked"}
+        onClaim={() => claim(achievement.id)}
+      />
     </div>
   );
 }
@@ -145,8 +99,6 @@ export function AchievementsPage() {
   const achievements = useStore((s) => s.achievements);
   const fetchAchievements = useStore((s) => s.fetchAchievements);
   const claimAll = useStore((s) => s.claimAchievementRewards);
-  const economyEnabled = useStore((s) => s.economyEnabled);
-  const [claiming, setClaiming] = useState(false);
 
   // Boot already loaded these; refresh on entry so progress bars are current.
   useEffect(() => {
@@ -193,30 +145,7 @@ export function AchievementsPage() {
         )}
       </div>
 
-      {waiting.count > 0 && (
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-line bg-surface px-4 py-3 shadow-sm">
-          <p className="inline-flex items-center gap-2 text-sm text-ink">
-            <Coins size={16} className="shrink-0 text-accent" />
-            {economyEnabled
-              ? `${waiting.count} ${waiting.count === 1 ? "reward" : "rewards"} ready to claim — ${waiting.coins.toLocaleString()} coins`
-              : `${waiting.coins.toLocaleString()} coins in rewards are waiting for when your coin economy is back on`}
-          </p>
-          {economyEnabled && (
-            <button
-              type="button"
-              disabled={claiming}
-              onClick={async () => {
-                setClaiming(true);
-                await claimAll();
-                setClaiming(false);
-              }}
-              className="inline-flex items-center gap-1.5 rounded-full bg-brand px-4 py-2 text-sm font-semibold text-brand-fg shadow-sm transition hover:opacity-90 disabled:opacity-60"
-            >
-              <Coins size={14} /> Claim all
-            </button>
-          )}
-        </div>
-      )}
+      <ClaimAllBanner count={waiting.count} coins={waiting.coins} onClaimAll={() => claimAll()} />
 
       {families.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-line px-6 py-16 text-center text-sm text-muted">

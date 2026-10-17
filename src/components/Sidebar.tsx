@@ -37,6 +37,7 @@ import {
   Medal,
   ShoppingBag,
   Flame,
+  Target,
   type LucideIcon,
   CreditCard,
 } from "lucide-react";
@@ -73,6 +74,7 @@ export type View =
   | "cosmetics"
   | "shop"
   | "achievements"
+  | "challenges"
   | "requests"
   | "account"
   | "admin"
@@ -85,6 +87,7 @@ export type View =
   | "taxonomy"
   | "reports"
   | "stats"
+  | "challengeadmin"
   | "roles"
   | "mysubmissions"
   | "whatsnew"
@@ -131,6 +134,8 @@ export interface ChromeProps {
   /** Open the Curio Shop (cosmetic coin sink). */
   onShop: () => void;
   onAchievements: () => void;
+  /** Open Challenges (monthly goals + seasonal events). */
+  onChallenges: () => void;
   /** Open the My Lists workspace (custom game lists). */
   onLists: () => void;
   /** Open the Subscriptions page (memberships and what they give back). */
@@ -657,6 +662,14 @@ function UtilityActions(
           label="Achievements"
           active={props.view === "achievements"}
           onClick={run(props.onAchievements)}
+        />
+      )}
+      {cloud && (
+        <UtilRow
+          icon={Target}
+          label="Challenges"
+          active={props.view === "challenges"}
+          onClick={run(props.onChallenges)}
         />
       )}
       {cloud && (

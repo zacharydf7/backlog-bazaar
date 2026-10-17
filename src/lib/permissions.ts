@@ -24,6 +24,7 @@ export type Permission =
   | "economy.edit"
   | "economy.shadow"
   | "economy.insights"
+  | "challenges.manage"
   | "cosmetics.events.manage"
   | "shop.manage"
   | "shop.drafts"
@@ -146,6 +147,13 @@ export const PERMISSIONS: PermissionInfo[] = [
     label: "View economy health",
     description:
       "See the whole economy at a glance on the Stats tab: coins in and out by source, a daily in/out chart, and each player's flows.",
+    group: "Economy & Site",
+  },
+  {
+    key: "challenges.manage",
+    label: "Run seasonal challenges",
+    description:
+      "Create, edit and archive seasonal challenges: the goal, dates, coin reward and badge players earn by completing one.",
     group: "Economy & Site",
   },
   {

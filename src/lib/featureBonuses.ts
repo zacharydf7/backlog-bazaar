@@ -29,6 +29,10 @@ export interface FeatureBonusConfig {
   dailySessionMinMinutes: number;
   /** How many Daily Session bonuses a day can pay. */
   dailySessionCap: number;
+  /** Coins for each completed monthly goal (snapshotted when it's picked). */
+  goalReward: number;
+  /** Extra coins for completing all three of a month's goals. */
+  goalSetBonus: number;
 }
 
 /** Defaults — mirrored by the app_config column defaults in schema.sql. */
@@ -40,6 +44,8 @@ export const FEATURE_BONUS_DEFAULTS: FeatureBonusConfig = {
   dailySession: 5,
   dailySessionMinMinutes: 0,
   dailySessionCap: 3,
+  goalReward: 25,
+  goalSetBonus: 50,
 };
 
 /** True when any copy records what you paid for it (a cost, $0 included) or the

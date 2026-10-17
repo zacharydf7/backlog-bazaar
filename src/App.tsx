@@ -97,6 +97,7 @@ import { supabase } from "./lib/supabase";
 import { PrivacyPage } from "./components/PrivacyPage";
 import { GamePage } from "./components/gamepage/GamePage";
 import { AchievementsPage } from "./components/AchievementsPage";
+import { ChallengesPage } from "./components/ChallengesPage";
 import { MyCosmetics } from "./components/MyCosmetics";
 import { ShopPage } from "./components/ShopPage";
 import { CompilationPage } from "./components/gamepage/CompilationPage";
@@ -1136,6 +1137,7 @@ export default function App() {
     onCommunityMessages: () => navigate("community-messages"),
     onShop: () => navigate("shop"),
     onAchievements: () => navigate("achievements"),
+    onChallenges: () => navigate("challenges"),
     onRequests: () => {
       setFeaturesRequestId(undefined);
       navigate("requests");
@@ -1269,6 +1271,8 @@ export default function App() {
           />
         ) : view === "achievements" ? (
           <AchievementsPage />
+        ) : view === "challenges" ? (
+          <ChallengesPage />
         ) : view === "cosmetics" ? (
           <MyCosmetics onClose={() => navigate("profile")} />
         ) : view === "shop" ? (
@@ -1314,6 +1318,7 @@ export default function App() {
           view === "taxonomy" ||
           view === "reports" ||
           view === "stats" ||
+          view === "challengeadmin" ||
           view === "roles" ? (
           <AdminPage view={view} onNavigate={navigate} />
         ) : view === "mysubmissions" ? (

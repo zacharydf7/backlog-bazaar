@@ -171,6 +171,15 @@ import {
 } from "./lib/preorders";
 import { coerceCommunityReview, type CommunityReview } from "./lib/communityReviews";
 import { coerceAchievements, earnToastMessage } from "./lib/achievements";
+import { trackEvent } from "./lib/appEvents";
+import {
+  coerceChallenges,
+  coerceAdminSeasonal,
+  completionToastMessage,
+  type AdminSeasonalChallenge,
+  type ChallengesState,
+  type SeasonalDraft,
+} from "./lib/challenges";
 import { coerceCommunityStats, coerceGameLikers, LIKERS_PAGE, type CommunityStats, type GameLiker } from "./lib/communityStats";
 import { coerceActivity, type ProfileActivity } from "./lib/profileActivity";
 import {
@@ -359,7 +368,7 @@ import { clampScore, REVIEW_MAX } from "./lib/reviews";
 import { prepareUpload, validateFile, isImage } from "./lib/attachment";
 import { toCanonicalRelation, type RelationPerspective } from "./lib/issueRelations";
 import { coachTargetFor, type CoachTarget } from "./lib/onboarding";
-import { Store, Heart, Gamepad2, Trophy, Coins, Eye, EyeOff, Lightbulb, Clock, Pencil, Undo2, Lock, Trash2, Link2, Unlink, Crown, ImagePlus, Layers, Palette, Stamp, Package, Ticket, AlertTriangle, UserPlus, UserCheck, UserMinus, PartyPopper, Send, Archive, Flag, Sparkles, Check, Star, Medal, Handshake, Gem, CalendarClock, HandCoins, Timer, Flame, Users, X, CloudOff } from "lucide-react";
+import { Store, Heart, Gamepad2, Trophy, Coins, Eye, EyeOff, Lightbulb, Clock, Pencil, Undo2, Lock, Trash2, Link2, Unlink, Crown, ImagePlus, Layers, Palette, Stamp, Package, Ticket, AlertTriangle, UserPlus, UserCheck, UserMinus, PartyPopper, Send, Archive, Flag, Sparkles, Check, Star, Medal, Handshake, Gem, CalendarClock, HandCoins, Timer, Flame, Users, X, CloudOff, Target } from "lucide-react";
 
 function addedToast(title: string, status: GameStatus): void {
   if (status === "wishlist") toast(`Wishlisted ${title}`, Heart);
@@ -997,6 +1006,9 @@ interface BazaarState {
   // The full achievements catalog with this user's earn state + progress (see
   // lib/achievements.ts). Loaded at boot by evaluateAchievements; [] offline.
   achievements: Achievement[];
+  // This month's goals, your picks and the seasonal events (lib/challenges.ts).
+  // Loaded by fetchChallenges; null until then and offline.
+  challenges: ChallengesState | null;
   // Curio Shop: the cosmetic catalog (lazily loaded by fetchShop), the item ids
   // this user owns, and their equipped frame/stall picks (boot-loaded).
   shopItems: ShopItem[];
@@ -1630,6 +1642,21 @@ interface BazaarState {
   // unclaimed one (no id). Server-authoritative (claim_achievement_rewards):
   // each payout is its own ledger row and a medal can only pay once.
   claimAchievementRewards: (achievementId?: string) => Promise<void>;
+  // Load the Challenges page (menu + progress, picks, bonus, seasonal events).
+  fetchChallenges: () => Promise<void>;
+  // Record newly completed goals and events and toast them. Runs alongside
+  // evaluateAchievements (same triggers), so every call site covers both.
+  evaluateChallenges: () => Promise<void>;
+  // Pick one of this month's goals (up to 3; final for the month).
+  pickMonthlyGoal: (goalKey: string) => Promise<void>;
+  // Claim one completed goal/bonus/event reward by its row id, or all of them.
+  claimChallengeRewards: (id?: string) => Promise<void>;
+  // Admin (challenges.manage): every seasonal event, archived included.
+  fetchSeasonalChallengesAdmin: () => Promise<AdminSeasonalChallenge[]>;
+  // Admin: create (id null) or edit a seasonal event. Resolves true on success.
+  saveSeasonalChallenge: (draft: SeasonalDraft) => Promise<boolean>;
+  // Admin: archive or restore a seasonal event.
+  archiveSeasonalChallenge: (id: string, archived: boolean) => Promise<boolean>;
   // Record a confirmed Mystery Pull in the append-only history (fire-and-forget;
   // cloud-only). kind: 'play' bought a Bazaar game, 'complete' pulled a beaten
   // game back for a 100% run. The move itself is captured by the normal flows.
@@ -2018,6 +2045,7 @@ export const useStore = create<BazaarState>((set, get) => ({
   myBadges: [],
   selectedTitleId: null,
   achievements: [],
+  challenges: null,
   shopItems: [],
   shopSets: [],
   shopOwnedIds: [],
@@ -2123,7 +2151,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     const { data: cfg } = await supabase
       .from("app_config")
       .select(
-        "maintenance, message, replay_bonus_pct, completion_bonus_pct, co_op_bonus_pct, clear_streak_threshold, clear_streak_bonus_base, clear_streak_bonus_step, clear_streak_bonus_cap, submission_reward, onboarding_vouchers, default_general_slots, default_rotation_slots, default_replay_slots, default_completionist_slots, rotation_checkin_reward, rotation_reset_dow, rotation_reset_hour, rotation_reset_tz, default_coin, price_formula, bounty_formula, sponsor_max_stake, sponsor_monthly_pair_cap, sponsor_expiry_days, preorder_strip_days, shop_open, loan_interest_pct, rec_discount_pct, rec_bounty_pct, rec_bounty_cap, story_order_bonus, collectors_record_bonus, review_bonus, review_bonus_min_chars, session_bonus, session_bonus_min_minutes, session_bonus_daily_cap, bounty_gate_pct",
+        "maintenance, message, replay_bonus_pct, completion_bonus_pct, co_op_bonus_pct, clear_streak_threshold, clear_streak_bonus_base, clear_streak_bonus_step, clear_streak_bonus_cap, submission_reward, onboarding_vouchers, default_general_slots, default_rotation_slots, default_replay_slots, default_completionist_slots, rotation_checkin_reward, rotation_reset_dow, rotation_reset_hour, rotation_reset_tz, default_coin, price_formula, bounty_formula, sponsor_max_stake, sponsor_monthly_pair_cap, sponsor_expiry_days, preorder_strip_days, shop_open, loan_interest_pct, rec_discount_pct, rec_bounty_pct, rec_bounty_cap, story_order_bonus, collectors_record_bonus, review_bonus, review_bonus_min_chars, session_bonus, session_bonus_min_minutes, session_bonus_daily_cap, challenge_goal_reward, challenge_set_bonus, bounty_gate_pct",
       )
       .eq("id", 1)
       .single();
@@ -2170,6 +2198,14 @@ export const useStore = create<BazaarState>((set, get) => ({
           typeof cfg?.session_bonus_daily_cap === "number"
             ? cfg.session_bonus_daily_cap
             : FEATURE_BONUS_DEFAULTS.dailySessionCap,
+        goalReward:
+          typeof cfg?.challenge_goal_reward === "number"
+            ? cfg.challenge_goal_reward
+            : FEATURE_BONUS_DEFAULTS.goalReward,
+        goalSetBonus:
+          typeof cfg?.challenge_set_bonus === "number"
+            ? cfg.challenge_set_bonus
+            : FEATURE_BONUS_DEFAULTS.goalSetBonus,
       },
       sponsorMaxStake:
         typeof cfg?.sponsor_max_stake === "number"
@@ -2294,6 +2330,7 @@ export const useStore = create<BazaarState>((set, get) => ({
         myBadges: [],
         selectedTitleId: null,
         achievements: [],
+        challenges: null,
         shopItems: [],
         shopSets: [],
         shopOwnedIds: [],
@@ -3831,6 +3868,8 @@ export const useStore = create<BazaarState>((set, get) => ({
       dailySession: clamp(cfg.dailySession, 0, 100000),
       dailySessionMinMinutes: clamp(cfg.dailySessionMinMinutes, 0, 1440),
       dailySessionCap: clamp(cfg.dailySessionCap, 1, 24),
+      goalReward: clamp(cfg.goalReward, 0, 100000),
+      goalSetBonus: clamp(cfg.goalSetBonus, 0, 100000),
     };
     const { cloud, can } = get();
     if (!cloud) {
@@ -3849,6 +3888,8 @@ export const useStore = create<BazaarState>((set, get) => ({
         session_bonus: next.dailySession,
         session_bonus_min_minutes: next.dailySessionMinMinutes,
         session_bonus_daily_cap: next.dailySessionCap,
+        challenge_goal_reward: next.goalReward,
+        challenge_set_bonus: next.goalSetBonus,
       })
       .eq("id", 1);
     if (error) {
@@ -8186,6 +8227,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     } catch {
       // Opportunistic call — never let it surface or reject.
     }
+    await get().evaluateChallenges();
   },
 
   claimAchievementRewards: async (achievementId) => {
@@ -8204,6 +8246,107 @@ export const useStore = create<BazaarState>((set, get) => ({
       toast(`+${row.paid} coins — ${what} claimed`, Coins);
     }
     await get().fetchAchievements();
+  },
+
+  fetchChallenges: async () => {
+    if (!supabase || !get().cloud) return;
+    const { data, error } = await supabase.rpc("list_challenges");
+    if (error) return;
+    set({ challenges: coerceChallenges(data) });
+  },
+
+  evaluateChallenges: async () => {
+    if (!supabase || !get().cloud) return;
+    // Opportunistic, like evaluateAchievements: a miss self-heals next call.
+    try {
+      const { data, error } = await supabase.rpc("evaluate_challenges");
+      if (!error && Array.isArray(data) && data.length > 0) {
+        const done = data as { name?: unknown; reward?: unknown }[];
+        const names = done.map((r) => r.name).filter((n): n is string => typeof n === "string");
+        const waiting = get().economyEnabled
+          ? done.reduce((sum, r) => sum + (typeof r.reward === "number" ? r.reward : 0), 0)
+          : 0;
+        const message = completionToastMessage(names, waiting);
+        if (message) toast(message, Target);
+      }
+      if (get().challenges) await get().fetchChallenges();
+    } catch {
+      // Never let an opportunistic call surface or reject.
+    }
+  },
+
+  pickMonthlyGoal: async (goalKey) => {
+    if (!supabase || !get().cloud) return;
+    const { error } = await supabase.rpc("pick_monthly_goal", { p_goal: goalKey });
+    if (error) {
+      toast(error.message, AlertTriangle);
+      return;
+    }
+    trackEvent("feature", "challenge_pick", { goal: goalKey });
+    // A goal already met completes on pick, so evaluate before reloading.
+    await get().evaluateChallenges();
+    await get().fetchChallenges();
+  },
+
+  claimChallengeRewards: async (id) => {
+    if (!supabase || !get().cloud) return;
+    const { data, error } = await supabase.rpc("claim_challenge_rewards", { p_id: id ?? null }).single();
+    if (error) {
+      toast(error.message, AlertTriangle);
+      return;
+    }
+    const row = data as { paid: number; claimed: number; coins: number } | null;
+    if (row && row.claimed > 0) {
+      set({ coins: row.coins });
+      const what = row.claimed === 1 ? "challenge reward" : `${row.claimed} challenge rewards`;
+      toast(`+${row.paid} coins — ${what} claimed`, Coins);
+    }
+    await get().fetchChallenges();
+  },
+
+  fetchSeasonalChallengesAdmin: async () => {
+    if (!supabase || !get().cloud) return [];
+    const { data, error } = await supabase.rpc("admin_list_seasonal_challenges");
+    if (error) {
+      toast(error.message, AlertTriangle);
+      return [];
+    }
+    return coerceAdminSeasonal(data);
+  },
+
+  saveSeasonalChallenge: async (d) => {
+    if (!supabase || !get().cloud) return false;
+    const { error } = await supabase.rpc("admin_save_seasonal_challenge", {
+      p_id: d.id,
+      p_name: d.name.trim(),
+      p_description: d.description,
+      p_metric: d.metric,
+      p_target: d.target,
+      p_starts_at: new Date(d.startsAt).toISOString(),
+      p_ends_at: new Date(d.endsAt).toISOString(),
+      p_reward: d.reward,
+      p_badge: d.badgeId,
+    });
+    if (error) {
+      toast(error.message, AlertTriangle);
+      return false;
+    }
+    toast(d.id ? "Challenge updated" : "Challenge created", Target);
+    return true;
+  },
+
+  archiveSeasonalChallenge: async (id, archived) => {
+    if (!supabase || !get().cloud) return false;
+    const { error } = await supabase.rpc("admin_archive_seasonal_challenge", {
+      p_id: id,
+      p_archived: archived,
+    });
+    if (error) {
+      toast(error.message, AlertTriangle);
+      return false;
+    }
+    toast(archived ? "Challenge archived" : "Challenge restored", Target);
+    return true;
   },
 
   // Search the moderated catalog by title: community-added games RAWG doesn't know
