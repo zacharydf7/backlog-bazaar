@@ -46,7 +46,8 @@ beforeAll(async () => {
       economy boolean not null default true);
     create table public.games (
       id uuid primary key, user_id uuid not null, title text not null, status text not null default 'backlog',
-      genres jsonb, copies jsonb, platforms jsonb, hours real, personal_hours real
+      genres jsonb, copies jsonb, platforms jsonb, hours real, personal_hours real,
+      started_at timestamptz
     );
     create table public.playtime_events (user_id uuid, platform text, hours real, source text,
       created_at timestamptz not null default now());
@@ -58,6 +59,9 @@ beforeAll(async () => {
     create function public.economy_enabled(p_user uuid) returns boolean language sql
       as $$ select economy from public.profiles where id = p_user $$;
     create function public.player_tz(p_user uuid) returns text language sql as $$ select 'America/New_York' $$;
+    create schema auth;
+    create function auth.uid() returns uuid language sql
+      as $$ select nullif(current_setting('test.uid', true), '')::uuid $$;
     create function public.log_coin_event(p_user uuid, p_kind text, p_coin_delta integer,
       p_charter_delta integer, p_coin_after integer, p_charter_after integer, p_game uuid,
       p_game_title text, p_label text, p_detail jsonb default '{}'::jsonb)
@@ -74,6 +78,7 @@ beforeAll(async () => {
     "bonus_event_discount",
     "bonus_event_relevant",
     "bonus_event_notices",
+    "my_bonus_event_perks",
   ]) {
     await db.exec(fn(name));
   }
@@ -320,5 +325,49 @@ describe("bonus_event_notices", () => {
       [U, id],
     );
     expect(await notices()).toEqual(["Coin event: Double Bounty", "Coin event: old"]);
+  });
+});
+
+describe("my_bonus_event_perks", () => {
+  async function perks() {
+    await db.query("select set_config('test.uid', $1, false)", [U]);
+    const r = await db.query<{ p: Record<string, unknown> }>("select public.my_bonus_event_perks() as p");
+    return r.rows[0].p;
+  }
+
+  it("is empty with nothing running", async () => {
+    await event({ starts_at: "now() + interval '1 day'", ends_at: "now() + interval '2 days'" });
+    expect(await perks()).toEqual({});
+  });
+
+  it("gives Bazaar games the discount and Now Playing games the bounty boost and saving", async () => {
+    await db.exec(`update public.games set status = 'playing', started_at = now() - interval '1 hour' where id = '${SW}'`);
+    const id = await event({ start_discount_pct: "50", discount_limit: "2", genres: "'{RPG,Platformer}'" });
+    // A discount saved on this run counts; one from before it started doesn't.
+    await db.query(
+      `insert into public.bonus_event_payouts (event_id, event_name, user_id, game_id, kind, amount, created_at)
+       values ($1, 'x', $2, $3, 'discount', 20, now() - interval '30 minutes'),
+              ($1, 'x', $2, $3, 'discount', 99, now() - interval '2 hours')`,
+      [id, U, SW],
+    );
+    expect(await perks()).toEqual({
+      [PS]: { discount: { event: "Double Bounty", pct: 50 } },
+      [SW]: { bounty: { event: "Double Bounty", factor: 2 }, saved: 20 },
+    });
+  });
+
+  it("drops the discount once the player's discounted starts are used", async () => {
+    const id = await event({ bounty_mult: "1", start_discount_pct: "50", discount_limit: "1" });
+    await db.query(
+      "insert into public.bonus_event_payouts (event_id, event_name, user_id, kind, amount) values ($1, 'x', $2, 'discount', 10)",
+      [id, U],
+    );
+    expect(await perks()).toEqual({});
+  });
+
+  it("is empty with the economy off", async () => {
+    await event();
+    await db.exec("update public.profiles set economy = false");
+    expect(await perks()).toEqual({});
   });
 });

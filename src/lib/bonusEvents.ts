@@ -207,12 +207,16 @@ export function bonusEventDraftProblem(d: BonusEventDraft): string | null {
   return null;
 }
 
+/** "2 days" / "5h" until `at` (at least 1h). */
+export function spanUntil(at: number, now: number): string {
+  const ms = at - now;
+  return ms < DAY ? `${Math.max(1, Math.ceil(ms / 3_600_000))}h` : `${Math.ceil(ms / DAY)} days`;
+}
+
 /** "Ends in 2 days" / "Starts in 5h": the banner's countdown for a run. */
 export function eventWhenLabel(e: Pick<BonusEvent, "startsAt" | "endsAt">, now: number): string {
   const live = eventIsLive(e, now);
-  const ms = (live ? e.endsAt : e.startsAt) - now;
-  const span = ms < DAY ? `${Math.max(1, Math.ceil(ms / 3_600_000))}h` : `${Math.ceil(ms / DAY)} days`;
-  return `${live ? "Ends" : "Starts"} in ${span}`;
+  return `${live ? "Ends" : "Starts"} in ${spanUntil(live ? e.endsAt : e.startsAt, now)}`;
 }
 
 /** "Every week until Dec 31" / "Every month" / null for a one-off. */
@@ -221,4 +225,56 @@ export function repeatLabel(repeat: BonusEventRepeat | null, repeatUntil: number
   const every = repeat === "weekly" ? "Every week" : "Every month";
   if (repeatUntil == null) return every;
   return `${every} until ${new Date(repeatUntil).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}`;
+}
+
+/** What running events do for one of your games (my_bonus_event_perks). */
+export interface BonusEventPerk {
+  discount?: { event: string; pct: number; capLeft: number | null };
+  bounty?: { event: string; factor: number; capLeft: number | null };
+  /** Coins the start discount saved on this run (counted as paid at finish). */
+  saved: number;
+}
+
+export function coerceBonusPerks(raw: unknown): Record<string, BonusEventPerk> {
+  const out: Record<string, BonusEventPerk> = {};
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return out;
+  for (const [id, v] of Object.entries(raw as Record<string, unknown>)) {
+    if (!v || typeof v !== "object") continue;
+    const r = v as Record<string, unknown>;
+    const d = r.discount as Record<string, unknown> | undefined;
+    const b = r.bounty as Record<string, unknown> | undefined;
+    out[id] = {
+      ...(d && typeof d.event === "string" && num(d.pct) > 0
+        ? { discount: { event: d.event, pct: num(d.pct), capLeft: maybeNum(d.cap_left) } }
+        : {}),
+      ...(b && typeof b.event === "string" && num(b.factor) > 1
+        ? { bounty: { event: b.event, factor: num(b.factor), capLeft: maybeNum(b.cap_left) } }
+        : {}),
+      saved: num(r.saved),
+    };
+  }
+  return out;
+}
+
+/** A start under an event discount, as bonus_event_discount prices it (the
+ *  saving floors, and stops at the event's cap); null when none applies. */
+export function eventStartPrice(
+  price: number,
+  perk: BonusEventPerk | undefined,
+): { price: number; saving: number; event: string; pct: number } | null {
+  const d = perk?.discount;
+  if (!d || price <= 0) return null;
+  let saving = Math.floor((price * d.pct) / 100);
+  if (d.capLeft != null) saving = Math.min(saving, Math.max(0, d.capLeft));
+  return saving > 0 ? { price: price - saving, saving, event: d.event, pct: d.pct } : null;
+}
+
+/** The extra an event bounty boost adds to what a finish pays right away (the
+ *  held part isn't boosted), as bonus_event_pay computes it; 0 when none. */
+export function eventFinishBonus(paidAtFinish: number, perk: BonusEventPerk | undefined): number {
+  const b = perk?.bounty;
+  if (!b || paidAtFinish <= 0) return 0;
+  let extra = Math.floor(paidAtFinish * (b.factor - 1));
+  if (b.capLeft != null) extra = Math.min(extra, Math.max(0, b.capLeft));
+  return Math.max(0, extra);
 }

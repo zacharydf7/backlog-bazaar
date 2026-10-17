@@ -7692,8 +7692,9 @@ as $$
 $$;
 revoke execute on function public.copies_have_collectors_record(jsonb) from public, anon, authenticated;
 
--- The feature-bonus columns (story_bonus, collector_bonus) widened the RETURNS
--- TABLE shape; the drops above recreate it.
+-- The feature-bonus columns (story_bonus, collector_bonus) and the coin event
+-- bonus (event_bonus) widened the RETURNS TABLE shape; the drops above
+-- recreate it.
 create or replace function public.apply_finish(
   p_game uuid, p_full_reward integer, p_replay_reward integer,
   p_completion_reward integer default 0
@@ -7701,7 +7702,7 @@ create or replace function public.apply_finish(
 returns table (
   coins integer, reward integer, replay boolean, undo_id uuid,
   streak integer, streak_bonus integer, new_record boolean,
-  story_bonus integer, collector_bonus integer, held integer
+  story_bonus integer, collector_bonus integer, held integer, event_bonus integer
 )
 language plpgsql
 security definer set search_path = public
@@ -8047,7 +8048,7 @@ begin
   end if;
 
   return query select v_coins, v_net, v_replay, v_undo, v_streak, v_streak_bonus, v_new_record,
-                      v_story_bonus, v_collector_bonus, v_held;
+                      v_story_bonus, v_collector_bonus, v_held, v_event_bonus;
 end;
 $$;
 
@@ -20972,6 +20973,52 @@ begin
 end;
 $$;
 
+-- What running coin events do for each of the caller's games, so cards can
+-- say so: the start discount on a Bazaar game (respecting discounted-start
+-- limits and caps) and the bounty boost on a Now Playing one, plus the
+-- discount already saved on that run (apply_finish counts it as paid). One
+-- jsonb object keyed by game id, so a big library isn't cut at the API's row
+-- limit; empty when nothing is running or the economy is off.
+create or replace function public.my_bonus_event_perks()
+returns jsonb
+language plpgsql
+stable
+security definer set search_path = public
+as $$
+declare
+  v_me uuid := auth.uid();
+begin
+  if v_me is null then raise exception 'Not authenticated'; end if;
+  if not public.economy_enabled(v_me) or not exists (
+       select 1 from public.bonus_events e
+        cross join lateral public.bonus_event_occurrence(e, now()) o
+        where e.archived_at is null and o.live
+          and (e.bounty_mult > 1 or e.start_discount_pct > 0)) then
+    return '{}'::jsonb;
+  end if;
+  return coalesce((
+    select jsonb_object_agg(x.id, x.perk)
+      from (
+        select g.id,
+               jsonb_strip_nulls(jsonb_build_object(
+                 'discount', (select jsonb_build_object('event', d.event_name, 'pct', d.factor, 'cap_left', d.cap_left)
+                                from public.best_bonus_event(v_me, g.id, 'discount') d
+                               where g.status = 'backlog'),
+                 'bounty', (select jsonb_build_object('event', b.event_name, 'factor', b.factor, 'cap_left', b.cap_left)
+                              from public.best_bonus_event(v_me, g.id, 'bounty') b
+                             where g.status = 'playing'),
+                 'saved', case when g.status = 'playing' then
+                            nullif((select coalesce(sum(p.amount), 0) from public.bonus_event_payouts p
+                                     where p.game_id = g.id and p.user_id = v_me and p.kind = 'discount'
+                                       and p.created_at >= g.started_at), 0) end
+               )) as perk
+          from public.games g
+         where g.user_id = v_me and g.status in ('backlog', 'playing')
+      ) x
+     where x.perk <> '{}'::jsonb), '{}'::jsonb);
+end;
+$$;
+
 -- One bell notification per run of each coin event that applies to the
 -- player: a heads-up if they're in the app in the two days before it starts,
 -- else a "now on" the first time they're in while it runs. Never both, so a
@@ -21105,6 +21152,8 @@ $$;
 
 revoke execute on function public.preview_start_price(uuid, integer) from public, anon;
 revoke execute on function public.list_bonus_events() from public, anon;
+revoke execute on function public.my_bonus_event_perks() from public, anon;
+grant execute on function public.my_bonus_event_perks() to authenticated;
 revoke execute on function public.admin_save_bonus_event(uuid, text, text, timestamptz, timestamptz, numeric, numeric, numeric, integer, text[], text[], boolean, numeric, numeric, integer, text, timestamptz, integer) from public, anon;
 revoke execute on function public.admin_archive_bonus_event(uuid, boolean) from public, anon;
 revoke execute on function public.admin_list_bonus_events() from public, anon;

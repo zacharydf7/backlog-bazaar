@@ -1,12 +1,12 @@
-import { Coins } from "lucide-react";
+import { Coins, PartyPopper } from "lucide-react";
 import { useStore } from "../store";
 import { useNow } from "../lib/useNow";
 import { boostLabels, eventIsLive, eventWhenLabel, targetLabel } from "../lib/bonusEvents";
 
-/** The Bazaar board's coin event banner: events running now and any starting
- *  within the week that apply to you (the server filters both), each with
- *  what it boosts, for which games, and when it ends or starts. Own board
- *  only, and hidden with the economy off. */
+/** The coin event banner on the Bazaar and Now Playing boards: events running
+ *  now and any starting within the week that apply to you (the server filters
+ *  both), each with what it boosts, for which games, and when it ends or
+ *  starts. Own boards only, and hidden with the economy off. */
 export function BonusEventStrip() {
   const events = useStore((s) => s.bonusEvents);
   const viewing = useStore((s) => s.viewing);
@@ -26,12 +26,16 @@ export function BonusEventStrip() {
           <div
             key={e.id}
             className={
-              "rounded-xl border p-3 " + (live ? "border-brand/50 bg-brand/10" : "border-accent/30 bg-accent/5")
+              "rounded-xl p-3 " + (live ? "border-2 border-success bg-success/10" : "border border-accent/30 bg-accent/5")
             }
           >
             <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
               <p className="inline-flex items-center gap-1.5 text-sm font-semibold text-ink">
-                <Coins size={15} className="text-accent" />
+                {live ? (
+                  <PartyPopper size={15} className="text-success" />
+                ) : (
+                  <Coins size={15} className="text-accent" />
+                )}
                 {live ? "Coin event" : "Coming up"}: {e.name}
               </p>
               <span className="text-xs text-subtle">{eventWhenLabel(e, now)}</span>

@@ -1470,11 +1470,16 @@ export default function App() {
                 </div>
               )
             ) : view === "playing" ? (
-              <PlayingBoard
-                games={visibleGames}
-                families={familiesForView}
-                highlightId={highlightGameId}
-              />
+              <>
+                {/* A running coin event (own board only) — finishing here is
+                    where a bounty boost pays. */}
+                <BonusEventStrip />
+                <PlayingBoard
+                  games={visibleGames}
+                  families={familiesForView}
+                  highlightId={highlightGameId}
+                />
+              </>
             ) : (
               <>
                 {/* Pending pact invites for games not in the library — with no

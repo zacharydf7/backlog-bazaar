@@ -177,9 +177,11 @@ import { browserTimeZone } from "./lib/timeZone";
 import {
   coerceAdminBonusEvents,
   coerceBonusEvents,
+  coerceBonusPerks,
   type AdminBonusEvent,
   type BonusEvent,
   type BonusEventDraft,
+  type BonusEventPerk,
 } from "./lib/bonusEvents";
 import {
   coerceChallenges,
@@ -1023,6 +1025,9 @@ interface BazaarState {
   weeklyRecap: WeeklyRecap | null;
   // Running and upcoming coin events that apply to you (the board banner).
   bonusEvents: BonusEvent[];
+  // What running events do for each of your games, by game id (the cards'
+  // event discount and finish bonus).
+  bonusPerks: Record<string, BonusEventPerk>;
   // Curio Shop: the cosmetic catalog (lazily loaded by fetchShop), the item ids
   // this user owns, and their equipped frame/stall picks (boot-loaded).
   shopItems: ShopItem[];
@@ -1678,7 +1683,8 @@ interface BazaarState {
   openWeeklyRecap: (id: string) => Promise<void>;
   // Close the recap card, marking it seen.
   closeWeeklyRecap: () => void;
-  // Load the running and upcoming coin events that apply to you.
+  // Load the running and upcoming coin events that apply to you, and what
+  // they do for each of your games.
   fetchBonusEvents: () => Promise<void>;
   // What starting a game would cost under a running discount event (the
   // purchase applies the same discount server-side). Null when none applies.
@@ -2093,6 +2099,7 @@ export const useStore = create<BazaarState>((set, get) => ({
   challenges: null,
   weeklyRecap: null,
   bonusEvents: [],
+  bonusPerks: {},
   shopItems: [],
   shopSets: [],
   shopOwnedIds: [],
@@ -2392,6 +2399,7 @@ export const useStore = create<BazaarState>((set, get) => ({
         challenges: null,
         weeklyRecap: null,
         bonusEvents: [],
+        bonusPerks: {},
         shopItems: [],
         shopSets: [],
         shopOwnedIds: [],
@@ -5877,9 +5885,10 @@ export const useStore = create<BazaarState>((set, get) => ({
     const charged = economyOn ? Math.max(0, coins - newCoins) : price;
     if (charged < price) {
       toast(`Discount applied: you saved ${price - charged} coins on ${game.title}`, BadgePercent);
-      // The banner's "discounted starts left" count moves.
-      void get().fetchBonusEvents();
     }
+    // While an event runs, a start moves this game's perks (discount → bounty
+    // boost) and may use up a discounted start.
+    if (get().bonusEvents.length > 0) void get().fetchBonusEvents();
     set({
       coins: newCoins,
       games: games.map((g) =>
@@ -8439,9 +8448,12 @@ export const useStore = create<BazaarState>((set, get) => ({
 
   fetchBonusEvents: async () => {
     if (!supabase || !get().cloud) return;
-    const { data, error } = await supabase.rpc("list_bonus_events");
-    if (error) return;
-    set({ bonusEvents: coerceBonusEvents(data) });
+    const [events, perks] = await Promise.all([
+      supabase.rpc("list_bonus_events"),
+      supabase.rpc("my_bonus_event_perks"),
+    ]);
+    if (!events.error) set({ bonusEvents: coerceBonusEvents(events.data) });
+    if (!perks.error) set({ bonusPerks: coerceBonusPerks(perks.data) });
   },
 
   previewStartPrice: async (gameId, price) => {
@@ -9694,6 +9706,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       story_bonus: storyBonus,
       collector_bonus: collectorBonus,
       held: heldRaw,
+      event_bonus: eventBonusRaw,
     } = data as {
       coins: number;
       reward: number;
@@ -9705,8 +9718,10 @@ export const useStore = create<BazaarState>((set, get) => ({
       story_bonus: number | null;
       collector_bonus: number | null;
       held: number | null;
+      event_bonus: number | null;
     };
     const held = heldRaw ?? 0;
+    const eventBonus = eventBonusRaw ?? 0;
     const paidBonuses = { storyOrder: storyBonus ?? 0, collectorsRecord: collectorBonus ?? 0 };
     // The server is authoritative for the Clear Streak: it decides whether this
     // finish extended it (a resumed re-finish doesn't, nor a stealth game —
@@ -9726,12 +9741,21 @@ export const useStore = create<BazaarState>((set, get) => ({
           : g,
       ),
     });
-    finishToast(awarded - held, awarded - held + (streakBonus ?? 0) + finishBonusTotal(paidBonuses), undoId);
+    finishToast(
+      awarded - held,
+      awarded - held + (streakBonus ?? 0) + finishBonusTotal(paidBonuses) + eventBonus,
+      undoId,
+    );
     heldToast(held);
     // This clear can change the player's standing for the next one.
     void get().refreshBountyRate();
     if (!inertFinish) streakToast(streakInfo);
     bonusToast(paidBonuses);
+    if (eventBonus > 0) {
+      const eventName = get().bonusPerks[id]?.bounty?.event;
+      toast(`${eventName ?? "Coin event"} bonus: +${eventBonus} coins`, PartyPopper);
+    }
+    if (get().bonusEvents.length > 0) void get().fetchBonusEvents();
     // Finishing moves several metrics at once (clears, completions, coins).
     void get().evaluateAchievements();
   },

@@ -62,6 +62,7 @@ export const RELEASES: Release[] = [
     items: [
       { text: "Watch for coin events like double bounty weekends and cheaper starts.", tag: "feature" },
       { text: "A banner on your Bazaar shows what's on now and what's coming up.", tag: "feature" },
+      { text: "Your game cards show event discounts and finish bonuses while an event runs.", tag: "feature" },
       { text: "You'll get a notification before an event that fits your games starts.", tag: "feature" },
     ],
   },

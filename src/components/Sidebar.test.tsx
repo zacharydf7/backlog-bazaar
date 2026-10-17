@@ -74,6 +74,58 @@ afterEach(() => {
   );
 });
 
+describe("Sidebar coin event chip", () => {
+  const live = {
+    id: "e1",
+    name: "Double Everything Weekend",
+    description: "",
+    startsAt: Date.now() - 3_600_000,
+    endsAt: Date.now() + 5 * 3_600_000,
+    repeat: null,
+    bountyMult: 2,
+    sessionMult: 1,
+    rewardsMult: 1,
+    startDiscountPct: 0,
+    discountLimit: null,
+    genres: [],
+    platforms: [],
+    offMainPlatform: false,
+    minHours: null,
+    maxHours: null,
+    playerCap: null,
+    capUsed: 0,
+    discountUsed: 0,
+  };
+
+  it("announces a live event on every page and opens the Bazaar", () => {
+    const setView = vi.fn();
+    act(() => useStore.setState({ viewing: null, economyEnabled: true, bonusEvents: [live] }));
+    render(<Sidebar {...chromeProps()} view="playing" setView={setView} />);
+    const chips = screen.getAllByRole("button", { name: /Double Everything Weekend is on · 5h left/ });
+    expect(chips.length).toBeGreaterThan(0);
+    fireEvent.click(chips[0]);
+    expect(setView).toHaveBeenCalledWith("backlog");
+    act(() => useStore.setState({ bonusEvents: [] }));
+  });
+
+  it("stays hidden for an upcoming event or with the economy off", () => {
+    act(() =>
+      useStore.setState({
+        viewing: null,
+        economyEnabled: true,
+        bonusEvents: [{ ...live, startsAt: Date.now() + 3_600_000 }],
+      }),
+    );
+    const { unmount } = render(<Sidebar {...chromeProps()} />);
+    expect(screen.queryByRole("button", { name: / is on/ })).toBeNull();
+    unmount();
+    act(() => useStore.setState({ economyEnabled: false, bonusEvents: [live] }));
+    render(<Sidebar {...chromeProps()} />);
+    expect(screen.queryByRole("button", { name: / is on/ })).toBeNull();
+    act(() => useStore.setState({ economyEnabled: true, bonusEvents: [] }));
+  });
+});
+
 describe("Sidebar Manage entry", () => {
   it("is marked current on every admin tab, including Shop, Challenges and Coin events", () => {
     act(() => useStore.setState({ cloud: true, isAdmin: true, viewing: null }));

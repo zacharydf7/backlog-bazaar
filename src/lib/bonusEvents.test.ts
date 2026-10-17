@@ -4,7 +4,11 @@ import {
   boostLabels,
   coerceAdminBonusEvents,
   coerceBonusEvents,
+  coerceBonusPerks,
+  eventFinishBonus,
+  eventStartPrice,
   eventWhenLabel,
+  spanUntil,
   repeatLabel,
   targetLabel,
   type BonusEventDraft,
@@ -130,5 +134,48 @@ describe("bonusEventDraftProblem", () => {
     expect(bonusEventDraftProblem({ ...DRAFT, repeat: "monthly", endsAt: 28 * D })).toBeNull();
     expect(bonusEventDraftProblem({ ...DRAFT, repeat: "monthly", endsAt: 29 * D })).toMatch(/28 days/);
     expect(bonusEventDraftProblem({ ...DRAFT, repeat: "weekly", repeatUntil: 0 })).toMatch(/Stop repeating/);
+  });
+});
+
+describe("perks", () => {
+  it("reads my_bonus_event_perks, dropping empty or junk entries", () => {
+    expect(
+      coerceBonusPerks({
+        a: { discount: { event: "Half Off", pct: 50, cap_left: "40" } },
+        b: { bounty: { event: "Double", factor: "2" }, saved: 25 },
+        c: { bounty: { event: "Flat", factor: 1 } },
+        d: "nope",
+      }),
+    ).toEqual({
+      a: { discount: { event: "Half Off", pct: 50, capLeft: 40 }, saved: 0 },
+      b: { bounty: { event: "Double", factor: 2, capLeft: null }, saved: 25 },
+      c: { saved: 0 },
+    });
+    expect(coerceBonusPerks(null)).toEqual({});
+    expect(coerceBonusPerks([1])).toEqual({});
+  });
+
+  it("prices a start like bonus_event_discount: floored saving, stopped at the cap", () => {
+    const perk = (pct: number, capLeft: number | null = null) => ({ discount: { event: "E", pct, capLeft }, saved: 0 });
+    expect(eventStartPrice(125, perk(50))).toEqual({ price: 63, saving: 62, event: "E", pct: 50 });
+    expect(eventStartPrice(100, perk(50, 30))).toMatchObject({ price: 70, saving: 30 });
+    expect(eventStartPrice(100, perk(50, 0))).toBeNull();
+    expect(eventStartPrice(0, perk(50))).toBeNull();
+    expect(eventStartPrice(100, undefined)).toBeNull();
+  });
+
+  it("boosts what's paid at finish like bonus_event_pay: floored, stopped at the cap", () => {
+    const perk = (factor: number, capLeft: number | null = null) => ({ bounty: { event: "E", factor, capLeft }, saved: 0 });
+    expect(eventFinishBonus(330, perk(2))).toBe(330);
+    expect(eventFinishBonus(101, perk(1.5))).toBe(50);
+    expect(eventFinishBonus(330, perk(2, 100))).toBe(100);
+    expect(eventFinishBonus(0, perk(2))).toBe(0);
+    expect(eventFinishBonus(330, undefined)).toBe(0);
+  });
+
+  it("words the time left", () => {
+    expect(spanUntil(5 * H, 0)).toBe("5h");
+    expect(spanUntil(10 * 60_000, 0)).toBe("1h");
+    expect(spanUntil(2 * D + H, 0)).toBe("3 days");
   });
 });

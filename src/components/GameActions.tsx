@@ -27,6 +27,7 @@ import {
   Infinity as InfinityIcon,
   CloudOff,
   Sparkles,
+  BadgePercent,
 } from "lucide-react";
 import type { Game } from "../types";
 import { useStore, selectCoachTarget } from "../store";
@@ -83,6 +84,7 @@ import {
 } from "../lib/economy";
 import { beatenFinishLength, effectiveLength, finishBountyOffset } from "../lib/personalLength";
 import { bountyGateHours, heldAtFinish } from "../lib/bountyHold";
+import { eventFinishBonus, eventStartPrice } from "../lib/bonusEvents";
 import { FinishCheckModal } from "./FinishCheckModal";
 import { useScrollLock } from "../lib/useScrollLock";
 import { CoinIcon } from "./CoinIcon";
@@ -389,6 +391,8 @@ export function GameActions({
   // Getting Started quests highlight the real control they teach (derived —
   // the ring clears itself the moment the quest's predicate flips).
   const coachTarget = useStore(selectCoachTarget);
+  // What a running coin event does for this game (start discount / finish boost).
+  const perk = useStore((s) => s.bonusPerks[game.id]);
   const coachRing = " ring-2 ring-brand ring-offset-2 ring-offset-canvas";
   const [showWhy, setShowWhy] = useState(false);
   const [activating, setActivating] = useState(false);
@@ -428,6 +432,10 @@ export function GameActions({
     ? computeFamilyDiscountPrice(fullPrice, replayBonusPct)
     : fullPrice;
   const price = activeRec ? recDiscountedPrice(preRecPrice, recDiscountPct) : preRecPrice;
+  // A running coin event's start discount comes off last, as the server
+  // applies it at purchase (bonus_event_discount).
+  const eventStart = economyEnabled ? eventStartPrice(price, perk) : null;
+  const startPrice = eventStart?.price ?? price;
   const bounty = computeFormula(game, economy.bounty);
   // A resumed game (a finished game pulled back for free) or a family edition whose
   // family is already cleared re-finishes for the smaller Replay Bonus — mirror the
@@ -471,18 +479,20 @@ export function GameActions({
   const finishHeld = showEconomy
     ? heldAtFinish({
         net: finishNet,
-        pricePaid: Math.max(0, (game.pricePaid ?? 0) - settleRefund),
+        pricePaid: Math.max(0, (game.pricePaid ?? 0) + (perk?.saved ?? 0) - settleRefund),
         played: game.playedHours ?? 0,
         gateHours: finishGateHours,
       })
     : 0;
+  // A running coin event's boost on what the finish pays now.
+  const eventBonus = showEconomy && game.status === "playing" ? eventFinishBonus(finishNet - finishHeld, perk) : 0;
   // Feature bonuses this game is set up to earn on its first clear (Story Order /
   // Collector's Record) — previewed the moment the setup is in place.
   const bonusSummary = finishBonusSummary(
     finishBonuses(games, game, { firstClear: !willReplay, paying: showEconomy }, featureBonuses),
   );
   const shelveRefund = showEconomy ? computeShelveRefund(game.pricePaid ?? price) : 0;
-  const canAfford = !economyEnabled || coins >= price;
+  const canAfford = !economyEnabled || coins >= startPrice;
   const hasVoucher = economyEnabled && canRedeemVoucher(vouchers, game.status);
   // Where a Bazaar game can land: Focus, or — with Focus full — straight into
   // the Completionist lane, or the uncapped Co-op lane for a pact-bound card
@@ -931,12 +941,12 @@ export function GameActions({
             className="inline-flex items-center gap-1 self-start text-left text-xs text-muted transition hover:text-accent"
           >
             <CoinIcon size={13} />{" "}
-            {familyDiscount || activeRec ? (
-              // A discount (family and/or a friend's recommendation): full fee
-              // crossed out, the cheaper fee leads.
+            {familyDiscount || activeRec || eventStart ? (
+              // A discount (family, a friend's recommendation and/or a coin
+              // event): full fee crossed out, the cheaper fee leads.
               <>
                 <s className="text-subtle">{fullPrice}</s>{" "}
-                <span className="font-semibold text-success">{price}</span> coins
+                <span className="font-semibold text-success">{startPrice}</span> coins
               </>
             ) : (
               <>{price} coins</>
@@ -952,6 +962,11 @@ export function GameActions({
             <span className="inline-flex w-fit items-center gap-1 rounded-full bg-success/10 px-2 py-0.5 text-[11px] font-medium text-success">
               <Gift size={11} /> Recommended by {activeRec.senderName ?? "a friend"} —{" "}
               {recDiscountPct}% off this activation
+            </span>
+          )}
+          {eventStart && (
+            <span className="inline-flex w-fit items-center gap-1 rounded-full border border-success/50 bg-success/15 px-2 py-0.5 text-[11px] font-semibold text-success">
+              <BadgePercent size={12} /> {eventStart.event}: {eventStart.pct}% off this start
             </span>
           )}
           {showWhy && (
@@ -976,6 +991,12 @@ export function GameActions({
                 <div className="flex justify-between font-medium text-success">
                   <span>Friend&apos;s recommendation</span>
                   <span className="tabular-nums">{signedCoins(price - preRecPrice)}</span>
+                </div>
+              )}
+              {eventStart && (
+                <div className="flex justify-between font-medium text-success">
+                  <span>{eventStart.event}</span>
+                  <span className="tabular-nums">{signedCoins(-eventStart.saving)}</span>
                 </div>
               )}
             </div>
@@ -1018,7 +1039,7 @@ export function GameActions({
               </>
             ) : !canAfford && !canUseVoucher ? (
               <>
-                Need <CoinIcon size={14} /> {price - coins} more
+                Need <CoinIcon size={14} /> {startPrice - coins} more
               </>
             ) : canUseVoucher && !canAfford ? (
               <>
@@ -1026,7 +1047,14 @@ export function GameActions({
               </>
             ) : economyEnabled ? (
               <>
-                Buy &amp; Start · <CoinIcon size={14} /> {price}
+                Buy &amp; Start · <CoinIcon size={14} />{" "}
+                {eventStart ? (
+                  <>
+                    <s className="font-normal opacity-60">{price}</s> {startPrice}
+                  </>
+                ) : (
+                  price
+                )}
               </>
             ) : (
               <>
@@ -1037,7 +1065,7 @@ export function GameActions({
           {/* Short on coins with no voucher? A friend can front the difference
               (Friend Loans, issue 7973d721) — repaid from the bounty. */}
           {game.status === "backlog" && !storyLocked && showEconomy && !canAfford && !canUseVoucher && (
-            <AskLoanButton game={game} need={price - coins} />
+            <AskLoanButton game={game} need={startPrice - coins} />
           )}
           {(storyLocked || !hasOpenSlot || economyEnabled) && (
             <p className="text-center text-[11px] text-subtle">
@@ -1346,6 +1374,12 @@ export function GameActions({
               </>
             )}
           </button>
+          {eventBonus > 0 && (
+            <p className="-mt-1 inline-flex items-center justify-center gap-1 text-center text-xs font-semibold text-success">
+              <PartyPopper size={13} className="shrink-0" /> {perk?.bounty?.event}: +
+              <CoinIcon size={12} /> {eventBonus} on finish
+            </p>
+          )}
           {bonusSummary && (
             <p className="-mt-1 inline-flex items-center justify-center gap-1 text-center text-[11px] text-subtle">
               <Sparkles size={12} className="shrink-0 text-accent" /> Bonus on finish: {bonusSummary}

@@ -20,7 +20,7 @@ function game(over: Partial<Game> = {}): Game {
 }
 
 beforeEach(() => {
-  act(() => useStore.setState({ viewing: null }));
+  act(() => useStore.setState({ viewing: null, bonusPerks: {} }));
 });
 
 describe("GameActions Family Discount price tag", () => {
@@ -502,5 +502,70 @@ describe("GameActions finish check (coin outliers, 2026-10-17)", () => {
     fireEvent.click(screen.getByRole("button", { name: /Mark Finished/i }));
     expect(finishGame).toHaveBeenCalledWith("p");
     expect(screen.queryByRole("dialog")).toBeNull();
+  });
+});
+
+describe("GameActions coin event perks", () => {
+  const EVENT = "Double Everything Weekend";
+
+  beforeEach(() => {
+    act(() =>
+      useStore.setState({ viewing: null, economyEnabled: true, bountyGatePct: 25, bountyRate: 100, activeSession: null }),
+    );
+  });
+
+  it("marks a Bazaar card's start as discounted, and lets a player afford the event price", () => {
+    const solo = game({ id: "a", released: "2015-01-01", hours: 10 });
+    act(() => useStore.setState({ games: [solo], coins: 100_000 }));
+    const { unmount } = render(<GameActions game={solo} />);
+    const full = Number(
+      screen.getByRole("button", { name: /Buy & Start/i }).textContent!.replace(/\D/g, ""),
+    );
+    unmount();
+
+    act(() =>
+      useStore.setState({
+        coins: full - 1,
+        bonusPerks: { a: { discount: { event: EVENT, pct: 50, capLeft: null }, saved: 0 } },
+      }),
+    );
+    render(<GameActions game={solo} />);
+    expect(screen.getByText(`${EVENT}: 50% off this start`)).toBeTruthy();
+    const buy = screen.getByRole("button", { name: /Buy & Start/i }) as HTMLButtonElement;
+    expect(buy.querySelector("s")?.textContent).toBe(String(full));
+    expect(buy.textContent).toMatch(new RegExp(`${full - Math.floor(full / 2)}$`));
+    // One coin short of the full price, but enough for the event price.
+    expect(buy.disabled).toBe(false);
+  });
+
+  it("shows the event's bonus under Mark Finished, doubling what the finish pays", () => {
+    const g = game({ id: "p", status: "playing", hours: 40, pricePaid: 10, playedHours: 10, startedAt: 1 });
+    act(() =>
+      useStore.setState({
+        games: [g],
+        bonusPerks: { p: { bounty: { event: EVENT, factor: 2, capLeft: null }, saved: 0 } },
+      }),
+    );
+    render(<GameActions game={g} />);
+    const reward = Number(
+      screen.getByRole("button", { name: /Mark Finished/i }).textContent!.replace(/\D/g, ""),
+    );
+    const line = screen.getByText(new RegExp(`${EVENT}:`)).textContent!.replace(/\s+/g, " ");
+    expect(reward).toBeGreaterThan(0);
+    expect(line).toContain(`+ ${reward} on finish`);
+  });
+
+  it("boosts only what's paid now, counting a discounted start at its full price", () => {
+    // 0 of ~40h logged: the finish pays back the activation now and holds the rest.
+    const g = game({ id: "p", status: "playing", hours: 40, pricePaid: 10, playedHours: 0, startedAt: 1 });
+    const perk = (saved: number) => ({ p: { bounty: { event: EVENT, factor: 2, capLeft: null }, saved } });
+    act(() => useStore.setState({ games: [g], bonusPerks: perk(0) }));
+    const { unmount } = render(<GameActions game={g} />);
+    expect(screen.getByText(new RegExp(`${EVENT}:`)).textContent).toMatch(/\+\s*10 on finish/);
+    unmount();
+    // Started at half price (15 saved): it counts as 25 paid.
+    act(() => useStore.setState({ bonusPerks: perk(15) }));
+    render(<GameActions game={g} />);
+    expect(screen.getByText(new RegExp(`${EVENT}:`)).textContent).toMatch(/\+\s*25 on finish/);
   });
 });
