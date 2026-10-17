@@ -33,7 +33,8 @@ function game(over: Partial<Game> = {}): Game {
 }
 
 // The live economy weights length into both the fee and the bounty.
-const bounty = cloneFormula(DEFAULT_PRICE_FORMULA);
+// The bounty out-pays the fee, as it does live (Granblue: 530 to start, 813 out).
+const bounty = { ...cloneFormula(DEFAULT_PRICE_FORMULA), base: 300 };
 bounty.factors.recency = { ...bounty.factors.recency, enabled: false };
 
 beforeEach(() => {
@@ -66,6 +67,28 @@ describe("Beaten finishes pay on main + extras", () => {
     expect(store().coins).toBe(1000 + refund + paid);
     // Strictly less than the completionist-length bounty it would have paid.
     expect(paid).toBeLessThan(computeFormula(game(), economy.bounty));
+  });
+
+  it("with nothing logged, returns exactly the activation cost — never more (regression)", async () => {
+    // Lowering the length refunds part of the fee; the finish's refund floor
+    // must not pay that part back a second time.
+    useStore.setState({ games: [game({ playedHours: 0 })], bountyGatePct: 25 });
+    await store().finishGame("gb");
+    expect(store().coins).toBe(1000 + 530);
+    const done = store().games[0];
+    expect(done.pricePaid).toBeLessThan(530);
+    expect(done.bountyHeld).toBeGreaterThan(0);
+  });
+
+  it("refunds a shelve after a length cut only for what's still paid", async () => {
+    useStore.setState({ games: [game()] });
+    const { economy } = store();
+    const cut = lengthActivationFee(economy.price, 130) - lengthActivationFee(economy.price, 50);
+    await store().setPersonalLength("gb", 50);
+    expect(store().games[0].pricePaid).toBe(530 - cut);
+    await store().abandonGame("gb");
+    // The length cut plus the shelve together return the 530 paid, once.
+    expect(store().coins).toBe(1000 + 530);
   });
 
   it("pays a completionist run on its full length", async () => {

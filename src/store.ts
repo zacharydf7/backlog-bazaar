@@ -7303,8 +7303,17 @@ export const useStore = create<BazaarState>((set, get) => ({
 
     if (!cloud) {
       const nc = coins + s.settled;
+      // What the run paid to activate moves with the settlement (mirrors
+      // set_personal_length), so later refunds return exactly what was paid.
       const nextGames = games.map((g) =>
-        g.id === id ? { ...g, personalHours: next, lengthPremiumOwed: s.newOwed } : g,
+        g.id === id
+          ? {
+              ...g,
+              personalHours: next,
+              lengthPremiumOwed: s.newOwed,
+              pricePaid: g.pricePaid == null ? g.pricePaid : Math.max(0, g.pricePaid - s.settled),
+            }
+          : g,
       );
       const led =
         s.settled !== 0
@@ -7334,7 +7343,14 @@ export const useStore = create<BazaarState>((set, get) => ({
     set({
       coins: newCoins,
       games: get().games.map((g) =>
-        g.id === id ? { ...g, personalHours: next, lengthPremiumOwed: premium_owed } : g,
+        g.id === id
+          ? {
+              ...g,
+              personalHours: next,
+              lengthPremiumOwed: premium_owed,
+              pricePaid: g.pricePaid == null ? g.pricePaid : Math.max(0, g.pricePaid - settled),
+            }
+          : g,
       ),
     });
     if (!opts?.silent) toast("Length updated", Clock);

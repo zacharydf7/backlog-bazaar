@@ -7882,8 +7882,13 @@ begin
     );
   end if;
 
+  -- What the run has paid to activate moves with the coins settled here, so a
+  -- later shelve/retire refund or the finish's refund floor (apply_finish)
+  -- returns exactly what was paid — never a refunded length fee a second time.
   update public.games
-     set personal_hours = p_hours, length_premium_owed = v_new_owed
+     set personal_hours = p_hours, length_premium_owed = v_new_owed,
+         price_paid = case when price_paid is null then null
+                           else greatest(0, price_paid - v_settled) end
    where id = p_game and user_id = auth.uid();
 
   return query select v_coins, v_new_owed, v_settled;
