@@ -173,6 +173,7 @@ import { coerceCommunityReview, type CommunityReview } from "./lib/communityRevi
 import { coerceAchievements, earnToastMessage } from "./lib/achievements";
 import { trackEvent } from "./lib/appEvents";
 import { coerceWeeklyRecap, type WeeklyRecap } from "./lib/weeklyRecap";
+import { browserTimeZone } from "./lib/timeZone";
 import {
   coerceChallenges,
   coerceAdminSeasonal,
@@ -2619,6 +2620,12 @@ export const useStore = create<BazaarState>((set, get) => ({
     // weekly recap follows, so its "close to" medals and unclaimed rewards
     // count anything just earned.
     void get().evaluateAchievements().then(() => get().fetchWeeklyRecap());
+
+    // Save the browser's timezone so Night Owl and "days played" count this
+    // player's own nights and days (awaited via then: a supabase-js call only
+    // sends once something awaits it).
+    const tz = browserTimeZone();
+    if (tz) void supabase.rpc("set_my_time_zone", { p_tz: tz }).then(() => {});
 
     // A stopwatch session left running on another device (or before a refresh)
     // resurfaces here.

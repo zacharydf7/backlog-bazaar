@@ -18763,6 +18763,56 @@ drop policy if exists "user_quick_goals_select_own" on public.user_quick_goals;
 create policy "user_quick_goals_select_own" on public.user_quick_goals
   for select to authenticated using (auth.uid() = user_id);
 
+-- Each player's timezone (2026-10-17), saved automatically from their browser
+-- at sign-in, so "between midnight and 4am" (Night Owl) and "days played" are
+-- the player's own nights and days. Its own read-own table rather than a
+-- profiles column: profiles are readable by every signed-in player, and a
+-- timezone hints at where someone lives. Turnovers (day/week/month) stay on
+-- the shared Rotation reset timezone so everyone resets together.
+create table if not exists public.user_time_zones (
+  user_id    uuid primary key references auth.users (id) on delete cascade,
+  time_zone  text not null,
+  updated_at timestamptz not null default now()
+);
+alter table public.user_time_zones enable row level security;
+revoke insert, update, delete on public.user_time_zones from anon, authenticated;
+drop policy if exists "user_time_zones_select_own" on public.user_time_zones;
+create policy "user_time_zones_select_own" on public.user_time_zones
+  for select to authenticated using (auth.uid() = user_id);
+
+-- A player's own timezone, else the site's (the Rotation reset's).
+create or replace function public.player_tz(p_user uuid)
+returns text
+language sql
+stable
+security definer set search_path = public
+as $$
+  select coalesce(
+    (select z.time_zone from public.user_time_zones z where z.user_id = p_user),
+    (select nullif(btrim(c.rotation_reset_tz), '') from public.app_config c where c.id = 1),
+    'UTC');
+$$;
+revoke execute on function public.player_tz(uuid) from public, anon, authenticated;
+
+-- Save the caller's timezone (sent by the client at sign-in). Only real IANA
+-- names are accepted; an unchanged value writes nothing.
+create or replace function public.set_my_time_zone(p_tz text)
+returns void
+language plpgsql security definer set search_path = public
+as $$
+begin
+  if auth.uid() is null then raise exception 'Not authenticated'; end if;
+  if p_tz is null or not exists (select 1 from pg_timezone_names where name = p_tz) then
+    raise exception 'Unknown time zone';
+  end if;
+  insert into public.user_time_zones (user_id, time_zone) values (auth.uid(), p_tz)
+  on conflict (user_id) do update set time_zone = excluded.time_zone, updated_at = now()
+   where user_time_zones.time_zone is distinct from excluded.time_zone;
+end;
+$$;
+revoke execute on function public.set_my_time_zone(text) from public, anon;
+grant execute on function public.set_my_time_zone(text) to authenticated;
+
 -- Every achievement metric for one user, computed in one place so the evaluator
 -- and the progress display can never disagree. Semantics mirror the visible
 -- profile stats: finished/completed counts exclude retired drops (like
@@ -18861,9 +18911,8 @@ as $$
   union all
   select 'best_streak', coalesce((select clear_streak_best from public.profiles where id = p_user), 0)::numeric
   union all
-  -- Different days with play logged, in the Rotation reset's timezone.
-  select 'play_days', count(distinct (e.created_at at time zone
-           coalesce((select nullif(btrim(rotation_reset_tz), '') from public.app_config where id = 1), 'UTC'))::date)::numeric
+  -- Different days with play logged, in the player's own timezone.
+  select 'play_days', count(distinct (e.created_at at time zone public.player_tz(p_user))::date)::numeric
     from public.playtime_events e
    where e.user_id = p_user and e.hours > 0 and public.is_live_play(e.source, e.hours)
   union all
@@ -18916,12 +18965,11 @@ as $$
    where s.submitter = p_user and s.status = 'approved'
   -- Hidden medals.
   union all
-  -- Play logged between midnight and 4am local time.
+  -- Play logged between midnight and 4am in the player's own timezone.
   select 'night_owl_logs', count(*)::numeric
     from public.playtime_events e
    where e.user_id = p_user and e.hours > 0 and public.is_live_play(e.source, e.hours)
-     and extract(hour from e.created_at at time zone
-           coalesce((select nullif(btrim(rotation_reset_tz), '') from public.app_config where id = 1), 'UTC')) < 4
+     and extract(hour from e.created_at at time zone public.player_tz(p_user)) < 4
   union all
   -- Compilations with every game (2+) cleared.
   select 'compilations_cleared', count(*)::numeric
@@ -19245,8 +19293,8 @@ as $$
         where e.user_id = p_user and public.is_live_play(e.source, e.hours)
           and e.created_at >= p_from and e.created_at < p_to)
     when 'play_days' then
-      (select count(distinct (e.created_at at time zone cfg.tz)::date)
-         from public.playtime_events e, cfg
+      (select count(distinct (e.created_at at time zone public.player_tz(p_user))::date)
+         from public.playtime_events e
         where e.user_id = p_user and e.hours > 0 and public.is_live_play(e.source, e.hours)
           and e.created_at >= p_from and e.created_at < p_to)
     when 'stopwatch_sessions' then
@@ -20319,7 +20367,7 @@ begin
   return jsonb_build_object(
     'play', jsonb_build_object(
       'hours', round(v_hours, 1),
-      'days', (select count(distinct (e.created_at at time zone v_tz)::date)
+      'days', (select count(distinct (e.created_at at time zone public.player_tz(p_user))::date)
                  from public.playtime_events e
                 where e.user_id = p_user and e.hours > 0 and public.is_live_play(e.source, e.hours)
                   and e.created_at >= p_from and e.created_at < p_to),

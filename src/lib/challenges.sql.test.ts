@@ -56,6 +56,8 @@ beforeAll(async () => {
       preordered_at timestamptz, in_rotation boolean not null default false, review text,
       rawg_id integer, igdb_id integer, catalog_id uuid);
     create table public.game_identity_links (igdb_id integer, rawg_id integer, status text);
+    create table public.user_time_zones (user_id uuid primary key, time_zone text not null,
+      updated_at timestamptz not null default now());
     create table public.game_status_events (user_id uuid, game_id uuid, to_status text,
       created_at timestamptz not null default now());
     create table public.playtime_events (user_id uuid, game_id uuid, hours real, source text not null default 'live',
@@ -85,6 +87,8 @@ beforeAll(async () => {
   `);
   await db.exec(fn("is_live_play"));
   await db.exec(fn("game_identity_key"));
+  await db.exec(fn("player_tz"));
+  await db.exec(fn("set_my_time_zone"));
   await db.exec(fn("challenge_metric_keys"));
   await db.exec(fn("challenge_metric"));
   await db.exec(fn("challenge_month"));
@@ -173,6 +177,7 @@ beforeEach(async () => {
     delete from public.play_sessions; delete from public.review_events; delete from public.profiles;
     delete from public.action_undos; delete from public.user_quick_goals; delete from public.weekly_sweep_bonuses;
     delete from public.rotation_checkins; delete from public.achievements; delete from public.user_achievements;
+    delete from public.user_time_zones;
     insert into public.profiles (id, coins) values ('${ME}', 100), ('${OTHER}', 0);
     select set_config('test.uid', '${ME}', false);
     select set_config('test.manager', '', false);
@@ -424,6 +429,27 @@ describe("when goals start counting (owner, 2026-10-17)", () => {
     expect(await start("weekly", "2026-10-12", "2026-10-17T12:00:00Z")).toBe("2026-10-12T00:00:00.000Z");
     expect(await start("weekly", "2026-10-19", since)).toBe(since);
     expect(await start("daily", "2026-10-17", since)).toBe(since);
+  });
+});
+
+describe("the player's own timezone", () => {
+  it("counts days played in it, falling back to the site's", async () => {
+    await db.exec(`insert into public.playtime_events (user_id, hours, created_at) values
+      ('${ME}', 1, '2026-10-18T03:00:00Z'), ('${ME}', 1, '2026-10-18T05:00:00Z')`);
+    const days = async () =>
+      Number((await db.query<{ v: number }>(
+        "select public.challenge_metric($1, 'play_days', '2026-10-17T00:00:00Z', '2026-10-19T00:00:00Z') as v", [ME],
+      )).rows[0].v);
+    expect(await days()).toBe(1); // UTC: both on Oct 18
+    await db.query("select public.set_my_time_zone('America/New_York')");
+    expect(await days()).toBe(2); // New York: 11pm Oct 17 and 1am Oct 18
+  });
+
+  it("only saves real timezone names", async () => {
+    await expect(db.query("select public.set_my_time_zone('Mars/Olympus')")).rejects.toThrow(/Unknown time zone/);
+    await db.query("select public.set_my_time_zone('Europe/Paris')");
+    const row = await db.query("select time_zone from public.user_time_zones");
+    expect(row.rows).toEqual([{ time_zone: "Europe/Paris" }]);
   });
 });
 

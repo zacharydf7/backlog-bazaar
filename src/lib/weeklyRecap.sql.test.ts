@@ -64,13 +64,14 @@ beforeAll(async () => {
     create table public.user_seasonal_challenges (user_id uuid, challenge_name text, reward integer,
       completed_at timestamptz, reward_paid_at timestamptz);
     create table public.notifications (user_id uuid, type text, title text, body text, link text);
+    create table public.user_time_zones (user_id uuid primary key, time_zone text not null);
     create table public.user_quick_goals (user_id uuid, reward integer, completed_at timestamptz, reward_paid_at timestamptz);
     create table public.weekly_sweep_bonuses (user_id uuid, reward integer, reward_paid_at timestamptz);
     create table public.weekly_recaps (id uuid primary key default gen_random_uuid(), user_id uuid,
       week_start date, data jsonb, created_at timestamptz not null default now(), seen_at timestamptz,
       unique (user_id, week_start));
   `);
-  for (const name of ["is_live_play", "recap_week", "build_weekly_recap", "weekly_recap", "mark_weekly_recap_seen"]) {
+  for (const name of ["is_live_play", "player_tz", "recap_week", "build_weekly_recap", "weekly_recap", "mark_weekly_recap_seen"]) {
     await db.exec(fn(name));
   }
 });
