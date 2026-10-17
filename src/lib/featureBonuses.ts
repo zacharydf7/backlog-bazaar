@@ -129,8 +129,16 @@ export function sessionQualifies(hours: number, minMinutes: number): boolean {
 }
 
 /** "1h 30m logged", plus " · Daily Session +3" when the log earned the bonus. */
-export function loggedToastText(hours: number, bonus: number, milestone = 0, regular = 0): string {
+export function loggedToastText(
+  hours: number,
+  bonus: number,
+  milestone = 0,
+  regular = 0,
+  /** Coins from the Rotation check-in the log made (null when it made none). */
+  checkin: number | null = null,
+): string {
   let text = `${formatPlaytime(hours)} logged`;
+  if (checkin != null) text += checkin > 0 ? ` · Checked in +${checkin}` : " · Checked in";
   if (bonus > 0) text += ` · Daily Session +${bonus}`;
   if (milestone > 0) text += ` · Rotation milestone +${milestone}`;
   if (regular > 0) text += ` · Regular week +${regular}`;

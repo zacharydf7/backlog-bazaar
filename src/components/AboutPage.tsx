@@ -371,7 +371,7 @@ export function AboutPage() {
               separate, <strong className="text-ink">unlimited</strong> lane that never uses up
               your focus slots (past two games it scrolls sideways). Add it to Rotation for free,
               and check in <strong className="text-ink">once a week</strong> to collect{" "}
-              <Coin n={rotationCheckinReward} />. The week resets every{" "}
+              <Coin n={rotationCheckinReward} /> (logging time on it checks it in for you). The week resets every{" "}
               <strong className="text-ink">{resetDayLabel(rotationReset.resetDow)}</strong> (the lane
               shows the countdown).
             </p>

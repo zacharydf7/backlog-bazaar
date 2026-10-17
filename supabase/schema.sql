@@ -9127,7 +9127,7 @@ $$;
 revoke execute on function public.pay_session_bonus(uuid, uuid, real) from public, anon, authenticated;
 
 create or replace function public.log_playtime(p_game uuid, p_hours real, p_platform text default null, p_format text default null)
-returns table (coins integer, played_hours real, bonus integer, milestone integer, regular integer)
+returns table (coins integer, played_hours real, bonus integer, milestone integer, regular integer, checkin integer)
 language plpgsql
 security definer set search_path = public
 as $$
@@ -9142,6 +9142,7 @@ declare
   v_bonus     integer := 0;
   v_milestone integer := 0;
   v_regular   integer := 0;
+  v_checkin   integer;
 begin
   if p_hours is null or p_hours <= 0 then
     raise exception 'Hours must be positive';
@@ -9208,10 +9209,26 @@ begin
   if exists (select 1 from public.games where id = p_game and in_rotation) then
     v_milestone := public.pay_rotation_milestones(auth.uid(), p_game);
     v_regular := public.pay_regular_week(auth.uid());
+    -- Logging time on a Rotation game is playing it this week, so it checks
+    -- the game in if it isn't already (owner, 2026-10-17): the same check-in,
+    -- reward and history row as the button. v_checkin stays null when no
+    -- check-in happened (already done, or one raced in first).
+    if not exists (
+      select 1 from public.rotation_checkins r, public.app_config c
+       where c.id = 1 and r.user_id = auth.uid() and r.game_id = p_game
+         and r.created_at >= public.rotation_period_start(now(), coalesce(c.rotation_reset_dow, 0),
+                                                          coalesce(c.rotation_reset_hour, 0), c.rotation_reset_tz)
+    ) then
+      begin
+        select ci.awarded into v_checkin from public.rotation_checkin(p_game) ci;
+      exception when raise_exception then
+        v_checkin := null;
+      end;
+    end if;
   end if;
   select coins into v_coins from public.profiles where id = auth.uid();
 
-  return query select v_coins, v_played, v_bonus, v_milestone, v_regular;
+  return query select v_coins, v_played, v_bonus, v_milestone, v_regular, v_checkin;
 end;
 $$;
 
@@ -12472,7 +12489,7 @@ $$;
 -- widened the RETURNS TABLE shape.
 drop function if exists public.end_play_session(uuid, real);
 create or replace function public.end_play_session(p_session uuid, p_hours real default null)
-returns table (logged real, coins integer, played_hours real, bonus integer, milestone integer, regular integer)
+returns table (logged real, coins integer, played_hours real, bonus integer, milestone integer, regular integer, checkin integer)
 language plpgsql
 security definer set search_path = public
 as $$
@@ -12486,6 +12503,7 @@ declare
   v_bonus   integer;
   v_milestone integer;
   v_regular integer;
+  v_checkin integer;
 begin
   select * into v_sess
     from public.play_sessions
@@ -12513,7 +12531,7 @@ begin
      where id = v_sess.id;
     select p.coins into v_coins from public.profiles p where p.id = auth.uid();
     select g.played_hours into v_played from public.games g where g.id = v_sess.game_id;
-    return query select 0::real, v_coins, v_played, 0, 0, 0;
+    return query select 0::real, v_coins, v_played, 0, 0, 0, null::integer;
     return;
   end if;
 
@@ -12525,10 +12543,11 @@ begin
      set status = 'logged', ended_at = now(), logged_hours = v_hours
    where id = v_sess.id;
 
-  select l.coins, l.played_hours, l.bonus, l.milestone, l.regular into v_coins, v_played, v_bonus, v_milestone, v_regular
+  select l.coins, l.played_hours, l.bonus, l.milestone, l.regular, l.checkin
+    into v_coins, v_played, v_bonus, v_milestone, v_regular, v_checkin
     from public.log_playtime(v_sess.game_id, v_hours, v_sess.platform, v_sess.format) l;
 
-  return query select v_hours, v_coins, v_played, coalesce(v_bonus, 0), coalesce(v_milestone, 0), coalesce(v_regular, 0);
+  return query select v_hours, v_coins, v_played, coalesce(v_bonus, 0), coalesce(v_milestone, 0), coalesce(v_regular, 0), v_checkin;
 end;
 $$;
 

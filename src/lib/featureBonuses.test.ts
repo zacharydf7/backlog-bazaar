@@ -127,5 +127,7 @@ describe("loggedToastText", () => {
     expect(loggedToastText(1, 5)).toBe("1h logged · Daily Session +5");
     expect(loggedToastText(1, 5, 25)).toBe("1h logged · Daily Session +5 · Rotation milestone +25");
     expect(loggedToastText(1, 0, 0, 15)).toBe("1h logged · Regular week +15");
+    expect(loggedToastText(1, 5, 0, 0, 50)).toBe("1h logged · Checked in +50 · Daily Session +5");
+    expect(loggedToastText(1, 0, 0, 0, 0)).toBe("1h logged · Checked in");
   });
 });

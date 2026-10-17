@@ -828,7 +828,7 @@ export function GameActions({
               <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-line bg-panel/60 p-2">
                 <button
                   onClick={() => rotationCheckin(game.id)}
-                  title={`Log this week's play of ${game.title}`}
+                  title={`Check in ${game.title} for this week (logging time below checks it in too)`}
                   className="inline-flex items-center gap-1.5 rounded-lg bg-brand px-3 py-1.5 text-sm font-semibold text-brand-fg shadow-stamp-sm transition hover:brightness-105 active:translate-x-px active:translate-y-px active:shadow-none"
                 >
                   <CalendarCheck size={15} /> Played this week

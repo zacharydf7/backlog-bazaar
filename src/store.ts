@@ -7032,19 +7032,25 @@ export const useStore = create<BazaarState>((set, get) => ({
       set({ error: error.message });
       return;
     }
-    const { coins: newCoins, played_hours, bonus, milestone, regular } = data as {
+    const { coins: newCoins, played_hours, bonus, milestone, regular, checkin } = data as {
       coins: number;
       played_hours: number;
       bonus: number | null;
       milestone: number | null;
       regular: number | null;
+      checkin: number | null;
     };
     set({
       coins: newCoins,
       games: get().games.map((g) => (g.id === id ? { ...g, playedHours: played_hours } : g)),
+      // Logging time on a Rotation game checks it in for the week.
+      ...(checkin != null ? { rotationCheckedIn: [...new Set([...get().rotationCheckedIn, id])] } : {}),
     });
-    const paid = (bonus ?? 0) + (milestone ?? 0) + (regular ?? 0);
-    toast(loggedToastText(hours, bonus ?? 0, milestone ?? 0, regular ?? 0), paid > 0 ? Coins : Gamepad2);
+    const paid = (bonus ?? 0) + (milestone ?? 0) + (regular ?? 0) + (checkin ?? 0);
+    toast(
+      loggedToastText(hours, bonus ?? 0, milestone ?? 0, regular ?? 0, checkin ?? null),
+      paid > 0 ? Coins : Gamepad2,
+    );
     if (game.inRotation) void get().fetchRotationProgress();
     void get().evaluateAchievements();
   },
@@ -7184,6 +7190,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       bonus: number | null;
       milestone: number | null;
       regular: number | null;
+      checkin: number | null;
     };
     const andThen = get().sessionStopThen;
     set({
@@ -7191,6 +7198,9 @@ export const useStore = create<BazaarState>((set, get) => ({
       sessionStopOpen: false,
       sessionStopThen: null,
       ...(typeof row.coins === "number" ? { coins: row.coins } : {}),
+      ...(row.checkin != null && s.gameId
+        ? { rotationCheckedIn: [...new Set([...get().rotationCheckedIn, s.gameId])] }
+        : {}),
       games:
         s.gameId && typeof row.played_hours === "number"
           ? get().games.map((g) =>
@@ -7199,9 +7209,9 @@ export const useStore = create<BazaarState>((set, get) => ({
           : get().games,
     });
     if (row.logged > 0) {
-      const paid = (row.bonus ?? 0) + (row.milestone ?? 0) + (row.regular ?? 0);
+      const paid = (row.bonus ?? 0) + (row.milestone ?? 0) + (row.regular ?? 0) + (row.checkin ?? 0);
       toast(
-        loggedToastText(row.logged, row.bonus ?? 0, row.milestone ?? 0, row.regular ?? 0),
+        loggedToastText(row.logged, row.bonus ?? 0, row.milestone ?? 0, row.regular ?? 0, row.checkin ?? null),
         paid > 0 ? Coins : Gamepad2,
       );
       if (s.gameId && get().games.find((g) => g.id === s.gameId)?.inRotation) void get().fetchRotationProgress();

@@ -49,7 +49,7 @@ export const RELEASES: Release[] = [
     items: [
       "Rotation games pay 25 coins for every 10 hours you play.",
       "A Regular streak pays more each week you keep playing Rotation games.",
-      "Log time and use the stopwatch right on Rotation cards.",
+      "Log time or use the stopwatch on Rotation cards, which checks you in too.",
       "New Rotation goals, and live-service adds never break your Clear Streak.",
     ],
     link: { label: "Open Now Playing", view: "playing" },
