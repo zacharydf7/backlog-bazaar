@@ -39,6 +39,8 @@ import {
   groupCollapsedCompilations,
   compilationMatchesFilters,
   compilationMatchesQuery,
+  searchLibraryEntries,
+  type LibrarySearchEntry,
 } from "./lib/compilationGrouping";
 import { orderBoardCards } from "./lib/boardOrder";
 import { useIncrementalReveal } from "./lib/useIncrementalReveal";
@@ -106,7 +108,7 @@ import { MysteryPull } from "./components/MysteryPull";
 import { FastScrollRail } from "./components/FastScrollRail";
 import { JumpToTopButton } from "./components/JumpToTopButton";
 import { GlobalSearchModal } from "./components/GlobalSearchModal";
-import { filterByQuery, searchLibrary } from "./lib/librarySearch";
+import { filterByQuery } from "./lib/librarySearch";
 import {
   applyView,
   collectFacets,
@@ -123,7 +125,15 @@ import {
   type LedgerGroupBy,
 } from "./lib/ledger";
 import { LATEST_RELEASE_ID, loadSeenReleaseId, markReleasesSeen } from "./lib/changelog";
-import { parseHash, routeToHash, gameHash, listHash, isAccountSwitch, type Route } from "./lib/route";
+import {
+  parseHash,
+  routeToHash,
+  gameHash,
+  compilationHash,
+  listHash,
+  isAccountSwitch,
+  type Route,
+} from "./lib/route";
 import { isCommunityView, loadCommunitySection } from "./lib/community";
 import type { Game, GameStatus } from "./types";
 
@@ -505,10 +515,17 @@ export default function App() {
   );
 
   // The global results: every matching game across all boards (current library —
-  // your own, or the player you're visiting), for the search overlay.
+  // your own, or the player you're visiting), for the search overlay. Your own
+  // compilations stand in for the games inside them (issue 86fc0b4b).
   const searchResults = useMemo(
-    () => searchLibrary(boardGames, searchQuery),
-    [boardGames, searchQuery],
+    () =>
+      searchLibraryEntries(
+        boardGames,
+        viewing ? [] : compilations,
+        compilationGames,
+        searchQuery,
+      ),
+    [boardGames, compilations, compilationGames, viewing, searchQuery],
   );
 
   // The browse sequence for Prev/Next on a game's page (issue 7ad49282): the
@@ -984,9 +1001,12 @@ export default function App() {
   // Picking a search result: go straight to that game's own page (the page
   // resolves by id, so even a child folded inside a collapsed compilation
   // opens without expanding anything).
-  const openSearchResult = (g: Game) => {
+  const openSearchResult = (entry: LibrarySearchEntry) => {
     setSearchOpen(false);
-    window.location.hash = gameHash(g.id, viewing?.userId ?? null);
+    window.location.hash =
+      entry.kind === "game"
+        ? gameHash(entry.game.id, viewing?.userId ?? null)
+        : compilationHash(entry.compilation.id);
   };
 
   // Smoothly scroll a board element into view by its anchor id (waiting a frame so

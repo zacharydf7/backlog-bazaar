@@ -13,6 +13,7 @@ import {
   groupCollapsedCompilations,
   inheritedCover,
   ownershipUnits,
+  searchLibraryEntries,
   splitCompilationGames,
   orderCompilationChildren,
 } from "./compilationGrouping";
@@ -431,5 +432,56 @@ describe("compilationStatus (86fc0b4b)", () => {
 
   it("puts an empty compilation in the Bazaar", () => {
     expect(st()).toBe("backlog");
+  });
+});
+
+describe("searchLibraryEntries (86fc0b4b)", () => {
+  const allStars = comp({
+    id: "C",
+    title: "Super Mario 3D All-Stars",
+    copies: [{ id: "cc", platform: "Nintendo Switch" }],
+    childOrder: ["sun", "gal"],
+  });
+  const sunshine = game({ id: "sun", title: "Super Mario Sunshine", compilationId: "C", compilationName: "Super Mario 3D All-Stars", status: "finished" });
+  const galaxy = game({ id: "gal", title: "Super Mario Galaxy", compilationId: "C", compilationName: "Super Mario 3D All-Stars", status: "playing" });
+  const odyssey = game({ id: "ody", title: "Super Mario Odyssey" });
+  const library = [sunshine, galaxy, odyssey];
+  const own = game({ id: "CG", compilationGameFor: "C", image: "box.png" });
+
+  const summary = (entries: ReturnType<typeof searchLibraryEntries>) =>
+    entries.map((e) => (e.kind === "game" ? e.game.id : `C:${e.compilation.id}`));
+
+  it("returns standalone games and compilations, never the games inside", () => {
+    expect(summary(searchLibraryEntries(library, [allStars], [own], "super mario")).sort()).toEqual([
+      "C:C",
+      "ody",
+    ]);
+  });
+
+  it("finds a compilation through a game inside it, naming that game", () => {
+    const [hit] = searchLibraryEntries(library, [allStars], [own], "sunshine");
+    expect(hit).toMatchObject({
+      kind: "compilation",
+      includes: ["Super Mario Sunshine"],
+      image: "box.png",
+      status: "playing",
+    });
+  });
+
+  it("matches a compilation on its own title or platform without listing games", () => {
+    const [byTitle] = searchLibraryEntries(library, [allStars], [], "3d all-stars");
+    expect(byTitle).toMatchObject({ kind: "compilation", includes: [] });
+    expect(summary(searchLibraryEntries(library, [allStars], [], "switch 3d"))).toEqual(["C:C"]);
+  });
+
+  it("doesn't match a compilation just because its games carry its name", () => {
+    // Every child's searchable text includes the compilation name; that alone
+    // mustn't list them all as matches.
+    const [hit] = searchLibraryEntries(library, [allStars], [], "all-stars");
+    expect(hit).toMatchObject({ includes: [] });
+  });
+
+  it("leaves a visited library's bundled games searchable on their own", () => {
+    expect(summary(searchLibraryEntries(library, [], [], "sunshine"))).toEqual(["sun"]);
   });
 });

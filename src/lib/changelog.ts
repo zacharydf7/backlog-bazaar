@@ -77,6 +77,10 @@ export const RELEASES: Release[] = [
         tag: "improvement",
       },
       {
+        text: "Searching your library shows each compilation once instead of every game inside it. Search for a game in a compilation and you get the compilation, with the matching game named.",
+        tag: "improvement",
+      },
+      {
         text: "A collection you own as a single game now offers \"Split into games\" from its ⋮ menu. It keeps its review and likes as the compilation, with its games added inside, and the Add Game hint says what happens.",
         tag: "improvement",
       },

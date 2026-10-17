@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
-import { Search, X, Plus, Lock } from "lucide-react";
+import { Search, X, Plus, Lock, Package } from "lucide-react";
 import type { Game } from "../types";
+import type { LibrarySearchEntry } from "../lib/compilationGrouping";
 import { StatusBadge } from "./StatusBadge";
 import { isInRotation } from "../lib/status";
 import { gameOwnedPlatforms } from "../lib/bazaarView";
@@ -10,7 +11,8 @@ import { useScrollLock } from "../lib/useScrollLock";
  *  (Wishlist, Bazaar, Now Playing, Finished). Because a match might not be on the
  *  board you're looking at, this surfaces it regardless of status — each row
  *  carries a status badge so you instantly know where it lives. Picking a result
- *  jumps to its board and opens it.
+ *  jumps to its board and opens it. A compilation is one result standing in for
+ *  the games inside it (issue 86fc0b4b).
  *
  *  When visiting another player the list is their (privacy-filtered) library and
  *  the empty state is informational; on your own profile an empty result offers a
@@ -26,8 +28,8 @@ export function GlobalSearchModal({
 }: {
   query: string;
   onQueryChange: (v: string) => void;
-  results: Game[];
-  onPick: (game: Game) => void;
+  results: LibrarySearchEntry[];
+  onPick: (entry: LibrarySearchEntry) => void;
   onClose: () => void;
   /** Provided only on your own profile — opens Add game seeded with the query. */
   onAddGame?: (query: string) => void;
@@ -115,16 +117,61 @@ export function GlobalSearchModal({
             </div>
           ) : (
             <ul className="flex flex-col gap-1">
-              {results.map((g) => (
-                <li key={g.id}>
-                  <ResultRow game={g} onPick={() => onPick(g)} showLock={!visitingName} />
-                </li>
-              ))}
+              {results.map((r) =>
+                r.kind === "game" ? (
+                  <li key={r.game.id}>
+                    <ResultRow game={r.game} onPick={() => onPick(r)} showLock={!visitingName} />
+                  </li>
+                ) : (
+                  <li key={`c:${r.compilation.id}`}>
+                    <CompilationRow entry={r} onPick={() => onPick(r)} />
+                  </li>
+                ),
+              )}
             </ul>
           )}
         </div>
       </div>
     </div>
+  );
+}
+
+/** A compilation result: its cover and title, what's inside (or which of its
+ *  games matched), and the status its games give it. */
+function CompilationRow({
+  entry,
+  onPick,
+}: {
+  entry: Extract<LibrarySearchEntry, { kind: "compilation" }>;
+  onPick: () => void;
+}) {
+  const count = entry.children.length;
+  return (
+    <button
+      type="button"
+      onClick={onPick}
+      className="flex w-full items-center gap-3 rounded-xl px-2 py-2 text-left transition hover:bg-panel"
+    >
+      <div className="h-12 w-9 shrink-0 overflow-hidden rounded-md border border-line bg-panel">
+        {entry.image ? (
+          <img src={entry.image} alt="" className="h-full w-full object-cover" />
+        ) : (
+          <div className="flex h-full items-center justify-center text-lg opacity-50">📦</div>
+        )}
+      </div>
+      <div className="min-w-0 flex-1">
+        <span className="block truncate font-medium text-ink">{entry.compilation.title}</span>
+        <p className="mt-0.5 flex min-w-0 items-center gap-1 text-xs text-muted">
+          <Package size={12} className="shrink-0 text-accent" />
+          <span className="truncate">
+            {entry.includes.length > 0
+              ? `Includes ${entry.includes.join(", ")}`
+              : `Compilation · ${count} game${count === 1 ? "" : "s"}`}
+          </span>
+        </p>
+      </div>
+      <StatusBadge status={entry.status} className="shrink-0" />
+    </button>
   );
 }
 
