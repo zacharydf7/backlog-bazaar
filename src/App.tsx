@@ -81,6 +81,7 @@ import { BlockedPage } from "./components/BlockedPage";
 import { MySubmissions } from "./components/MySubmissions";
 import { MasterLedger } from "./components/MasterLedger";
 import { PreorderStrip } from "./components/PreorderStrip";
+import { BonusEventStrip } from "./components/BonusEventStrip";
 import { PactInviteStrip, PactJoinModal } from "./components/CoOpPact";
 import { LoanRequestStrip } from "./components/Loans";
 import { pinPreorderedCards } from "./lib/preorders";
@@ -354,6 +355,14 @@ export default function App() {
       setOpenCompilationId(null);
       setOpenListId(null);
       setView("challenges");
+    } else if (link.startsWith("bonus:")) {
+      // A coin event notice lands on the Bazaar, where its banner explains it.
+      closeUserBazaar();
+      setAlertsOpen(false);
+      setOpenGameId(null);
+      setOpenCompilationId(null);
+      setOpenListId(null);
+      setView("backlog");
     } else if (link.startsWith("recap:")) {
       // The weekly recap notice reopens its "Your week" card.
       setAlertsOpen(false);
@@ -1334,6 +1343,7 @@ export default function App() {
           view === "reports" ||
           view === "stats" ||
           view === "challengeadmin" ||
+          view === "eventsadmin" ||
           view === "roles" ? (
           <AdminPage view={view} onNavigate={navigate} />
         ) : view === "mysubmissions" ? (
@@ -1469,6 +1479,8 @@ export default function App() {
               <>
                 {/* Pending pact invites for games not in the library — with no
                     card to host the banner, they surface here (own board only). */}
+                {/* Running and upcoming coin events (own board only). */}
+                {view === "backlog" && <BonusEventStrip />}
                 {view === "backlog" && <PactInviteStrip />}
                 {/* Friend-loan requests waiting on you (lender side). */}
                 {view === "backlog" && <LoanRequestStrip />}

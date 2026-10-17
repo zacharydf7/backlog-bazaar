@@ -56,6 +56,16 @@ export function orderReleaseItems(items: (string | ReleaseItem)[]): ReleaseItem[
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-10-17-coin-events",
+    date: "2026-10-17",
+    title: "Coin events",
+    items: [
+      { text: "Watch for coin events like double bounty weekends and cheaper starts.", tag: "feature" },
+      { text: "A banner on your Bazaar shows what's on now and what's coming up.", tag: "feature" },
+      { text: "You'll get a notification before an event that fits your games starts.", tag: "feature" },
+    ],
+  },
+  {
     id: "2026-10-17-cleaner-search-and-split",
     date: "2026-10-17",
     title: "Compilations are games too, and bounties follow your time",

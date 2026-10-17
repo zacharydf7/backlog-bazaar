@@ -40,6 +40,7 @@ beforeEach(() => {
       economy: { price: DEFAULT_PRICE_FORMULA, bounty: DEFAULT_BOUNTY_FORMULA },
       buyGame,
       redeemVoucher,
+      previewStartPrice: vi.fn(async () => null),
     }),
   );
 });
@@ -61,6 +62,21 @@ describe("ActivationModal", () => {
     fireEvent.click(screen.getByRole("button", { name: /Pay with coins/i }));
     expect(buyGame).toHaveBeenCalledWith("g1", { kind: "general" });
     expect(redeemVoucher).not.toHaveBeenCalled();
+  });
+
+  it("shows a coin event's start discount and pays the discounted fee", async () => {
+    const previewStartPrice = vi.fn(async (_id: string, price: number) => ({
+      price: Math.floor(price / 2),
+      eventName: "Cheap Starts",
+    }));
+    act(() => useStore.setState({ previewStartPrice }));
+    render(<ActivationModal game={game()} onClose={() => {}} />);
+    expect(await screen.findByText("Cheap Starts")).toBeTruthy();
+    const full = previewStartPrice.mock.calls[0][1];
+    const coinBtn = screen.getByRole("button", { name: /Pay with coins/i });
+    expect(coinBtn.querySelector("s")?.textContent).toBe(full.toLocaleString());
+    fireEvent.click(coinBtn);
+    expect(buyGame).toHaveBeenCalledWith("g1", { kind: "general" }, { eventPrice: Math.floor(full / 2) });
   });
 
   it("hides the voucher option when the balance is zero", () => {

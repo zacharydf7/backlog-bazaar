@@ -27,6 +27,8 @@ export const LEDGER_LABELS: Record<string, string> = {
   daily_goal: "Daily Goal Reward",
   weekly_goal: "Weekly Goal Reward",
   weekly_sweep: "All Weekly Goals Bonus",
+  event_bonus: "Coin Event Bonus",
+  rewards_forfeited: "Rewards Forfeited (Fresh Start)",
   length_topup: "Length Change — Activation Top-up",
   length_refund: "Length Change — Refund",
   length_debt: "Deferred Activation Fee",

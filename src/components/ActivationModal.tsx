@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { X, Gamepad2, Ticket, Lock, ArrowRight, Target, Handshake, type LucideIcon } from "lucide-react";
 import type { Game } from "../types";
@@ -36,7 +36,7 @@ function choiceKey(c: SlotChoice): string {
  * preselected). Strictly Bazaar → Now Playing — never reachable from the Wishlist.
  */
 export function ActivationModal({ game, onClose }: { game: Game; onClose: () => void }) {
-  const { coins, vouchers, economy, games, compilations, generalSlots, completionistSlots, replayBonusPct, buyGame, redeemVoucher, economyEnabled, recommendations, recDiscountPct, userId, coOpPacts, bountyRate } =
+  const { coins, vouchers, economy, games, compilations, generalSlots, completionistSlots, replayBonusPct, buyGame, redeemVoucher, economyEnabled, recommendations, recDiscountPct, userId, coOpPacts, bountyRate, previewStartPrice } =
     useStore();
   const [working, setWorking] = useState<"coins" | "voucher" | null>(null);
 
@@ -58,12 +58,26 @@ export function ActivationModal({ game, onClose }: { game: Game; onClose: () => 
     ? computeFamilyDiscountPrice(fullPrice, replayBonusPct)
     : fullPrice;
   const price = activeRec ? recDiscountedPrice(preRecPrice, recDiscountPct) : preRecPrice;
+  // A running coin event's start discount, which the server applies to
+  // `price` when you start (asked for here so the fee shown is the fee paid).
+  const [eventPrice, setEventPrice] = useState<{ price: number; eventName: string } | null>(null);
+  useEffect(() => {
+    if (!economyEnabled || price <= 0) return;
+    let alive = true;
+    void previewStartPrice(game.id, price).then((r) => {
+      if (alive) setEventPrice(r);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [game.id, price, economyEnabled, previewStartPrice]);
+  const payPrice = eventPrice?.price ?? price;
   const bounty = computeFormula(game, economy.bounty);
   const reward = applyBountyRate(
     computeFinishReward(isReplayFinish(games, game), bounty, replayBonusPct),
     bountyRate,
   );
-  const canAfford = !economyEnabled || coins >= price;
+  const canAfford = !economyEnabled || coins >= payPrice;
   const hasVoucher = economyEnabled && canRedeemVoucher(vouchers, game.status);
 
   // The destinations this game can land in: the Focus lane (the default — finish it),
@@ -95,7 +109,8 @@ export function ActivationModal({ game, onClose }: { game: Game; onClose: () => 
   async function pickCoins() {
     if (working || !canAfford || !hasOpenSlot) return;
     setWorking("coins");
-    await buyGame(game.id, choice);
+    if (eventPrice) await buyGame(game.id, choice, { eventPrice: eventPrice.price });
+    else await buyGame(game.id, choice);
     onClose();
   }
   async function pickVoucher() {
@@ -220,6 +235,11 @@ export function ActivationModal({ game, onClose }: { game: Game; onClose: () => 
                       Family Discount
                     </span>
                   )}
+                  {eventPrice && (
+                    <span className="rounded-full bg-success/15 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-success">
+                      {eventPrice.eventName}
+                    </span>
+                  )}
                 </>
               ) : (
                 <>
@@ -231,10 +251,12 @@ export function ActivationModal({ game, onClose }: { game: Game; onClose: () => 
               {economyEnabled && (
                 <span className="inline-flex items-center gap-1">
                   <CoinIcon size={14} />{" "}
-                  {familyDiscount ? (
+                  {familyDiscount || eventPrice ? (
                     <>
-                      <s className="font-normal opacity-60">{fullPrice.toLocaleString()}</s>{" "}
-                      <span className="text-success">{price.toLocaleString()}</span>
+                      <s className="font-normal opacity-60">
+                        {(familyDiscount ? fullPrice : price).toLocaleString()}
+                      </s>{" "}
+                      <span className="text-success">{payPrice.toLocaleString()}</span>
                     </>
                   ) : (
                     price.toLocaleString()
@@ -248,7 +270,7 @@ export function ActivationModal({ game, onClose }: { game: Game; onClose: () => 
 
           {economyEnabled && !canAfford && (
             <p className="px-1 text-center text-xs text-danger">
-              You need <CoinIcon size={11} /> {(price - coins).toLocaleString()} more coins
+              You need <CoinIcon size={11} /> {(payPrice - coins).toLocaleString()} more coins
               {hasVoucher ? " — or use a voucher above." : "."}
             </p>
           )}

@@ -239,6 +239,16 @@ export function AboutPage() {
               can pay coins and a badge.
             </p>
             <p>
+              Now and then the team runs a <strong className="text-ink">coin event</strong>: a
+              double bounty weekend, extra Daily Session coins, bigger goal and medal rewards, or a
+              discount on starting games. Some are for certain games only, like RPGs, short games,
+              or games off the platform you play most. A banner on your Bazaar shows what&apos;s on
+              and what&apos;s coming, and you&apos;ll get a heads-up in your notifications. A start
+              discount is pure savings: finishing still pays the full bounty. A bounty boost
+              counts the part paid when you finish, and an event may cap how much extra each
+              player can earn.
+            </p>
+            <p>
               A game&apos;s length comes from a shared estimate, but you can set{" "}
               <strong className="text-ink">your own length</strong> on its Overview — mainlining it,
               or going for 100% — and it drives your price and bounty instead, without changing the

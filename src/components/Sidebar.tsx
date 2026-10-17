@@ -88,6 +88,7 @@ export type View =
   | "reports"
   | "stats"
   | "challengeadmin"
+  | "eventsadmin"
   | "roles"
   | "mysubmissions"
   | "whatsnew"
@@ -721,6 +722,7 @@ function UtilityActions(
             props.view === "reports" ||
             props.view === "stats" ||
             props.view === "challengeadmin" ||
+            props.view === "eventsadmin" ||
             props.view === "roles"
           }
           onClick={run(props.onAdmin)}

@@ -77,6 +77,10 @@ beforeAll(async () => {
       created_at timestamptz not null default now());
     create table public.audit_events (actor_id uuid, target_user uuid, entity text, entity_id text,
       action text, field text, old_value jsonb, new_value jsonb, detail jsonb);
+    -- Coin events are covered in bonusEvents.sql.test.ts; none run here.
+    create function public.bonus_event_pay(p_user uuid, p_game uuid, p_kind text, p_base integer)
+      returns integer language sql as $$ select 0 $$;
+    create function public.bonus_event_notices(p_user uuid) returns void language sql as $$ select $$;
     create function public.economy_enabled(p_user uuid) returns boolean language sql
       as $$ select economy from public.profiles where id = p_user $$;
     create function public.log_coin_event(p_user uuid, p_kind text, p_coin_delta integer,

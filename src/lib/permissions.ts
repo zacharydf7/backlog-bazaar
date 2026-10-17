@@ -25,6 +25,7 @@ export type Permission =
   | "economy.shadow"
   | "economy.insights"
   | "challenges.manage"
+  | "economy.events"
   | "cosmetics.events.manage"
   | "shop.manage"
   | "shop.drafts"
@@ -147,6 +148,13 @@ export const PERMISSIONS: PermissionInfo[] = [
     label: "View economy health",
     description:
       "See the whole economy at a glance on the Stats tab: coins in and out by source, a daily in/out chart, and each player's flows.",
+    group: "Economy & Site",
+  },
+  {
+    key: "economy.events",
+    label: "Run coin events",
+    description:
+      "Create, edit and archive coin events: time-limited boosts to bounties, Daily Session coins, challenge and medal rewards, or start prices, optionally for certain genres, lengths or platforms.",
     group: "Economy & Site",
   },
   {

@@ -46,6 +46,9 @@ beforeAll(async () => {
       primary key (user_id, achievement_id));
     create table public.coin_events (user_id uuid, kind text, coin_delta integer, coin_after integer,
       label text, detail jsonb);
+    -- Coin events are covered in bonusEvents.sql.test.ts; none run here.
+    create function public.bonus_event_pay(p_user uuid, p_game uuid, p_kind text, p_base integer)
+      returns integer language sql as $$ select 0 $$;
     create function public.economy_enabled(p_user uuid) returns boolean language sql
       as $$ select economy from public.profiles where id = p_user $$;
     create function public.log_coin_event(p_user uuid, p_kind text, p_coin_delta integer,

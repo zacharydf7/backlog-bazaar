@@ -75,9 +75,9 @@ afterEach(() => {
 });
 
 describe("Sidebar Manage entry", () => {
-  it("is marked current on every admin tab, including Shop and Challenges", () => {
+  it("is marked current on every admin tab, including Shop, Challenges and Coin events", () => {
     act(() => useStore.setState({ cloud: true, isAdmin: true, viewing: null }));
-    for (const view of ["shopmanager", "challengeadmin"] as const) {
+    for (const view of ["shopmanager", "challengeadmin", "eventsadmin"] as const) {
       const { unmount } = render(<Sidebar {...chromeProps()} view={view} />);
       expect(screen.getByRole("button", { name: /Manage/ }).getAttribute("aria-current")).toBe("page");
       unmount();

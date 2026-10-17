@@ -33,6 +33,9 @@ beforeAll(async () => {
     insert into public.app_config values (1, 5, 0, 3, 'UTC');
     create table public.coin_events (user_id uuid, kind text, coin_delta integer,
       created_at timestamptz not null default now());
+    -- Coin events are covered in bonusEvents.sql.test.ts; none run here.
+    create function public.bonus_event_pay(p_user uuid, p_game uuid, p_kind text, p_base integer)
+      returns integer language sql as $$ select 0 $$;
     create function public.economy_enabled(p_user uuid) returns boolean language sql
       as $$ select economy from public.profiles where id = p_user $$;
     create function public.log_coin_event(p_user uuid, p_kind text, p_coin_delta integer,

@@ -21,6 +21,7 @@ import {
   Sparkles,
   Target,
   CalendarRange,
+  Coins,
   type LucideIcon,
 } from "lucide-react";
 import { useStore } from "../store";
@@ -59,6 +60,7 @@ const TYPE_ICON: Record<string, LucideIcon> = {
   challenges_reset: Target,
   seasonal_challenge: Target,
   weekly_recap: CalendarRange,
+  bonus_event: Coins,
 };
 
 /** A fallback destination derived from a notification's type, for older

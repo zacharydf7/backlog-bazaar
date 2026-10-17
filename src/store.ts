@@ -175,6 +175,13 @@ import { trackEvent } from "./lib/appEvents";
 import { coerceWeeklyRecap, type WeeklyRecap } from "./lib/weeklyRecap";
 import { browserTimeZone } from "./lib/timeZone";
 import {
+  coerceAdminBonusEvents,
+  coerceBonusEvents,
+  type AdminBonusEvent,
+  type BonusEvent,
+  type BonusEventDraft,
+} from "./lib/bonusEvents";
+import {
   coerceChallenges,
   coerceAdminSeasonal,
   completionToastMessage,
@@ -1014,6 +1021,8 @@ interface BazaarState {
   // The "Your week" recap card currently open (null = closed). Opened at boot
   // for an unseen recap, or from its bell notification.
   weeklyRecap: WeeklyRecap | null;
+  // Running and upcoming coin events that apply to you (the board banner).
+  bonusEvents: BonusEvent[];
   // Curio Shop: the cosmetic catalog (lazily loaded by fetchShop), the item ids
   // this user owns, and their equipped frame/stall picks (boot-loaded).
   shopItems: ShopItem[];
@@ -1377,7 +1386,10 @@ interface BazaarState {
   bazaarToWishlist: (id: string) => Promise<void>;
   // Buy a Bazaar game into Now Playing. The optional SlotChoice directs placement
   // (auto / force a general slot / a specific slot); omitted = auto-place.
-  buyGame: (id: string, choice?: SlotChoice) => Promise<void>;
+  // opts.eventPrice: the price a running coin event's discount brings it to
+  // (from previewStartPrice), so a game you can only afford discounted can
+  // start; the server still charges what it computes.
+  buyGame: (id: string, choice?: SlotChoice, opts?: { eventPrice?: number }) => Promise<void>;
   // Redeem one Onboarding Voucher to move a Bazaar game into Now Playing for free
   // (bypasses the coin activation fee). Strictly backlog → playing. choice as buyGame.
   redeemVoucher: (id: string, choice?: SlotChoice) => Promise<void>;
@@ -1666,6 +1678,17 @@ interface BazaarState {
   openWeeklyRecap: (id: string) => Promise<void>;
   // Close the recap card, marking it seen.
   closeWeeklyRecap: () => void;
+  // Load the running and upcoming coin events that apply to you.
+  fetchBonusEvents: () => Promise<void>;
+  // What starting a game would cost under a running discount event (the
+  // purchase applies the same discount server-side). Null when none applies.
+  previewStartPrice: (gameId: string, price: number) => Promise<{ price: number; eventName: string } | null>;
+  // Admin (economy.events): every coin event, archived included.
+  fetchBonusEventsAdmin: () => Promise<AdminBonusEvent[]>;
+  // Admin: create (id null) or edit a coin event. Resolves true on success.
+  saveBonusEvent: (draft: BonusEventDraft) => Promise<boolean>;
+  // Admin: archive or restore a coin event.
+  archiveBonusEvent: (id: string, archived: boolean) => Promise<boolean>;
   // Admin (challenges.manage): every seasonal event, archived included.
   fetchSeasonalChallengesAdmin: () => Promise<AdminSeasonalChallenge[]>;
   // Admin: create (id null) or edit a seasonal event. Resolves true on success.
@@ -2069,6 +2092,7 @@ export const useStore = create<BazaarState>((set, get) => ({
   achievements: [],
   challenges: null,
   weeklyRecap: null,
+  bonusEvents: [],
   shopItems: [],
   shopSets: [],
   shopOwnedIds: [],
@@ -2367,6 +2391,7 @@ export const useStore = create<BazaarState>((set, get) => ({
         achievements: [],
         challenges: null,
         weeklyRecap: null,
+        bonusEvents: [],
         shopItems: [],
         shopSets: [],
         shopOwnedIds: [],
@@ -2620,6 +2645,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     // weekly recap follows, so its "close to" medals and unclaimed rewards
     // count anything just earned.
     void get().evaluateAchievements().then(() => get().fetchWeeklyRecap());
+    void get().fetchBonusEvents();
 
     // Save the browser's timezone so Night Owl and "days played" count this
     // player's own nights and days (awaited via then: a supabase-js call only
@@ -5719,7 +5745,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     toast(`Moved ${game.title} to your wishlist`, Heart);
   },
 
-  buyGame: async (id, choice = { kind: "auto" }) => {
+  buyGame: async (id, choice = { kind: "auto" }, opts) => {
     const { cloud, games, coins, generalSlots, completionistSlots, myTargetedSlots } = get();
     const game = games.find((g) => g.id === id);
     if (!game || game.status !== "backlog") return;
@@ -5795,7 +5821,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       economyOn,
       rec ? recDiscountedPrice(basePrice, get().recDiscountPct) : basePrice,
     );
-    if (!canAffordActivation(economyOn, coins, price)) return;
+    if (!canAffordActivation(economyOn, coins, Math.min(price, opts?.eventPrice ?? price))) return;
 
     if (!cloud) {
       const next = games.map((g) =>
@@ -5846,6 +5872,10 @@ export const useStore = create<BazaarState>((set, get) => ({
       return;
     }
     const { coins: newCoins, slot_id } = data as { coins: number; slot_id: string | null };
+    // What the server actually charged: less than `price` when a coin event's
+    // start discount applied (the server takes it off).
+    const charged = economyOn ? Math.max(0, coins - newCoins) : price;
+    if (charged < price) toast(`Coin event discount: you saved ${price - charged} coins`, Sparkles);
     set({
       coins: newCoins,
       games: games.map((g) =>
@@ -5854,7 +5884,7 @@ export const useStore = create<BazaarState>((set, get) => ({
               ...g,
               status: "playing",
               startedAt: Date.now(),
-              pricePaid: price,
+              pricePaid: charged,
               lengthPremiumOwed: 0, // fresh activation carries no deferred length fee
               slotId: toCoOp ? null : slot_id,
               completionist: toCompletionist,
@@ -8401,6 +8431,75 @@ export const useStore = create<BazaarState>((set, get) => ({
     }
     trackEvent("feature", "quick_goal_swap");
     await get().fetchChallenges();
+  },
+
+  fetchBonusEvents: async () => {
+    if (!supabase || !get().cloud) return;
+    const { data, error } = await supabase.rpc("list_bonus_events");
+    if (error) return;
+    set({ bonusEvents: coerceBonusEvents(data) });
+  },
+
+  previewStartPrice: async (gameId, price) => {
+    if (!supabase || !get().cloud || price <= 0) return null;
+    const { data, error } = await supabase
+      .rpc("preview_start_price", { p_game: gameId, p_price: price })
+      .single();
+    if (error || !data) return null;
+    const row = data as { price: number; event_name: string | null };
+    return row.event_name && row.price < price ? { price: row.price, eventName: row.event_name } : null;
+  },
+
+  fetchBonusEventsAdmin: async () => {
+    if (!supabase || !get().cloud) return [];
+    const { data, error } = await supabase.rpc("admin_list_bonus_events");
+    if (error) {
+      toast(error.message, AlertTriangle);
+      return [];
+    }
+    return coerceAdminBonusEvents(data);
+  },
+
+  saveBonusEvent: async (d) => {
+    if (!supabase || !get().cloud) return false;
+    const { error } = await supabase.rpc("admin_save_bonus_event", {
+      p_id: d.id,
+      p_name: d.name.trim(),
+      p_description: d.description,
+      p_starts_at: new Date(d.startsAt).toISOString(),
+      p_ends_at: new Date(d.endsAt).toISOString(),
+      p_bounty_mult: d.bountyMult,
+      p_session_mult: d.sessionMult,
+      p_rewards_mult: d.rewardsMult,
+      p_start_discount_pct: d.startDiscountPct,
+      p_genres: d.genres,
+      p_platforms: d.platforms,
+      p_off_main_platform: d.offMainPlatform,
+      p_min_hours: d.minHours,
+      p_max_hours: d.maxHours,
+      p_player_cap: d.playerCap,
+      p_repeat: d.repeat,
+      p_repeat_until: d.repeat && d.repeatUntil != null ? new Date(d.repeatUntil).toISOString() : null,
+    });
+    if (error) {
+      toast(error.message, AlertTriangle);
+      return false;
+    }
+    toast(d.id ? "Coin event updated" : "Coin event created", Sparkles);
+    void get().fetchBonusEvents();
+    return true;
+  },
+
+  archiveBonusEvent: async (id, archived) => {
+    if (!supabase || !get().cloud) return false;
+    const { error } = await supabase.rpc("admin_archive_bonus_event", { p_id: id, p_archived: archived });
+    if (error) {
+      toast(error.message, AlertTriangle);
+      return false;
+    }
+    toast(archived ? "Coin event archived" : "Coin event restored", Sparkles);
+    void get().fetchBonusEvents();
+    return true;
   },
 
   fetchSeasonalChallengesAdmin: async () => {
