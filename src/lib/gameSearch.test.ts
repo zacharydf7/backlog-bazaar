@@ -9,7 +9,7 @@ vi.mock("./gamedata", () => ({
 }));
 
 // Imported after the mock so it picks up the stubbed searchGames.
-import { sortByRelevance, searchGameSuggestions } from "./gameSearch";
+import { isCommunityOnly, sortByRelevance, searchGameSuggestions } from "./gameSearch";
 
 function override(over: Partial<CatalogOverride> = {}): CatalogOverride {
   return {
@@ -78,6 +78,21 @@ describe("searchGameSuggestions", () => {
     byRawg: {} as Record<number, CatalogOverride>,
     byIgdb: {} as Record<number, CatalogOverride>,
   }));
+
+  it("shows one row for provider records sharing a name and year (86fc0b4b)", async () => {
+    searchGamesMock.mockResolvedValue([
+      { title: "Super Mario 3D World", released: "2013-11-21", igdbId: 1, genres: [] },
+      { title: "Super Mario 3D World", released: "2013-11-22", igdbId: 2, genres: [] },
+      { title: "Super Mario 3D World", released: "2013-12-01", igdbId: 3, genres: [] },
+      { title: "Super Mario 3D All-Stars", released: "2020-09-18", igdbId: 4, genres: [] },
+    ]);
+    const { results: out } = await searchGameSuggestions("super mario 3d", {
+      searchCatalogGames: noCommunity,
+      fetchCatalogOverrides: noOverrides,
+    });
+    // The provider's first record of the name wins; order is otherwise unchanged.
+    expect(out.map((g) => g.igdbId)).toEqual([1, 4]);
+  });
 
   it("returns nothing for a too-short query without hitting the providers", async () => {
     const { results: out } = await searchGameSuggestions("a", {
@@ -248,5 +263,15 @@ describe("searchGameSuggestions", () => {
       fetchCatalogOverrides: noOverrides,
     });
     expect(out.providerDown).toBe(false);
+  });
+});
+
+describe("isCommunityOnly (86fc0b4b)", () => {
+  it("tags only catalog games with no provider id", () => {
+    expect(isCommunityOnly({ catalogId: "c" })).toBe(true);
+    // An IGDB or RAWG game carrying an approved catalog edit is not community-only.
+    expect(isCommunityOnly({ catalogId: "c", igdbId: 4 })).toBe(false);
+    expect(isCommunityOnly({ catalogId: "c", rawgId: 4 })).toBe(false);
+    expect(isCommunityOnly({ igdbId: 4 })).toBe(false);
   });
 });

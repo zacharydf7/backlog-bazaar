@@ -64,6 +64,10 @@ export const RELEASES: Release[] = [
         text: "A collection you own as a single game now offers \"Split into games\" from its ⋮ menu, and the Add Game hint says what happens: its games stay together on one compilation card.",
         tag: "improvement",
       },
+      {
+        text: "Game search no longer lists the same game several times, and a game no longer flips between a \"community\" and a plain version as you type.",
+        tag: "fix",
+      },
     ],
   },
   {

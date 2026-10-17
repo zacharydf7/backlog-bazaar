@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { GameMeta } from "../types";
 import { useStore } from "../store";
-import { searchGameSuggestions } from "../lib/gameSearch";
+import { isCommunityOnly, searchGameSuggestions } from "../lib/gameSearch";
 import { formatPlaytime } from "../lib/playtime";
 
 function year(date?: string): string {
@@ -163,7 +163,7 @@ export function GameSearchBox({
                   <div className="truncate text-sm text-ink">{r.title}</div>
                   <div className="text-[11px] text-subtle">
                     {year(r.released)} · {r.hours ? formatPlaytime(r.hours) : "length ?"}
-                    {r.catalogId && !r.rawgId ? " · community" : ""}
+                    {isCommunityOnly(r) ? " · community" : ""}
                   </div>
                 </div>
               </li>

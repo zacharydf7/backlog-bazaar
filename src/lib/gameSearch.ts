@@ -129,18 +129,21 @@ export async function searchGameSuggestions(
     })(),
     deps.searchCatalogGames(q).catch(() => [] as GameMeta[]),
   ]);
-  const { enriched, providerDown } = external;
+  // A provider can return several records under one name and year (ports,
+  // platform or regional entries) that read identically in the list, so only
+  // the first — the provider's best-ranked — is kept. Two games sharing a name
+  // but released in different years (a reboot or remake) both survive.
+  const titleYearKey = (g: GameMeta) => g.title.trim().toLowerCase() + "|" + releaseYear(g.released);
+  const enriched = firstPerKey(external.enriched, titleYearKey);
+  const { providerDown } = external;
   // Dedupe community games against the provider results by id (either id space),
   // and by title+year so a true duplicate (the same game also in the community
-  // catalog) is dropped — but two distinct games sharing a name and released in
-  // different years (a reboot or remake) BOTH survive, so neither disappears
-  // from the results.
-  const titleYearKey = (g: GameMeta) => g.title.trim().toLowerCase() + "|" + releaseYear(g.released);
+  // catalog) is dropped.
   const seenRawg = new Set(enriched.map((r) => r.rawgId).filter(Boolean));
   const seenIgdb = new Set(enriched.map((r) => r.igdbId).filter(Boolean));
   const seenTitleYear = new Set(enriched.map(titleYearKey));
   const seenTitle = new Set(enriched.map((r) => r.title.trim().toLowerCase()));
-  const extra = community.filter(
+  const extra = firstPerKey(community, titleYearKey).filter(
     (c) =>
       !(c.rawgId && seenRawg.has(c.rawgId)) &&
       !(c.igdbId && seenIgdb.has(c.igdbId)) &&
@@ -154,4 +157,23 @@ export async function searchGameSuggestions(
         seenTitle.has(c.title.trim().toLowerCase())),
   );
   return { results: sortByRelevance([...enriched, ...extra], q), providerDown };
+}
+
+/** The first item for each key, in input order. */
+function firstPerKey<T>(items: T[], key: (item: T) => string): T[] {
+  const seen = new Set<string>();
+  return items.filter((item) => {
+    const k = key(item);
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+}
+
+/** True for a community-only game: in the shared catalog with no provider id
+ *  (neither RAWG nor IGDB). A provider game carrying an approved catalog edit
+ *  is not one — tagging it made the same game flip between "community" and
+ *  plain as different keystrokes reached different sources. */
+export function isCommunityOnly(g: Pick<GameMeta, "catalogId" | "rawgId" | "igdbId">): boolean {
+  return g.catalogId != null && g.rawgId == null && g.igdbId == null;
 }
