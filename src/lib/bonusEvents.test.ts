@@ -4,8 +4,10 @@ import {
   boostLabels,
   coerceAdminBonusEvents,
   coerceBonusEvents,
+  boostedReward,
   coerceBonusPerks,
   eventFinishBonus,
+  rewardsBoost,
   eventStartPrice,
   eventWhenLabel,
   spanUntil,
@@ -142,13 +144,17 @@ describe("perks", () => {
     expect(
       coerceBonusPerks({
         a: { discount: { event: "Half Off", pct: 50, cap_left: "40" } },
-        b: { bounty: { event: "Double", factor: "2" }, saved: 25 },
+        b: { bounty: { event: "Double", factor: "2" }, session: { event: "Double", factor: 2 }, saved: 25 },
         c: { bounty: { event: "Flat", factor: 1 } },
         d: "nope",
       }),
     ).toEqual({
       a: { discount: { event: "Half Off", pct: 50, capLeft: 40 }, saved: 0 },
-      b: { bounty: { event: "Double", factor: 2, capLeft: null }, saved: 25 },
+      b: {
+        bounty: { event: "Double", factor: 2, capLeft: null },
+        session: { event: "Double", factor: 2, capLeft: null },
+        saved: 25,
+      },
       c: { saved: 0 },
     });
     expect(coerceBonusPerks(null)).toEqual({});
@@ -177,5 +183,52 @@ describe("perks", () => {
     expect(spanUntil(5 * H, 0)).toBe("5h");
     expect(spanUntil(10 * 60_000, 0)).toBe("1h");
     expect(spanUntil(2 * D + H, 0)).toBe("3 days");
+  });
+});
+
+describe("rewards boost", () => {
+  const ev = (over: Record<string, unknown> = {}) =>
+    ({
+      id: "e",
+      name: "Double",
+      description: "",
+      startsAt: 0,
+      endsAt: 10 * D,
+      repeat: null,
+      bountyMult: 1,
+      sessionMult: 1,
+      rewardsMult: 2,
+      startDiscountPct: 0,
+      discountLimit: null,
+      genres: [],
+      platforms: [],
+      offMainPlatform: false,
+      minHours: null,
+      maxHours: null,
+      playerCap: null,
+      capUsed: 0,
+      discountUsed: 0,
+      ...over,
+    }) as Parameters<typeof rewardsBoost>[0][number];
+
+  it("picks the strongest live rewards event, with its cap left", () => {
+    expect(rewardsBoost([ev(), ev({ name: "Triple", rewardsMult: 3, playerCap: 100, capUsed: 40 })], D)).toEqual({
+      event: "Triple",
+      mult: 3,
+      capLeft: 60,
+    });
+  });
+
+  it("ignores upcoming events, other boosts, and a used-up cap", () => {
+    expect(rewardsBoost([ev({ startsAt: 2 * D })], D)).toBeNull();
+    expect(rewardsBoost([ev({ rewardsMult: 1, bountyMult: 2 })], D)).toBeNull();
+    expect(rewardsBoost([ev({ playerCap: 50, capUsed: 50 })], D)).toBeNull();
+  });
+
+  it("pays a claim like bonus_event_pay", () => {
+    expect(boostedReward(25, { mult: 2, capLeft: null })).toBe(50);
+    expect(boostedReward(25, { mult: 1.5, capLeft: null })).toBe(37);
+    expect(boostedReward(25, { mult: 2, capLeft: 10 })).toBe(35);
+    expect(boostedReward(25, null)).toBe(25);
   });
 });

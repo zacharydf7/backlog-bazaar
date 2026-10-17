@@ -63,6 +63,25 @@ describe("CoOpPactBanner", () => {
     expect(screen.queryByTestId("coop-pact-banner")).toBeNull();
   });
 
+  it("prices an accept under a coin event discount", () => {
+    const g = game({ status: "backlog" });
+    act(() =>
+      useStore.setState({
+        games: [g],
+        economyEnabled: true,
+        bonusPerks: { [g.id]: { discount: { event: "Half Off", pct: 50, capLeft: null }, saved: 0 } },
+        coOpPacts: [
+          pact({ status: "pending", iAmInviter: false, myGameId: null, myCandidateGameId: g.id }),
+        ],
+      }),
+    );
+    render(<CoOpPactBanner game={g} />);
+    const accept = screen.getByRole("button", { name: /Accept & start/ });
+    const full = Number(accept.querySelector("s")!.textContent);
+    expect(accept.textContent).toContain(String(full - Math.floor(full / 2)));
+    act(() => useStore.setState({ bonusPerks: {} }));
+  });
+
   it("shows an incoming invite with Accept (priced for a Bazaar copy) and Decline", () => {
     const g = game({ status: "backlog" });
     act(() =>

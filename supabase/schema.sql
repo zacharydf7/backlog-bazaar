@@ -20989,8 +20989,9 @@ $$;
 
 -- What running coin events do for each of the caller's games, so cards can
 -- say so: the start discount on a Bazaar game (respecting discounted-start
--- limits and caps) and the bounty boost on a Now Playing one, plus the
--- discount already saved on that run (apply_finish counts it as paid). One
+-- limits and caps), the bounty boost (Bazaar games too, for "if you finish in
+-- time"), the Daily Session boost on a Now Playing game, and the discount
+-- already saved on that run (apply_finish counts it as paid). One
 -- jsonb object keyed by game id, so a big library isn't cut at the API's row
 -- limit; empty when nothing is running or the economy is off.
 create or replace function public.my_bonus_event_perks()
@@ -21007,7 +21008,7 @@ begin
        select 1 from public.bonus_events e
         cross join lateral public.bonus_event_occurrence(e, now()) o
         where e.archived_at is null and o.live
-          and (e.bounty_mult > 1 or e.start_discount_pct > 0)) then
+          and (e.bounty_mult > 1 or e.session_mult > 1 or e.start_discount_pct > 0)) then
     return '{}'::jsonb;
   end if;
   return coalesce((
@@ -21019,8 +21020,10 @@ begin
                                 from public.best_bonus_event(v_me, g.id, 'discount') d
                                where g.status = 'backlog'),
                  'bounty', (select jsonb_build_object('event', b.event_name, 'factor', b.factor, 'cap_left', b.cap_left)
-                              from public.best_bonus_event(v_me, g.id, 'bounty') b
-                             where g.status = 'playing'),
+                              from public.best_bonus_event(v_me, g.id, 'bounty') b),
+                 'session', (select jsonb_build_object('event', x.event_name, 'factor', x.factor, 'cap_left', x.cap_left)
+                               from public.best_bonus_event(v_me, g.id, 'session') x
+                              where g.status = 'playing'),
                  'saved', case when g.status = 'playing' then
                             nullif((select coalesce(sum(p.amount), 0) from public.bonus_event_payouts p
                                      where p.game_id = g.id and p.user_id = v_me and p.kind = 'discount'

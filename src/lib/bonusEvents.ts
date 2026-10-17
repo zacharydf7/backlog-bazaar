@@ -145,7 +145,7 @@ export function coerceAdminBonusEvents(raw: unknown): AdminBonusEvent[] {
 }
 
 /** "×2" / "×1.5". */
-function times(m: number): string {
+export function times(m: number): string {
   return `×${Math.round(m * 100) / 100}`;
 }
 
@@ -230,7 +230,10 @@ export function repeatLabel(repeat: BonusEventRepeat | null, repeatUntil: number
 /** What running events do for one of your games (my_bonus_event_perks). */
 export interface BonusEventPerk {
   discount?: { event: string; pct: number; capLeft: number | null };
+  /** On a Bazaar game: what it would get if started and finished in time. */
   bounty?: { event: string; factor: number; capLeft: number | null };
+  /** Daily Session coins, on a Now Playing game. */
+  session?: { event: string; factor: number; capLeft: number | null };
   /** Coins the start discount saved on this run (counted as paid at finish). */
   saved: number;
 }
@@ -243,12 +246,16 @@ export function coerceBonusPerks(raw: unknown): Record<string, BonusEventPerk> {
     const r = v as Record<string, unknown>;
     const d = r.discount as Record<string, unknown> | undefined;
     const b = r.bounty as Record<string, unknown> | undefined;
+    const se = r.session as Record<string, unknown> | undefined;
     out[id] = {
       ...(d && typeof d.event === "string" && num(d.pct) > 0
         ? { discount: { event: d.event, pct: num(d.pct), capLeft: maybeNum(d.cap_left) } }
         : {}),
       ...(b && typeof b.event === "string" && num(b.factor) > 1
         ? { bounty: { event: b.event, factor: num(b.factor), capLeft: maybeNum(b.cap_left) } }
+        : {}),
+      ...(se && typeof se.event === "string" && num(se.factor) > 1
+        ? { session: { event: se.event, factor: num(se.factor), capLeft: maybeNum(se.cap_left) } }
         : {}),
       saved: num(r.saved),
     };
@@ -277,4 +284,28 @@ export function eventFinishBonus(paidAtFinish: number, perk: BonusEventPerk | un
   let extra = Math.floor(paidAtFinish * (b.factor - 1));
   if (b.capLeft != null) extra = Math.min(extra, Math.max(0, b.capLeft));
   return Math.max(0, extra);
+}
+
+/** The running event that boosts goal and medal rewards (the strongest, ties
+ *  to the one ending first, as best_bonus_event picks), with its cap left;
+ *  null when none. Rewards aren't tied to a game, so targets don't matter. */
+export function rewardsBoost(
+  events: BonusEvent[],
+  now: number,
+): { event: string; mult: number; capLeft: number | null } | null {
+  const best = events
+    .filter((e) => e.rewardsMult > 1 && eventIsLive(e, now))
+    .sort((a, b) => b.rewardsMult - a.rewardsMult || a.endsAt - b.endsAt)[0];
+  if (!best) return null;
+  const capLeft = best.playerCap != null ? Math.max(0, best.playerCap - best.capUsed) : null;
+  return capLeft === 0 ? null : { event: best.name, mult: best.rewardsMult, capLeft };
+}
+
+/** What claiming `reward` coins pays under a rewards boost (the extra floors
+ *  and stops at the cap, as bonus_event_pay adds it). */
+export function boostedReward(reward: number, boost: { mult: number; capLeft: number | null } | null): number {
+  if (!boost || reward <= 0) return reward;
+  let extra = Math.floor(reward * (boost.mult - 1));
+  if (boost.capLeft != null) extra = Math.min(extra, boost.capLeft);
+  return reward + Math.max(0, extra);
 }

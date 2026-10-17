@@ -9,6 +9,7 @@ import { computeFormula } from "../lib/economy";
 import { computeFamilyDiscountPrice } from "../lib/pricing";
 import { isFamilyDiscounted } from "../lib/families";
 import { formatPlaytime } from "../lib/playtime";
+import { eventStartPrice } from "../lib/bonusEvents";
 import { gameHash } from "../lib/route";
 import { useScrollLock } from "../lib/useScrollLock";
 import { useHistoryDismiss } from "../lib/useHistoryDismiss";
@@ -120,6 +121,7 @@ function MysteryPullModal({ kind, onClose }: { kind: PullKind; onClose: () => vo
   const vouchers = useStore((s) => s.vouchers);
   const economy = useStore((s) => s.economy);
   const economyEnabled = useStore((s) => s.economyEnabled);
+  const bonusPerks = useStore((s) => s.bonusPerks);
   const replayBonusPct = useStore((s) => s.replayBonusPct);
   const generalSlots = useStore((s) => s.generalSlots);
   const completionistSlots = useStore((s) => s.completionistSlots);
@@ -271,6 +273,8 @@ function MysteryPullModal({ kind, onClose }: { kind: PullKind; onClose: () => vo
     return isFamilyDiscounted(games, g) ? computeFamilyDiscountPrice(full, replayBonusPct) : full;
   };
   const price = priceOf(current);
+  // A running coin event's start discount on this pull (applied at purchase).
+  const eventStart = eventStartPrice(price, bonusPerks[current.id]);
 
   // The play pull's opening choice, and the guided picker it leads to.
   if (phase === "choose" || phase === "picker") {
@@ -428,7 +432,16 @@ function MysteryPullModal({ kind, onClose }: { kind: PullKind; onClose: () => vo
                 )
               ) : economyEnabled ? (
                 <span className="inline-flex items-center gap-1">
-                  <CoinIcon size={14} /> {price} to start
+                  <CoinIcon size={14} />{" "}
+                  {eventStart ? (
+                    <>
+                      <s className="opacity-60">{price}</s>{" "}
+                      <span className="font-semibold text-success">{eventStart.price}</span> to start ·{" "}
+                      <span className="font-semibold text-success">{eventStart.event}</span>
+                    </>
+                  ) : (
+                    <>{price} to start</>
+                  )}
                 </span>
               ) : null}
               {current.hours != null && (

@@ -16,6 +16,7 @@ import { computeFormula } from "../lib/economy";
 import { computeFamilyDiscountPrice } from "../lib/pricing";
 import { formatPlaytime } from "../lib/playtime";
 import { isFamilyDiscounted } from "../lib/families";
+import { eventStartPrice } from "../lib/bonusEvents";
 import { useScrollLock } from "../lib/useScrollLock";
 import { useHistoryDismiss } from "../lib/useHistoryDismiss";
 import { Avatar } from "./Avatar";
@@ -371,6 +372,7 @@ export function CoOpPactBanner({ game }: { game: Game }) {
     declineCoOpPact,
     dissolveCoOpPact,
     setCoOpPactFeeOffer,
+    bonusPerks,
   } = useStore();
   const [working, setWorking] = useState(false);
   const [confirmDissolve, setConfirmDissolve] = useState(false);
@@ -398,11 +400,14 @@ export function CoOpPactBanner({ game }: { game: Game }) {
     : isFamilyDiscounted(games, game)
       ? computeFamilyDiscountPrice(fullPrice, replayBonusPct)
       : fullPrice;
+  // A running coin event's start discount comes off at accept, as at Buy & Start.
+  const eventStart = economyEnabled ? eventStartPrice(price, bonusPerks[game.id]) : null;
+  const startPrice = eventStart?.price ?? price;
   const needsBuy = game.status === "backlog";
   const canAfford =
     !needsBuy ||
     !economyEnabled ||
-    (shortfall ? coins >= price : pact.coversFee || coins >= price);
+    (shortfall ? coins >= startPrice : pact.coversFee || coins >= startPrice);
 
   const partnerChip = (
     <span className="inline-flex min-w-0 items-center gap-1.5">
@@ -465,7 +470,15 @@ export function CoOpPactBanner({ game }: { game: Game }) {
                 "Accept & start"
               ) : shortfall || !pact.coversFee ? (
                 <>
-                  {shortfall ? "Pay" : "Accept & start ·"} {price} <CoinIcon size={12} />
+                  {shortfall ? "Pay" : "Accept & start ·"}{" "}
+                  {eventStart ? (
+                    <>
+                      <s className="font-normal opacity-60">{price}</s> {startPrice}
+                    </>
+                  ) : (
+                    price
+                  )}{" "}
+                  <CoinIcon size={12} />
                   {shortfall ? " & start" : ""}
                 </>
               ) : (

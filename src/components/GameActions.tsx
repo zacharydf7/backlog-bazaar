@@ -84,7 +84,7 @@ import {
 } from "../lib/economy";
 import { beatenFinishLength, effectiveLength, finishBountyOffset } from "../lib/personalLength";
 import { bountyGateHours, heldAtFinish } from "../lib/bountyHold";
-import { eventFinishBonus, eventStartPrice } from "../lib/bonusEvents";
+import { eventFinishBonus, eventStartPrice, times } from "../lib/bonusEvents";
 import { FinishCheckModal } from "./FinishCheckModal";
 import { useScrollLock } from "../lib/useScrollLock";
 import { CoinIcon } from "./CoinIcon";
@@ -843,6 +843,9 @@ export function GameActions({
             gateHours={finishGateHours}
             payNow={finishNet - finishHeld + settleRefund}
             held={finishHeld}
+            eventBonus={
+              eventBonus > 0 && perk?.bounty ? { event: perk.bounty.event, amount: eventBonus } : undefined
+            }
             onFinish={() => withSessionStopped(() => finishGame(game.id))}
             onClose={() => setCheckingFinish(false)}
           />,
@@ -1088,6 +1091,12 @@ export function GameActions({
                   {bonusSummary && ` · ${bonusSummary}`}
                 </>
               )}
+            </p>
+          )}
+          {showEconomy && perk?.bounty && (
+            <p className="inline-flex items-center justify-center gap-1 text-center text-[11px] font-semibold text-success">
+              <PartyPopper size={12} className="shrink-0" /> {perk.bounty.event}: bounty{" "}
+              {times(perk.bounty.factor)} if you finish while it runs
             </p>
           )}
           {/* The graceful way OUT of the backlog: no more faking a "Beaten" to
@@ -1354,6 +1363,12 @@ export function GameActions({
               </>
             )}
           </div>
+          {showEconomy && perk?.session && (
+            <p className="inline-flex items-center justify-center gap-1 text-center text-xs font-semibold text-success">
+              <PartyPopper size={13} className="shrink-0" /> {perk.session.event}: Daily Session coins{" "}
+              {times(perk.session.factor)} when you log time
+            </p>
+          )}
           <button
             onClick={() =>
               finishHeld > 0

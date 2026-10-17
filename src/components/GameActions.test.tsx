@@ -568,4 +568,40 @@ describe("GameActions coin event perks", () => {
     render(<GameActions game={g} />);
     expect(screen.getByText(new RegExp(`${EVENT}:`)).textContent).toMatch(/\+\s*25 on finish/);
   });
+
+  it("says the finish check's pay-now includes the event's boost", () => {
+    const g = game({ id: "p", status: "playing", hours: 40, pricePaid: 10, playedHours: 0, startedAt: 1 });
+    act(() =>
+      useStore.setState({ games: [g], bonusPerks: { p: { bounty: { event: EVENT, factor: 2, capLeft: null }, saved: 0 } } }),
+    );
+    render(<GameActions game={g} />);
+    fireEvent.click(screen.getByRole("button", { name: /Mark Finished/i }));
+    const dialog = screen.getByRole("dialog", { name: /Finish Alwa's Awakening/ });
+    expect(dialog.textContent).toMatch(new RegExp(`${EVENT} adds\\s*10 to what's paid now`));
+  });
+
+  it("tells a Bazaar card its bounty is boosted if it's finished in time", () => {
+    const solo = game({ id: "a", released: "2015-01-01", hours: 10 });
+    act(() =>
+      useStore.setState({
+        games: [solo],
+        coins: 100_000,
+        bonusPerks: { a: { bounty: { event: EVENT, factor: 2, capLeft: null }, saved: 0 } },
+      }),
+    );
+    render(<GameActions game={solo} />);
+    expect(screen.getByText(new RegExp(`${EVENT}: bounty ×2 if you finish while it runs`))).toBeTruthy();
+  });
+
+  it("tells a Now Playing card its Daily Session coins are boosted", () => {
+    const g = game({ id: "p", status: "playing", hours: 40, pricePaid: 10, playedHours: 10, startedAt: 1 });
+    act(() =>
+      useStore.setState({
+        games: [g],
+        bonusPerks: { p: { session: { event: EVENT, factor: 2, capLeft: null }, saved: 0 } },
+      }),
+    );
+    render(<GameActions game={g} />);
+    expect(screen.getByText(new RegExp(`${EVENT}: Daily Session coins ×2 when you log time`))).toBeTruthy();
+  });
 });

@@ -178,6 +178,8 @@ import {
   coerceAdminBonusEvents,
   coerceBonusEvents,
   coerceBonusPerks,
+  eventStartPrice,
+  rewardsBoost,
   type AdminBonusEvent,
   type BonusEvent,
   type BonusEventDraft,
@@ -7263,7 +7265,10 @@ export const useStore = create<BazaarState>((set, get) => ({
       const coins = (prof as { coins?: number } | null)?.coins;
       if (typeof coins === "number") {
         set({ coins });
-        if (coins > coinsBefore) toast(`Daily Session +${coins - coinsBefore}`, Sparkles);
+        if (coins > coinsBefore) {
+          const event = get().bonusPerks[id]?.session?.event;
+          toast(`Daily Session +${coins - coinsBefore}${event ? ` · ${event} bonus included` : ""}`, Sparkles);
+        }
       }
     }
   },
@@ -8333,7 +8338,14 @@ export const useStore = create<BazaarState>((set, get) => ({
     if (row && row.medals > 0) {
       set({ coins: row.coins });
       const what = row.medals === 1 ? "achievement reward" : `${row.medals} achievement rewards`;
-      toast(`+${row.paid} coins — ${what} claimed`, Coins);
+      // A running rewards boost was paid inside the claim (the events list still
+      // holds the pre-claim cap use, so it says whether one applied).
+      const boost = rewardsBoost(get().bonusEvents, Date.now());
+      toast(
+        `+${row.paid} coins — ${what} claimed${boost ? ` · ${boost.event} ×${boost.mult} included` : ""}`,
+        boost ? PartyPopper : Coins,
+      );
+      if (boost) void get().fetchBonusEvents();
     }
     await get().fetchAchievements();
   },
@@ -8391,7 +8403,14 @@ export const useStore = create<BazaarState>((set, get) => ({
     if (row && row.claimed > 0) {
       set({ coins: row.coins });
       const what = row.claimed === 1 ? "challenge reward" : `${row.claimed} challenge rewards`;
-      toast(`+${row.paid} coins — ${what} claimed`, Coins);
+      // A running rewards boost was paid inside the claim (the events list still
+      // holds the pre-claim cap use, so it says whether one applied).
+      const boost = rewardsBoost(get().bonusEvents, Date.now());
+      toast(
+        `+${row.paid} coins — ${what} claimed${boost ? ` · ${boost.event} ×${boost.mult} included` : ""}`,
+        boost ? PartyPopper : Coins,
+      );
+      if (boost) void get().fetchBonusEvents();
     }
     await get().fetchChallenges();
   },
@@ -11139,7 +11158,10 @@ export const useStore = create<BazaarState>((set, get) => ({
         get().economyEnabled,
         familyDiscount ? computeFamilyDiscountPrice(fullPrice, get().replayBonusPct) : fullPrice,
       );
-      if ((!pact?.coversFee || selfPay === true) && !canAffordActivation(get().economyEnabled, coins, price)) {
+      // A running coin event's start discount comes off server-side, so check
+      // affordability at that price.
+      const afford = eventStartPrice(price, get().bonusPerks[gameId])?.price ?? price;
+      if ((!pact?.coversFee || selfPay === true) && !canAffordActivation(get().economyEnabled, coins, afford)) {
         toast("Not enough coins to start it", Lock);
         return false;
       }
@@ -11183,8 +11205,10 @@ export const useStore = create<BazaarState>((set, get) => ({
                 status: "playing",
                 startedAt: Date.now(),
                 // A gifted fee activates the card at 0 (voucher-style — the
-                // server stamped price_paid 0, so a later shelve refunds nothing).
-                pricePaid: gifted ? 0 : price,
+                // server stamped price_paid 0, so a later shelve refunds nothing);
+                // otherwise what was charged (less than `price` under a coin
+                // event discount).
+                pricePaid: gifted ? 0 : get().economyEnabled ? Math.max(0, coins - (res.coins ?? coins)) : price,
                 slotId: null,
                 completionist: false,
                 coOp: true,

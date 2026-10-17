@@ -49,6 +49,7 @@ beforeEach(() => {
       buyGame: vi.fn(async () => {}),
       redeemVoucher: vi.fn(async () => {}),
       logMysteryPull,
+      bonusPerks: {},
     }),
   );
 });
@@ -60,6 +61,19 @@ describe("MysteryPull", () => {
     const btn = screen.getByRole("button", { name: /Mystery Pull/i }) as HTMLButtonElement;
     expect(btn.disabled).toBe(true);
     expect(btn.title).toMatch(/No games in your Bazaar/);
+  });
+
+  it("shows a coin event's discount on the pulled game's price", () => {
+    act(() =>
+      useStore.setState({
+        bonusPerks: { [game().id]: { discount: { event: "Half Off", pct: 50, capLeft: null }, saved: 0 } },
+      }),
+    );
+    render(<MysteryPull />);
+    openSurprise();
+    const line = screen.getByText(/to start/).closest("span")!;
+    const full = Number(line.querySelector("s")!.textContent);
+    expect(line.textContent).toContain(`${full - Math.floor(full / 2)} to start · Half Off`);
   });
 
   it("opens the pull with a drawn game, its price, and a disabled re-roll for a pool of one", () => {

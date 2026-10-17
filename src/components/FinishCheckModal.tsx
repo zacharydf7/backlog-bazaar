@@ -1,6 +1,6 @@
 import { trackEvent } from "../lib/appEvents";
 import { useState } from "react";
-import { Check, Clock, History } from "lucide-react";
+import { Check, Clock, History, PartyPopper } from "lucide-react";
 import type { Game } from "../types";
 import { useStore } from "../store";
 import { formatPlaytime, parsePlaytime } from "../lib/playtime";
@@ -19,6 +19,7 @@ export function FinishCheckModal({
   gateHours,
   payNow,
   held,
+  eventBonus,
   onFinish,
   onClose,
 }: {
@@ -30,6 +31,9 @@ export function FinishCheckModal({
   /** Coins the finish pays now, and the coins it would hold. */
   payNow: number;
   held: number;
+  /** A running coin event's boost on what's paid now (coins released later
+   *  aren't boosted). */
+  eventBonus?: { event: string; amount: number };
   /** Finishes the game (the caller's usual path, stopwatch handling included). */
   onFinish: () => void;
   onClose: () => void;
@@ -73,6 +77,15 @@ export function FinishCheckModal({
           log your time, all of it at {formatPlaytime(gateHours)}. A clear with that much logged
           also counts toward your Clear Streak.
         </p>
+        {eventBonus && (
+          <p className="mt-2 inline-flex items-start gap-1.5 text-sm font-semibold text-success">
+            <PartyPopper size={15} className="mt-0.5 shrink-0" />
+            <span>
+              {eventBonus.event} adds <CoinIcon size={12} /> {eventBonus.amount} to what&apos;s paid now.
+              Logging your time first grows it; coins that unlock later aren&apos;t boosted.
+            </span>
+          </p>
+        )}
 
         <div className="mt-4 rounded-xl border border-line bg-panel/40 p-3">
           <label className="block text-xs font-medium text-ink" htmlFor="finish-check-hours">
