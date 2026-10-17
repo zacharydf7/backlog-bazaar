@@ -83,6 +83,7 @@ export function AboutPage() {
     recBountyCap,
     clearStreak_cfg,
     featureBonuses,
+    bountyGatePct,
   } = useStore();
   const priceBase = economy.price.base;
   const bountyBase = economy.bounty.base;
@@ -140,8 +141,12 @@ export function AboutPage() {
             </Section>
             <Section icon={Trophy} title="5 · Finish for the bounty">
               Mark a game finished to collect its <strong className="text-ink">bounty</strong> (at
-              least <Coin n={bountyBase} />) and move it to your trophy shelf. Spend those coins on
-              your next game, and repeat. Hit it by mistake? For about 15 seconds an{" "}
+              least <Coin n={bountyBase} />) and move it to your trophy shelf. The bounty follows
+              your logged time: with at least {bountyGatePct}% of the game&apos;s length logged it
+              pays in full, and with less your activation coins come straight back while the rest
+              unlocks as you log your time. Finished cards show your logged time, with a{" "}
+              <strong className="text-ink">Verified</strong> mark once it&apos;s enough. Spend those
+              coins on your next game, and repeat. Hit it by mistake? For about 15 seconds an{" "}
               <strong className="text-ink">Undo</strong> button on the confirmation puts the game
               back exactly where it was and refunds the coins.
             </Section>
@@ -209,6 +214,9 @@ export function AboutPage() {
               catalog anyone else sees. Lengthen a game you&apos;re already playing and it tops up the
               activation fee for the extra hours; if you can&apos;t cover it all right now, the rest
               just comes off that game&apos;s finish bounty rather than blocking the change.
+              Set a game to its completionist length but finish it without going for 100%, and it
+              pays as the main story + extras game you played, with the extra activation cost
+              refunded.
             </p>
           </Section>
 

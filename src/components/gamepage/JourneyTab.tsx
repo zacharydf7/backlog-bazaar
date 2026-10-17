@@ -5,6 +5,7 @@ import { parsePlaytime, formatPlaytime } from "../../lib/playtime";
 import { PlaytimeSection } from "./PlaytimeSection";
 import { PrerequisiteSection } from "./PrerequisiteSection";
 import { MilestonesSection } from "../MilestonesSection";
+import { HeldBountyNote } from "../ClearLogChip";
 
 /** Your play story: logged time (per version in the cloud, one field offline),
  *  the milestone timeline, and the story-order prerequisite. All immediate-
@@ -18,6 +19,7 @@ export function JourneyTab({ game }: { game: Game }) {
 
   return (
     <div className="flex flex-col gap-4">
+      <HeldBountyNote game={game} />
       {!isWishlist && <PlayedField game={game} />}
       {cloud && <MilestonesSection game={game} />}
       {/* Changing the story lock of a game you're mid-way through is moot —

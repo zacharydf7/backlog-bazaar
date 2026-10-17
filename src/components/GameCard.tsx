@@ -52,6 +52,7 @@ import { GamePriorityBadge } from "./GamePriorityBadge";
 import { StatusBadge } from "./StatusBadge";
 import { isInRotation } from "../lib/status";
 import { FinishTagBadge } from "./FinishTagBadge";
+import { ClearLogChip } from "./ClearLogChip";
 import { ScoreChip } from "./StarRating";
 import { useViewing } from "../lib/viewContext";
 
@@ -881,11 +882,13 @@ export function GameCard({
           </div>
 
           {/* How a finished game concluded — the Finished board's status chip —
-              plus the at-a-glance review score when one was left. */}
-          {game.status === "finished" && (game.finishTag || clampScore(game.reviewScore ?? null)) && (
-            <div className="flex items-center gap-1.5">
+              plus the at-a-glance review score when one was left, and the
+              logged time against the length (verified once it's enough). */}
+          {game.status === "finished" && (
+            <div className="flex flex-wrap items-center gap-1.5 empty:hidden">
               {game.finishTag && <FinishTagBadge tag={game.finishTag} />}
               {clampScore(game.reviewScore ?? null) != null && <ScoreChip score={game.reviewScore!} />}
+              <ClearLogChip game={game} />
             </div>
           )}
 

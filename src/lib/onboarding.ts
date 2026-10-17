@@ -259,7 +259,7 @@ export function questCopy(
         eyebrow: economyOn ? "Quest 4 · Claim a bounty" : "Quest 4 · Finish a game",
         title: "Finish your first game",
         body: economyOn
-          ? "Whenever you beat it — today or next month — hit “Mark Finished”. The game's coin bounty pays out and funds your next pickup. This checklist will wait for you."
+          ? "Whenever you beat it — today or next month — hit “Mark Finished”. The game's coin bounty pays out (in full once you've logged a fair share of its length) and funds your next pickup. This checklist will wait for you."
           : "Whenever you beat it — today or next month — hit “Mark Finished” and it joins your Finished shelf. This checklist will wait for you.",
         cta: "Show me",
       };

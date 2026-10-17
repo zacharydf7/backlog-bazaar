@@ -58,8 +58,28 @@ export const RELEASES: Release[] = [
   {
     id: "2026-10-17-cleaner-search-and-split",
     date: "2026-10-17",
-    title: "Compilations are games too",
+    title: "Compilations are games too, and bounties follow your time",
     items: [
+      {
+        text: "Bounties now follow the time you log. Finish a game with little of it logged and your activation coins come straight back; the rest of the bounty unlocks as you log your time, all of it once you've logged a quarter of the game's length.",
+        tag: "feature",
+      },
+      {
+        text: "Mark Finished checks in when there's little time logged: add the time you played, file a game you beat before joining under Finished, or finish anyway.",
+        tag: "feature",
+      },
+      {
+        text: "Finished games show how much of their length you logged, with a Verified mark once it's enough.",
+        tag: "improvement",
+      },
+      {
+        text: "A game you set to its completionist length but finish without going for 100% now pays on its main story + extras length, with the extra activation cost refunded.",
+        tag: "improvement",
+      },
+      {
+        text: "Shortening a game's length while playing it no longer refunds that part of the fee a second time if you later shelve or retire it.",
+        tag: "fix",
+      },
       {
         text: "A compilation now has a page like any game's: its own cover, details, review, likes and community stats, shared with everyone who owns it, plus a Games tab listing what's inside.",
         tag: "feature",
