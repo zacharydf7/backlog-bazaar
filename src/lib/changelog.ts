@@ -73,6 +73,10 @@ export const RELEASES: Release[] = [
         tag: "improvement",
       },
       {
+        text: "Your weekly recap and challenges now count only the time you actually played that week, not hours you entered for play from before, and an abandoned replay no longer shows up as a clear.",
+        tag: "fix",
+      },
+      {
         text: "Can't decide what to play? Mystery Pull now has Help me choose: say how long a game you want, on which platform, in what mood and what you're after, and get three games you can start right now, with why each one fits.",
         tag: "feature",
       },
