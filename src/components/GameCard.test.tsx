@@ -326,7 +326,7 @@ describe("GameCard expand/collapse compilation menu", () => {
     expect(screen.queryByText(/Collapse compilation/i)).toBeNull();
   });
 
-  it("offers Expand compilation… for an owned card matching a linked template", () => {
+  it("offers Split into games… for an owned card matching a linked template", () => {
     const g = game({ id: "gp", rawgId: 42, title: "Trilogy Collection" });
     act(() =>
       useStore.setState({
@@ -339,7 +339,7 @@ describe("GameCard expand/collapse compilation menu", () => {
     );
     render(<GameCard game={g} />);
     fireEvent.click(screen.getByRole("button", { name: /More options/i }));
-    expect(screen.getByText(/Expand compilation…/i)).toBeTruthy();
+    expect(screen.getByText(/Split into games…/i)).toBeTruthy();
   });
 
   it("never offers expansion for wishlist rows or unmatched games", () => {
@@ -355,7 +355,7 @@ describe("GameCard expand/collapse compilation menu", () => {
     );
     render(<GameCard game={wish} />);
     fireEvent.click(screen.getByRole("button", { name: /More options/i }));
-    expect(screen.queryByText(/Expand compilation/i)).toBeNull();
+    expect(screen.queryByText(/Split into games/i)).toBeNull();
   });
 });
 

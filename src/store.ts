@@ -946,7 +946,7 @@ interface BazaarState {
   games: Game[];
   compilations: Compilation[]; // the user's compilation purchases (the financial containers)
   // Shared templates a moderator linked to a parent catalog game — the lookup
-  // that lets an owned single card offer "Expand compilation". Cloud-only.
+  // that lets an owned single card offer "Split into games". Cloud-only.
   parentTemplates: ParentTemplate[];
   ledger: LedgerEntry[]; // guest-mode coin history (cloud users fetch from coin_events)
   // A one-shot import celebration payload; ImportCelebration shows it then clears.
@@ -2387,7 +2387,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     });
 
     // Templates a moderator linked to a parent catalog game (read-all RLS, tiny
-    // set) — the lookup behind "Expand compilation" on owned single cards.
+    // set) — the lookup behind "Split into games" on owned single cards.
     await get().refreshParentTemplates();
 
     // Award anything this account's history now qualifies for and load the
@@ -8548,7 +8548,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       return false;
     }
     // The parent-template lookup mirrors the shared table — refresh it so
-    // "Expand compilation" affordances reflect the new link right away.
+    // "Split into games" affordances reflect the new link right away.
     void get().refreshParentTemplates();
     toast("Compilation updated.", Pencil);
     return true;

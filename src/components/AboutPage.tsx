@@ -458,7 +458,7 @@ export function AboutPage() {
             counts (games owned, the platform bars) count a compilation once — it&apos;s one item
             on your shelf — while every game you finish still counts as a clear. And when a
             collection you own as a <em>single</em> card is linked in
-            the catalog, its ⋮ menu offers &ldquo;Expand compilation&rdquo; — the card becomes the
+            the catalog, its ⋮ menu offers &ldquo;Split into games&rdquo; — the card becomes the
             bundle&apos;s games with the cost split evenly, your logged hours kept on the bundle
             total, and any activation fee you paid refunded.
           </Section>

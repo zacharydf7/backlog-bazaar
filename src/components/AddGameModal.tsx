@@ -949,8 +949,9 @@ export function AddGameModal({
             <p className="flex items-start gap-1.5 rounded-lg border border-accent/30 bg-accent/5 p-2.5 text-xs text-accent">
               <Package size={14} className="mt-px shrink-0" />
               <span>
-                A known compilation — after adding it you can expand the card into its{" "}
-                {knownCompilation.games.length} individual games from its ⋮ menu.
+                A known compilation — after adding it you can split it into its{" "}
+                {knownCompilation.games.length} games from its ⋮ menu. They stay together on one
+                compilation card.
               </span>
             </p>
           )}

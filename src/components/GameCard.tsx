@@ -253,8 +253,8 @@ export function GameCard({
         expandTemplate &&
         createPortal(
           <ConfirmDialog
-            title="Expand into a compilation?"
-            confirmLabel="Expand"
+            title="Split into its games?"
+            confirmLabel="Split"
             body={
               <>
                 <span className="font-medium text-ink">{game.title}</span> becomes{" "}
@@ -659,7 +659,7 @@ export function GameCard({
                         }}
                         className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-sm text-ink transition hover:bg-panel"
                       >
-                        <Expand size={15} className="text-accent" /> Expand compilation…
+                        <Expand size={15} className="text-accent" /> Split into games…
                       </button>
                     )}
                     {/* A compilation's games can't be removed individually — the

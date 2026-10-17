@@ -579,7 +579,7 @@ function CompilationTemplateEditor({
   const [coverUrl, setCoverUrl] = useState(template.image ?? "");
   const [coverUploading, setCoverUploading] = useState(false);
   // The moderator-set parent-game link: which catalog entry IS this compilation
-  // sold as one game. Owners of that card gain "Expand compilation".
+  // sold as one game. Owners of that card gain "Split into games".
   const [parent, setParent] = useState<{ id: string; title: string } | null>(
     template.parentCatalogId
       ? { id: template.parentCatalogId, title: template.parentTitle ?? "Linked game" }

@@ -56,6 +56,17 @@ export function orderReleaseItems(items: (string | ReleaseItem)[]): ReleaseItem[
 /** Newest first. RELEASES[0] is the current/latest release. */
 export const RELEASES: Release[] = [
   {
+    id: "2026-10-17-cleaner-search-and-split",
+    date: "2026-10-17",
+    title: "Cleaner game search",
+    items: [
+      {
+        text: "A collection you own as a single game now offers \"Split into games\" from its ⋮ menu, and the Add Game hint says what happens: its games stay together on one compilation card.",
+        tag: "improvement",
+      },
+    ],
+  },
+  {
     id: "2026-10-16-compilations-stay-together",
     date: "2026-10-16",
     title: "Compilations stay together",
