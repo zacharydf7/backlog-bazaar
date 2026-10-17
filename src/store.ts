@@ -1633,7 +1633,7 @@ interface BazaarState {
   // returns [] offline, where the UI falls back to a local Added+Finished derivation.
   fetchProfileActivity: (userId: string) => Promise<ProfileActivity[]>;
   // Refresh the caller's own achievements catalog/earn state into the store.
-  fetchAchievements: () => Promise<void>;
+  fetchAchievements: () => Promise<boolean>;
   // Another player's achievements (their profile module). Earned state only —
   // the server withholds metric progress for anyone but yourself.
   fetchUserAchievements: (userId: string) => Promise<Achievement[]>;
@@ -8227,11 +8227,13 @@ export const useStore = create<BazaarState>((set, get) => ({
     return coerceActivity((data ?? []) as Record<string, unknown>[]);
   },
 
+  // Resolves false when the trophy room couldn't be loaded (so it can offer Retry).
   fetchAchievements: async () => {
-    if (!supabase || !get().cloud) return;
+    if (!supabase || !get().cloud) return false;
     const { data, error } = await supabase.rpc("list_achievements", { p_user: null });
-    if (error) return;
+    if (error) return false;
     set({ achievements: coerceAchievements(data) });
+    return true;
   },
 
   fetchUserAchievements: async (userId) => {

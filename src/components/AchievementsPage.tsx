@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Medal, Lock, EyeOff } from "lucide-react";
 import { useStore } from "../store";
 import { SealMedal } from "./SealMedal";
@@ -99,11 +99,15 @@ export function AchievementsPage() {
   const achievements = useStore((s) => s.achievements);
   const fetchAchievements = useStore((s) => s.fetchAchievements);
   const claimAll = useStore((s) => s.claimAchievementRewards);
+  const [failed, setFailed] = useState(false);
+  const [attempt, setAttempt] = useState(0);
 
   // Boot already loaded these; refresh on entry so progress bars are current.
   useEffect(() => {
-    if (cloud) void fetchAchievements();
-  }, [cloud, fetchAchievements]);
+    if (!cloud) return;
+    setFailed(false);
+    void fetchAchievements().then((ok) => setFailed(!ok));
+  }, [cloud, fetchAchievements, attempt]);
 
   if (!cloud) {
     return (
@@ -149,7 +153,20 @@ export function AchievementsPage() {
 
       {families.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-line px-6 py-16 text-center text-sm text-muted">
-          Loading your trophy room…
+          {failed ? (
+            <>
+              <p>Your trophy room couldn&apos;t be loaded.</p>
+              <button
+                type="button"
+                onClick={() => setAttempt((n) => n + 1)}
+                className="mt-3 rounded-xl border border-line bg-panel px-4 py-2 text-sm font-medium text-ink transition hover:border-brand/50"
+              >
+                Try again
+              </button>
+            </>
+          ) : (
+            "Loading your trophy room…"
+          )}
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">

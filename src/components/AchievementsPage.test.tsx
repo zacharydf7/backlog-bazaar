@@ -60,7 +60,7 @@ beforeEach(() => {
       cloud: true,
       economyEnabled: true,
       achievements: CATALOG,
-      fetchAchievements: vi.fn(async () => {}),
+      fetchAchievements: vi.fn(async () => true),
       claimAchievementRewards: vi.fn(async () => {}),
     }),
   );
@@ -101,6 +101,16 @@ describe("AchievementsPage", () => {
     render(<AchievementsPage />);
     expect(screen.getByText(/Achievements live in the cloud/)).toBeTruthy();
     expect(screen.queryByText("First Clear")).toBeNull();
+  });
+});
+
+describe("AchievementsPage — load failure", () => {
+  it("offers Try again instead of loading forever", async () => {
+    const fetchAchievements = vi.fn(async () => false);
+    act(() => useStore.setState({ achievements: [], fetchAchievements }));
+    render(<AchievementsPage />);
+    fireEvent.click(await screen.findByRole("button", { name: "Try again" }));
+    await vi.waitFor(() => expect(fetchAchievements).toHaveBeenCalledTimes(2));
   });
 });
 
