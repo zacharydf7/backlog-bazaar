@@ -1818,6 +1818,16 @@ alter table public.games add column if not exists personal_screenshots jsonb not
 alter table public.games drop constraint if exists games_personal_screenshots_check;
 alter table public.games add constraint games_personal_screenshots_check
   check (jsonb_typeof(personal_screenshots) = 'array' and jsonb_array_length(personal_screenshots) <= 12);
+-- The length options offered when the game was added (HowLongToBeat's main /
+-- main + extras / completionist hours, as {main, mainExtra, completionist}).
+-- The player picks one as the game's length, which prices it; these keep the
+-- others so a plain ("Beaten") finish pays on main + extras at most, while a
+-- completionist run pays the full length. Null for games added before this
+-- (and for games HowLongToBeat doesn't know). Additive.
+alter table public.games add column if not exists length_tiers jsonb;
+alter table public.games drop constraint if exists games_length_tiers_check;
+alter table public.games add constraint games_length_tiers_check
+  check (length_tiers is null or jsonb_typeof(length_tiers) = 'object');
 
 -- Compilation games (issue 86fc0b4b): a compilation's OWN game row — the
 -- compilation as a game in the library, linked to the shared catalog like any

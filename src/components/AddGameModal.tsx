@@ -472,6 +472,7 @@ export function AddGameModal({
     esrb: picked.esrb,
     catalogId: picked.catalogId,
     ongoing,
+    lengthTiers: hltb ?? undefined,
   };
 
   // The game's verified release platforms (canonicalized). When known, owned-copy

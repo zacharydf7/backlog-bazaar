@@ -57,6 +57,13 @@ export interface GameCopy {
 }
 
 /** Core fields fetched from IGDB/RAWG (or entered manually). */
+/** HowLongToBeat's length options for a game, in hours (any may be unknown). */
+export interface LengthTiers {
+  main?: number;
+  mainExtra?: number;
+  completionist?: number;
+}
+
 export interface GameMeta {
   rawgId?: number;
   igdbId?: number; // IGDB identity — a separate id space from rawgId (both are small ints; never mix them)
@@ -77,6 +84,7 @@ export interface GameMeta {
   originalImage?: string; // the cover first added with (write-once); never overwritten by catalog edits
   catalogId?: string; // link to the shared catalog master (community-added games)
   ongoing?: boolean; // a live-service / ongoing game — exempt from the buy/finish economy
+  lengthTiers?: LengthTiers; // the length options offered at add time; caps a plain ("Beaten") finish at main + extras. See src/lib/personalLength.ts beatenFinishLength
 }
 
 export interface Game extends GameMeta {

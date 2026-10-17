@@ -141,6 +141,7 @@ export function Market() {
         fetchCatalogGame({ rawgId: meta.rawgId, igdbId: meta.igdbId }),
       ]);
       if (times?.main) enriched.hours = times.main;
+      if (times) enriched.lengthTiers = times;
       Object.assign(enriched, details);
       // Overlay any approved catalog edits (title, cover, genres, release, length,
       // platforms) so they become the defaults — matching the manual "Add game"

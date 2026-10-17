@@ -13,13 +13,43 @@
 // never paid to activate — lives here so it's directly unit-testable and stays
 // identical between the server RPC (set_personal_length) and the offline mirror.
 
-import type { Game } from "../types";
+import type { Game, LengthTiers } from "../types";
 
 /** The length the economy actually uses for a game: the player's personal
  *  override when set, else the shared catalog length (undefined when neither is
  *  known — callers fall back to DEFAULT_HOURS). */
 export function effectiveLength(game: Pick<Game, "personalHours" | "hours">): number | undefined {
   return game.personalHours ?? game.hours;
+}
+
+/** Keep only usable hours from a stored length-options value (a positive,
+ *  finite number per tier); undefined when none survive. */
+export function coerceLengthTiers(raw: unknown): LengthTiers | undefined {
+  if (raw == null || typeof raw !== "object") return undefined;
+  const r = raw as Record<string, unknown>;
+  const tiers: LengthTiers = {};
+  for (const k of ["main", "mainExtra", "completionist"] as const) {
+    const v = r[k];
+    if (typeof v === "number" && Number.isFinite(v) && v > 0) tiers[k] = v;
+  }
+  return Object.keys(tiers).length > 0 ? tiers : undefined;
+}
+
+/** The length a plain finish settles a run to before it pays: a game whose
+ *  length was set past its main + extras time (say, the completionist time)
+ *  but which finishes without a 100% run pays as the main + extras game it
+ *  was played as — the activation fee for the extra length refunded, the
+ *  bounty on the shorter length. Undefined when nothing changes: a completion
+ *  run, an ongoing game, no saved length options, or a length already within
+ *  main + extras (main story when that's all that's known). */
+export function beatenFinishLength(
+  game: Pick<Game, "personalHours" | "hours" | "lengthTiers" | "ongoing">,
+  completion: boolean,
+): number | undefined {
+  if (completion || game.ongoing) return undefined;
+  const cap = game.lengthTiers?.mainExtra ?? game.lengthTiers?.main;
+  const length = effectiveLength(game);
+  return cap != null && length != null && length > cap ? cap : undefined;
 }
 
 /** Whether a personal override is in force (differs from just following the

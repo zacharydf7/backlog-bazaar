@@ -48,6 +48,7 @@ import type {
 } from "./compilationTemplates";
 import type { SlotDefinition, SlotKind, TargetedSlot } from "./slots";
 import { coercePersonalScreenshots } from "./personalScreenshots";
+import { coerceLengthTiers } from "./personalLength";
 import { coercePriority } from "./priority";
 import { coerceGamePriority } from "./gamePriority";
 import { coerceEffort } from "./effort";
@@ -117,6 +118,7 @@ export interface GameRow {
   original_platform: string | null;
   compilation_game_for?: string | null;
   personal_screenshots?: unknown;
+  length_tiers?: unknown;
   resumed: boolean | null;
   prerequisite_game_id: string | null;
   preordered_at: string | null;
@@ -207,6 +209,7 @@ export function rowToGame(r: GameRow): Game {
     originalPlatform: r.original_platform ?? null,
     compilationGameFor: r.compilation_game_for ?? null,
     personalScreenshots: coercePersonalScreenshots(r.personal_screenshots),
+    lengthTiers: coerceLengthTiers(r.length_tiers),
     resumed: r.resumed ?? false,
     prerequisiteGameId: r.prerequisite_game_id ?? null,
     preorderedAt: r.preordered_at ? Date.parse(r.preordered_at) : null,

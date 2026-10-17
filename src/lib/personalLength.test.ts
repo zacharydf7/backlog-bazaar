@@ -5,6 +5,8 @@ import {
   settleLengthChange,
   lengthChangeSettlement,
   finishBountyOffset,
+  beatenFinishLength,
+  coerceLengthTiers,
 } from "./personalLength";
 
 describe("effectiveLength", () => {
@@ -195,5 +197,45 @@ describe("finishBountyOffset — the exploit guard", () => {
     const { newOwed } = settleLengthChange(234, 0, 0);
     const grossBountyGain = 234;
     expect(finishBountyOffset(newOwed, grossBountyGain)).toBe(234);
+  });
+});
+
+describe("coerceLengthTiers", () => {
+  it("keeps positive hours per tier and drops the rest", () => {
+    expect(coerceLengthTiers({ main: 16, mainExtra: 0, completionist: "130", extra: 5 })).toEqual({
+      main: 16,
+    });
+    expect(coerceLengthTiers({ main: 16, mainExtra: 50, completionist: 130 })).toEqual({
+      main: 16,
+      mainExtra: 50,
+      completionist: 130,
+    });
+  });
+  it("is undefined for nothing usable", () => {
+    expect(coerceLengthTiers(null)).toBeUndefined();
+    expect(coerceLengthTiers({})).toBeUndefined();
+    expect(coerceLengthTiers([16])).toBeUndefined();
+  });
+});
+
+describe("beatenFinishLength", () => {
+  const tiers = { main: 16, mainExtra: 50, completionist: 130 };
+
+  it("settles a completionist-length game finished plainly to main + extras", () => {
+    expect(beatenFinishLength({ hours: 130, lengthTiers: tiers }, false)).toBe(50);
+    // A personal length past it settles the same way.
+    expect(beatenFinishLength({ hours: 16, personalHours: 90, lengthTiers: tiers }, false)).toBe(50);
+  });
+
+  it("falls back to main story when main + extras isn't known", () => {
+    expect(beatenFinishLength({ hours: 130, lengthTiers: { main: 16, completionist: 130 } }, false)).toBe(16);
+  });
+
+  it("leaves a completion run, an ongoing game, a shorter length, or no options alone", () => {
+    expect(beatenFinishLength({ hours: 130, lengthTiers: tiers }, true)).toBeUndefined();
+    expect(beatenFinishLength({ hours: 130, lengthTiers: tiers, ongoing: true }, false)).toBeUndefined();
+    expect(beatenFinishLength({ hours: 50, lengthTiers: tiers }, false)).toBeUndefined();
+    expect(beatenFinishLength({ hours: 16, lengthTiers: tiers }, false)).toBeUndefined();
+    expect(beatenFinishLength({ hours: 130 }, false)).toBeUndefined();
   });
 });

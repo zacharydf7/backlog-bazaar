@@ -48,7 +48,12 @@ import type { CatalogFields, CatalogOverride, CommunityCatalogEntry } from "./li
 import { revertResultMessage, normalizeCatalogFields, canonicalizeCatalogTerms } from "./lib/submissions";
 import { applyThemeId, getThemeId, setThemeId } from "./lib/theme";
 import { formatPlaytime, snapToMinute } from "./lib/playtime";
-import { lengthChangeSettlement, finishBountyOffset } from "./lib/personalLength";
+import {
+  beatenFinishLength,
+  coerceLengthTiers,
+  lengthChangeSettlement,
+  finishBountyOffset,
+} from "./lib/personalLength";
 import {
   splitEvenly,
   toCents,
@@ -1425,7 +1430,13 @@ interface BazaarState {
   // taking precedence over the shared catalog length in the economy. For a game
   // you're already playing, this re-settles the length-driven activation fee (see
   // src/lib/personalLength.ts). Never touches the catalog.
-  setPersonalLength: (id: string, hours: number | null) => Promise<void>;
+  // Resolves to the coins it settled (negative = charged, positive = refunded).
+  // `silent` skips the toast, for callers that report the change themselves.
+  setPersonalLength: (
+    id: string,
+    hours: number | null,
+    opts?: { silent?: boolean },
+  ) => Promise<number>;
   setProgressNote: (id: string, note: string) => Promise<void>;
   // Save a game's review (long-form text + half-star score, either may be
   // cleared). One review per game, edited in place; history is captured
@@ -4502,6 +4513,7 @@ export const useStore = create<BazaarState>((set, get) => ({
         copies: meta.copies ?? [],
         catalog_id: meta.catalogId ?? null,
         ongoing: meta.ongoing ?? false,
+        length_tiers: coerceLengthTiers(meta.lengthTiers) ?? null,
         status,
         finished_at: status === "finished" ? new Date().toISOString() : null,
         finish_tag: tag,
@@ -7135,13 +7147,13 @@ export const useStore = create<BazaarState>((set, get) => ({
   // what you can afford now, deferring the rest to the finish bounty), shortening
   // refunds it. The coin math lives in src/lib/personalLength.ts, shared verbatim
   // with the server RPC so cloud and offline agree.
-  setPersonalLength: async (id, hours) => {
+  setPersonalLength: async (id, hours, opts) => {
     const { cloud, games, coins, economy, economyEnabled } = get();
     const game = games.find((g) => g.id === id);
-    if (!game) return;
+    if (!game) return 0;
     const next = hours == null ? undefined : Math.max(0, snapToMinute(hours));
     // No-op if nothing actually changes (avoids a spurious settlement/event).
-    if ((game.personalHours ?? null) === (next ?? null)) return;
+    if ((game.personalHours ?? null) === (next ?? null)) return 0;
 
     const economyOn = economyEnabled;
     // The length term of the activation fee at a given effective length — the
@@ -7181,18 +7193,18 @@ export const useStore = create<BazaarState>((set, get) => ({
           : get().ledger;
       set({ games: nextGames, coins: nc, ledger: led });
       saveLocal(nc, nextGames, led);
-      toast("Length updated", Clock);
-      return;
+      if (!opts?.silent) toast("Length updated", Clock);
+      return s.settled;
     }
-    if (!supabase) return;
+    if (!supabase) return 0;
     const { data, error } = await supabase
       .rpc("set_personal_length", { p_game: id, p_hours: next ?? null })
       .single();
     if (error) {
       set({ error: error.message });
-      return;
+      return 0;
     }
-    const { coins: newCoins, premium_owed } = data as {
+    const { coins: newCoins, premium_owed, settled } = data as {
       coins: number;
       premium_owed: number;
       settled: number;
@@ -7203,7 +7215,8 @@ export const useStore = create<BazaarState>((set, get) => ({
         g.id === id ? { ...g, personalHours: next, lengthPremiumOwed: premium_owed } : g,
       ),
     });
-    toast("Length updated", Clock);
+    if (!opts?.silent) toast("Length updated", Clock);
+    return settled;
   },
 
   // Set/overwrite a game's single progress note ("where I left off"). Empty
@@ -8782,6 +8795,21 @@ export const useStore = create<BazaarState>((set, get) => ({
   },
 
   finishGame: async (id) => {
+    // A plain finish of a game whose length was set past its main + extras time
+    // pays as the game it was played as (issue: coin outliers, 2026-10-17): the
+    // run settles to that length first, through the same path as a personal
+    // length edit — refunding the extra activation fee — and the bounty below
+    // then reads the shorter length.
+    const before = get().games.find((g) => g.id === id);
+    const settleTo = before ? beatenFinishLength(before, before.completionist === true) : undefined;
+    if (before?.status === "playing" && settleTo != null) {
+      const refunded = await get().setPersonalLength(id, settleTo, { silent: true });
+      toast(
+        `Paid on its ${formatPlaytime(settleTo)} story length` +
+          (refunded > 0 ? ` · +${refunded} activation refunded` : ""),
+        Clock,
+      );
+    }
     const { cloud, games, coins, replayBonusPct, completionBonusPct, myTargetedSlots } = get();
     const game = games.find((g) => g.id === id);
     if (!game || game.status !== "playing") return;
