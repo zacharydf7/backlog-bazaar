@@ -478,6 +478,23 @@ describe("GameActions finish check (coin outliers, 2026-10-17)", () => {
     expect(finishGame).not.toHaveBeenCalled();
   });
 
+  it("previews the finish at the player's bounty rate", () => {
+    const g = playing({ playedHours: 10 });
+    act(() => useStore.setState({ games: [g], bountyRate: 100 }));
+    const { unmount } = render(<GameActions game={g} />);
+    const normal = Number(
+      screen.getByRole("button", { name: /Mark Finished/i }).textContent!.replace(/\D/g, ""),
+    );
+    unmount();
+    act(() => useStore.setState({ bountyRate: 130 }));
+    render(<GameActions game={g} />);
+    const raised = Number(
+      screen.getByRole("button", { name: /Mark Finished/i }).textContent!.replace(/\D/g, ""),
+    );
+    expect(raised).toBe(Math.round(normal * 1.3));
+    act(() => useStore.setState({ bountyRate: 100 }));
+  });
+
   it("finishes straight away with enough logged", () => {
     const finishGame = vi.fn(async () => {});
     act(() => useStore.setState({ games: [playing({ playedHours: 10 })], finishGame }));

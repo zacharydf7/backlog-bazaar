@@ -4,7 +4,7 @@ import { X, Gamepad2, Ticket, Lock, ArrowRight, Target, Handshake, type LucideIc
 import type { Game } from "../types";
 import { useStore } from "../store";
 import { computeFormula } from "../lib/economy";
-import { computeFinishReward, computeFamilyDiscountPrice } from "../lib/pricing";
+import { applyBountyRate, computeFinishReward, computeFamilyDiscountPrice } from "../lib/pricing";
 import { recDiscountedPrice, recommendationForGame } from "../lib/recommendations";
 import { isReplayFinish, isFamilyDiscounted } from "../lib/families";
 import { canStartGame, canEnterLane, type SlotChoice } from "../lib/slots";
@@ -36,7 +36,7 @@ function choiceKey(c: SlotChoice): string {
  * preselected). Strictly Bazaar → Now Playing — never reachable from the Wishlist.
  */
 export function ActivationModal({ game, onClose }: { game: Game; onClose: () => void }) {
-  const { coins, vouchers, economy, games, compilations, generalSlots, completionistSlots, replayBonusPct, buyGame, redeemVoucher, economyEnabled, recommendations, recDiscountPct, userId, coOpPacts } =
+  const { coins, vouchers, economy, games, compilations, generalSlots, completionistSlots, replayBonusPct, buyGame, redeemVoucher, economyEnabled, recommendations, recDiscountPct, userId, coOpPacts, bountyRate } =
     useStore();
   const [working, setWorking] = useState<"coins" | "voucher" | null>(null);
 
@@ -59,7 +59,10 @@ export function ActivationModal({ game, onClose }: { game: Game; onClose: () => 
     : fullPrice;
   const price = activeRec ? recDiscountedPrice(preRecPrice, recDiscountPct) : preRecPrice;
   const bounty = computeFormula(game, economy.bounty);
-  const reward = computeFinishReward(isReplayFinish(games, game), bounty, replayBonusPct);
+  const reward = applyBountyRate(
+    computeFinishReward(isReplayFinish(games, game), bounty, replayBonusPct),
+    bountyRate,
+  );
   const canAfford = !economyEnabled || coins >= price;
   const hasVoucher = economyEnabled && canRedeemVoucher(vouchers, game.status);
 

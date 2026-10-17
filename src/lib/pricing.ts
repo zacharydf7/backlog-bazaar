@@ -133,6 +133,12 @@ export function computeReplayBonus(reward: number, pct: number): number {
   return Math.max(0, Math.round((Math.max(0, reward) * clamped) / 100));
 }
 
+/** A finish payout part at the player's bounty rate (a percent of normal,
+ *  100 = unchanged) — rounded the way apply_finish rounds each part. */
+export function applyBountyRate(amount: number, ratePct: number): number {
+  return Math.max(0, Math.round((Math.max(0, amount) * ratePct) / 100));
+}
+
 /** Coins for a finish: the full bounty for a first-of-family clear, or the
  *  smaller Replay Bonus when another edition was already finished. */
 export function computeFinishReward(isReplay: boolean, reward: number, replayPct: number): number {

@@ -1052,6 +1052,9 @@ interface BazaarState {
   // The share of a game's length (percent) a finish must have logged to pay its
   // whole bounty at once (app_config.bounty_gate_pct); 0 = off.
   bountyGatePct: number;
+  // The signed-in player's bounty rate, a percent of normal (100 = unchanged):
+  // finish previews apply it so they match what apply_finish pays.
+  bountyRate: number;
   notifications: AppNotification[];
   notificationsHasMore: boolean; // a full page came back, so older ones may remain
   notificationsLoadingMore: boolean; // a "load older" page is in flight (scroll guard)
@@ -1817,6 +1820,8 @@ interface BazaarState {
   setPreorderStripDays: (days: number) => Promise<void>;
   // Admin: the logged-time gate on finish bounties (economy.edit).
   setBountyGatePct: (pct: number) => Promise<void>;
+  // Re-read the player's bounty rate (cloud; stays 100 offline).
+  refreshBountyRate: () => Promise<void>;
   // Admin (economy.shadow): the shadow economy's settings, per-player standing
   // and overrides, and its private record of adjustments. Cloud-only; null/[]
   // on failure (the error banner says why).
@@ -2035,6 +2040,7 @@ export const useStore = create<BazaarState>((set, get) => ({
   preorderImportPromptId: null,
   preorderStripDays: DEFAULT_PREORDER_STRIP_DAYS,
   bountyGatePct: DEFAULT_BOUNTY_GATE_PCT,
+  bountyRate: 100,
   notifications: [],
   notificationsHasMore: false,
   notificationsLoadingMore: false,
@@ -3984,6 +3990,13 @@ export const useStore = create<BazaarState>((set, get) => ({
     }
     set({ recBountyCap: next });
     toast(`Tastemaker Bounty cap set to ${next} coins`, HandCoins);
+  },
+
+  refreshBountyRate: async () => {
+    if (!supabase || !get().cloud || !get().userId) return;
+    const { data, error } = await supabase.rpc("my_bounty_rate");
+    if (error) return; // silent: the previews just stay at the last known rate
+    if (typeof data === "number") set({ bountyRate: data });
   },
 
   fetchShadowConfig: async () => {
@@ -9297,6 +9310,8 @@ export const useStore = create<BazaarState>((set, get) => ({
     });
     finishToast(awarded - held, awarded - held + (streakBonus ?? 0) + finishBonusTotal(paidBonuses), undoId);
     heldToast(held);
+    // This clear can change the player's standing for the next one.
+    void get().refreshBountyRate();
     if (!inertFinish) streakToast(streakInfo);
     bonusToast(paidBonuses);
     // Finishing moves several metrics at once (clears, completions, coins).

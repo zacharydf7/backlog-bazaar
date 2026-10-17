@@ -65,8 +65,9 @@ import { useNow } from "../lib/useNow";
 import { summarizePlatformPlaytime } from "../lib/platformPlaytime";
 import { accessLost, loggableVersions, versionKey, versionLabel } from "../lib/copies";
 import {
+  applyBountyRate,
   computeFinishReward,
-  computeCompletionReward,
+  computeCompletionBonus,
   computeShelveRefund,
   computeFamilyDiscountPrice,
 } from "../lib/pricing";
@@ -383,6 +384,7 @@ export function GameActions({
     bazaarToWishlist,
     featureBonuses,
     bountyGatePct,
+    bountyRate,
   } = useStore();
   // Getting Started quests highlight the real control they teach (derived —
   // the ring clears itself the moment the quest's predicate flips).
@@ -445,11 +447,15 @@ export function GameActions({
   const settleTo = game.status === "playing" ? beatenFinishLength(game, isCompletionist) : undefined;
   const finishAs = settleTo != null ? { ...game, personalHours: settleTo } : game;
   const finishBounty = computeFormula(finishAs, economy.bounty);
+  // At the player's bounty rate, each part rounded as apply_finish rounds it.
   const reward = showEconomy
     ? isCompletionist
-      ? computeCompletionReward(willReplay, finishBounty, completionBonusPct)
-      : computeFinishReward(willReplay, finishBounty, replayBonusPct)
+      ? applyBountyRate(willReplay ? 0 : Math.round(finishBounty), bountyRate) +
+        applyBountyRate(computeCompletionBonus(finishBounty, completionBonusPct), bountyRate)
+      : applyBountyRate(computeFinishReward(willReplay, finishBounty, replayBonusPct), bountyRate)
     : 0;
+  // A Bazaar card's bounty preview, at the same rate.
+  const shownBounty = applyBountyRate(bounty, bountyRate);
   // What the finish pays now and what waits for logged time (the logged-time
   // gate; the server decides the real split in apply_finish).
   const settleRefund =
@@ -1045,12 +1051,12 @@ export function GameActions({
               ) : hasVoucher ? (
                 <span className="inline-flex items-center gap-1">
                   <Ticket size={12} className="text-brand" /> {vouchers} free voucher
-                  {vouchers === 1 ? "" : "s"} · finish bounty <CoinIcon size={12} /> {bounty}
+                  {vouchers === 1 ? "" : "s"} · finish bounty <CoinIcon size={12} /> {shownBounty}
                   {bonusSummary && ` · ${bonusSummary}`}
                 </span>
               ) : (
                 <>
-                  Finish bounty <CoinIcon size={12} /> {bounty}
+                  Finish bounty <CoinIcon size={12} /> {shownBounty}
                   {bonusSummary && ` · ${bonusSummary}`}
                 </>
               )}
@@ -1533,7 +1539,8 @@ export function GameActions({
                       <>
                         Pull <span className="font-medium text-ink">{game.title}</span> back into Now
                         Playing for free. Finishing it again pays the smaller{" "}
-                        <CoinIcon size={12} /> {computeFinishReward(true, bounty, replayBonusPct)} Replay
+                        <CoinIcon size={12} />{" "}
+                        {applyBountyRate(computeFinishReward(true, bounty, replayBonusPct), bountyRate)} Replay
                         Bonus.
                       </>
                     ) : (

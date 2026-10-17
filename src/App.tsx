@@ -188,6 +188,7 @@ export default function App() {
     fetchFriendRequests,
     fetchNotifications,
     fetchCoOpPacts,
+    refreshBountyRate,
     coOpPacts,
     passwordRecovery,
   } = useStore();
@@ -728,6 +729,18 @@ export default function App() {
       window.removeEventListener("focus", refresh);
     };
   }, [cloud, userId, fetchUnreadMessageCount, fetchFriendRequests, fetchNotifications, fetchPendingRecCount]);
+
+  // The bounty rate the finish previews apply loads with the session and
+  // refreshes on tab return (an admin may have changed it meanwhile).
+  useEffect(() => {
+    if (!cloud || !userId) return;
+    const refresh = () => {
+      if (document.visibilityState === "visible") void refreshBountyRate();
+    };
+    refresh();
+    document.addEventListener("visibilitychange", refresh);
+    return () => document.removeEventListener("visibilitychange", refresh);
+  }, [cloud, userId, refreshBountyRate]);
 
   // Co-op Pacts drive card badges and the game-page banner, so they load with
   // the session and refresh on tab return — but they change rarely, so no

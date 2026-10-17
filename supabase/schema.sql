@@ -7464,6 +7464,17 @@ begin
 end;
 $$;
 
+-- The caller's own bounty rate, as a percent of normal (130, 85, 100), so the
+-- finish previews show what a finish will actually pay (owner's call,
+-- 2026-10-17) — the same standing apply_finish applies. Returns nothing else:
+-- no settings, no reason, never another player's.
+create or replace function public.my_bounty_rate()
+returns integer
+language sql stable security definer set search_path = public
+as $$
+  select 100 + coalesce((select s.pct from public.shadow_economy_pct(auth.uid(), null) s), 0);
+$$;
+
 -- Admin: the settings.
 create or replace function public.admin_shadow_config()
 returns setof public.shadow_economy_config
@@ -7597,6 +7608,8 @@ $$;
 
 revoke execute on function public.shadow_economy_status(uuid, uuid) from public, anon, authenticated;
 revoke execute on function public.shadow_economy_pct(uuid, uuid)    from public, anon, authenticated;
+revoke execute on function public.my_bounty_rate()                  from public, anon;
+grant execute on function public.my_bounty_rate()                   to authenticated;
 revoke execute on function public.admin_shadow_config()             from public, anon;
 revoke execute on function public.admin_set_shadow_config(boolean, integer, integer, integer, integer, integer) from public, anon;
 revoke execute on function public.admin_set_shadow_override(uuid, text, integer, text) from public, anon;

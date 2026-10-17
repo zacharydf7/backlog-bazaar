@@ -45,8 +45,15 @@ beforeAll(async () => {
       user_id uuid primary key, mode text not null, pct integer, note text
     );
   `);
+  // auth.uid() reads the caller from a setting, as Supabase's does.
+  await db.exec(`
+    create schema auth;
+    create function auth.uid() returns uuid language sql
+      as $$ select nullif(current_setting('test.uid', true), '')::uuid $$;
+  `);
   await db.exec(fn("shadow_economy_status"));
   await db.exec(fn("shadow_economy_pct"));
+  await db.exec(fn("my_bounty_rate"));
 });
 
 afterAll(async () => {
@@ -113,6 +120,18 @@ describe("shadow economy standing", () => {
     expect(await pct()).toEqual({ pct: 25, source: "override" });
     await db.query("update public.shadow_economy_overrides set mode = 'exempt' where user_id = $1", [U]);
     expect(await pct()).toEqual({ pct: 0, source: "override" });
+  });
+
+  it("tells a player only their own rate, as a percent of normal", async () => {
+    await clears(10, 0);
+    await db.exec(`select set_config('test.uid', '${U}', false)`);
+    const rate = async () =>
+      (await db.query<{ r: number }>("select public.my_bounty_rate() as r")).rows[0].r;
+    expect(await rate()).toBe(110);
+    await db.query("insert into public.shadow_economy_overrides values ($1, 'nerf', 15, null)", [U]);
+    expect(await rate()).toBe(85);
+    await db.exec("update public.shadow_economy_config set enabled = false");
+    expect(await rate()).toBe(100);
   });
 
   it("applies nothing while switched off, though the standing still shows", async () => {

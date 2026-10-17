@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  applyBountyRate,
   computeReplayBonus,
   computeFinishReward,
   computeShelveRefund,
@@ -13,6 +14,19 @@ import {
   addTriggersStreakWarning,
   CLEAR_STREAK,
 } from "./pricing";
+
+describe("applyBountyRate", () => {
+  it("scales a payout part to the player's rate, rounded like apply_finish", () => {
+    expect(applyBountyRate(300, 100)).toBe(300);
+    expect(applyBountyRate(300, 130)).toBe(390);
+    expect(applyBountyRate(313, 85)).toBe(266); // 266.05
+    expect(applyBountyRate(5, 130)).toBe(7); // 6.5 rounds up, as PostgreSQL's round does
+  });
+  it("never goes below zero", () => {
+    expect(applyBountyRate(-10, 130)).toBe(0);
+    expect(applyBountyRate(10, 0)).toBe(0);
+  });
+});
 
 describe("computeReplayBonus / computeFinishReward", () => {
   it("pays a percentage of the game's full bounty", () => {
