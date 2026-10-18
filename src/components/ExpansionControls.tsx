@@ -17,7 +17,7 @@ import {
   type GameDlc,
 } from "../lib/dlc";
 import { formatPlaytime } from "../lib/playtime";
-import { eventFinishBonus, times } from "../lib/bonusEvents";
+import { eventFinishBonus, eventStartPrice, times } from "../lib/bonusEvents";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { CoinIcon } from "./CoinIcon";
 
@@ -37,9 +37,13 @@ export function ExpansionBazaarCard({ expansion }: { expansion: BazaarExpansion 
   const cover = useCoverOf()(game);
   const [starting, setStarting] = useState(false);
   const charges = showEconomy && quote.paying;
-  const short = charges && coins < quote.price;
-  // A running coin event's bounty boost on the clear (finish_expansion).
-  const boost = useStore((s) => s.bonusPerks[game.id]?.bounty);
+  // A running coin event: its start discount (start_expansion) and its bounty
+  // boost on the clear (finish_expansion).
+  const perk = useStore((s) => s.bonusPerks[game.id]);
+  const boost = perk?.bounty;
+  const eventStart = charges ? eventStartPrice(quote.price, perk) : null;
+  const price = eventStart?.price ?? quote.price;
+  const short = charges && coins < price;
   const open = () => {
     window.location.hash = gameHash(game.id);
   };
@@ -95,11 +99,18 @@ export function ExpansionBazaarCard({ expansion }: { expansion: BazaarExpansion 
               >
                 {short ? (
                   <>
-                    Need <CoinIcon size={14} /> {quote.price - coins} more
+                    Need <CoinIcon size={14} /> {price - coins} more
                   </>
                 ) : charges ? (
                   <>
-                    Buy &amp; Start · <CoinIcon size={14} /> {quote.price}
+                    Buy &amp; Start · <CoinIcon size={14} />{" "}
+                    {eventStart ? (
+                      <>
+                        <s className="font-normal opacity-60">{quote.price}</s> {price}
+                      </>
+                    ) : (
+                      price
+                    )}
                   </>
                 ) : (
                   <>
@@ -126,6 +137,7 @@ export function ExpansionBazaarCard({ expansion }: { expansion: BazaarExpansion 
         <StartDialog
           dlc={dlc}
           quote={quote}
+          price={price}
           title={game.title}
           showEconomy={showEconomy}
           onClose={() => setStarting(false)}
@@ -138,12 +150,15 @@ export function ExpansionBazaarCard({ expansion }: { expansion: BazaarExpansion 
 function StartDialog({
   dlc,
   quote,
+  price,
   title,
   showEconomy,
   onClose,
 }: {
   dlc: GameDlc;
   quote: ExpansionQuote;
+  /** What starting costs now, after any event discount. */
+  price: number;
   title: string;
   showEconomy: boolean;
   onClose: () => void;
@@ -160,7 +175,7 @@ function StartDialog({
             (quote.paying ? (
               <>
                 {" "}
-                Starting costs <CoinIcon size={12} /> {quote.price}. Clearing it pays <CoinIcon size={12} />{" "}
+                Starting costs <CoinIcon size={12} /> {price}. Clearing it pays <CoinIcon size={12} />{" "}
                 {quote.bounty} once you&apos;ve logged {formatPlaytime(quote.gateHours)} of it.
               </>
             ) : (

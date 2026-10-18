@@ -402,7 +402,7 @@ describe("my_bonus_event_perks", () => {
     });
   });
 
-  it("gives a finished game the bounty boost while a story expansion waits in the Bazaar", async () => {
+  it("gives a finished game the discount and bounty boost while a story expansion waits in the Bazaar", async () => {
     await db.exec(`update public.games set status = 'finished'`);
     await event({ start_discount_pct: "50", genres: "'{RPG,Platformer}'" });
     expect(await perks()).toEqual({});
@@ -410,7 +410,12 @@ describe("my_bonus_event_perks", () => {
       ('${PS}', 'expansion', 'owned', null),
       ('${SW}', 'expansion', 'cleared', null),
       ('${SW}', 'item', 'owned', null)`);
-    expect(await perks()).toEqual({ [PS]: { bounty: { event: "Double Bounty", factor: 2 } } });
+    expect(await perks()).toEqual({
+      [PS]: {
+        discount: { event: "Double Bounty", pct: 50 },
+        bounty: { event: "Double Bounty", factor: 2 },
+      },
+    });
     // A targeted event counts as one for this player, so its banner and
     // refresh timer follow (bonus_event_relevant).
     const relevant = () =>

@@ -21991,7 +21991,7 @@ begin
       from (
         select g.id,
                jsonb_strip_nulls(jsonb_build_object(
-                 'discount', case when g.status = 'backlog' then (
+                 'discount', case when g.status in ('backlog', 'finished') then (
                      select jsonb_build_object('event', (l.ev).name, 'pct', (l.ev).start_discount_pct,
                                                'cap_left', l.cap_left,
                                                'starts_left', (l.ev).discount_limit - l.discounts_used)
@@ -26036,6 +26036,12 @@ begin
   select * into v_quote from public.expansion_quote(p_dlc);
   v_paying := public.economy_enabled(v_uid) and v_quote.paying;
   if v_paying then v_price := v_quote.price; end if;
+  -- A running coin event's start discount comes off, as for a game (owner,
+  -- 2026-10-18); the saving counts toward the event's cap and discounted
+  -- starts. run_price keeps what was paid, so a stop refunds just that.
+  if v_price > 0 then
+    select d.price into v_price from public.bonus_event_discount(v_uid, v_game.id, v_price, true) d;
+  end if;
 
   -- Into the DLC lane: uncapped, so no Replay slot is needed (owner,
   -- 2026-10-18). Otherwise the replay entry enter_replay makes.

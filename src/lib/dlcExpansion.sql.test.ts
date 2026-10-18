@@ -71,6 +71,10 @@ beforeAll(async () => {
     -- A running double-coins event: reports the boost it would pay.
     create function public.bonus_event_pay(p_user uuid, p_game uuid, p_kind text, p_amount integer)
       returns integer language sql as $$ select p_amount $$;
+    -- A start discount, half off while test.discount is set.
+    create function public.bonus_event_discount(p_user uuid, p_game uuid, p_price integer, p_record boolean)
+      returns table (price integer, event_name text) language sql as $$
+        select case when current_setting('test.discount', true) = '1' then p_price / 2 else p_price end, null::text $$;
   `);
   // The expansion settings come from the real schema's alter statements.
   const settings = schema.match(/alter table public\.app_config add column if not exists expansion_[^;]+;/g);
@@ -159,6 +163,19 @@ describe("expansion runs", () => {
       run_hours_start: 40,
       run_price: 204,
     });
+  });
+
+  it("takes a running event's start discount off, and refunds just what was paid on a stop", async () => {
+    const id = await addExpansion();
+    await db.exec("select set_config('test.discount', '1', false)");
+    try {
+      expect(await one("select * from public.start_expansion($1)", [id])).toEqual({ coins: 898, price_paid: 102 });
+      expect(await one("select run_price from public.game_dlc")).toEqual({ run_price: 102 });
+      expect(await one("select refunded from public.cancel_expansion($1)", [id])).toEqual({ refunded: 102 });
+      expect(await coins()).toBe(1000);
+    } finally {
+      await db.exec("select set_config('test.discount', '', false)");
+    }
   });
 
   it("leaves the Replay slot free for a replay, which a plain replay still fills", async () => {

@@ -99,6 +99,16 @@ describe("ExpansionBazaarCard", () => {
     expect(short.textContent).toMatch(/84 more/);
   });
 
+  it("takes a running coin event's start discount off the price it shows and confirms", () => {
+    setup([LEGENDS], { bonusPerks: { g1: { discount: { event: "Half Off", pct: 50, capLeft: null } } } });
+    render(<ExpansionBazaarCard expansion={card()} />);
+    const buy = screen.getByRole("button", { name: /Buy & Start/ });
+    expect(buy.querySelector("s")?.textContent).toBe("184");
+    expect(buy.textContent).toMatch(/92$/);
+    fireEvent.click(buy);
+    expect(screen.getByText(/Starting costs/).textContent).toMatch(/Starting costs\s+92\./);
+  });
+
   it("names a running coin event's bounty boost", () => {
     setup([LEGENDS], { bonusPerks: { g1: { bounty: { event: "Double Coins", factor: 2, capLeft: null } } } });
     render(<ExpansionBazaarCard expansion={card()} />);
