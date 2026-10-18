@@ -307,8 +307,7 @@ export function CalendarPage() {
       )}
 
       <p className="text-xs text-subtle">
-        Times are in your timezone. Daily goals reset every day at{" "}
-        {resetCfg.resetHour === 0 ? "midnight" : `${resetCfg.resetHour}:00`}{" "}
+        Times are in your timezone. Daily goals reset every day at midnight{" "}
         {resetCfg.resetTz === "America/New_York" ? "Eastern" : resetCfg.resetTz}.
       </p>
     </div>

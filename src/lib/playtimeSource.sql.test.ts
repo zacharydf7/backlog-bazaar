@@ -37,6 +37,8 @@ beforeAll(async () => {
       source text not null default 'live', in_rotation boolean not null default false,
       created_at timestamptz not null default now());
     create table public.bonus_calls (hours real);
+    create function public.rotation_play_rewards(p_game uuid) returns table (milestone integer, regular integer, checkin integer)
+      language sql as $$ select 0, 0, null::integer $$;
     create function public.pay_session_bonus(p_user uuid, p_game uuid, p_hours real) returns integer
       language sql as $$ insert into public.bonus_calls values (p_hours); select 5 $$;
   `);

@@ -167,7 +167,7 @@ describe("perks", () => {
         d: "nope",
       }),
     ).toEqual({
-      a: { discount: { event: "Half Off", pct: 50, capLeft: 40 }, saved: 0 },
+      a: { discount: { event: "Half Off", pct: 50, capLeft: 40, startsLeft: null }, saved: 0 },
       b: {
         bounty: { event: "Double", factor: 2, capLeft: null },
         session: { event: "Double", factor: 2, capLeft: null },

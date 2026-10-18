@@ -20,6 +20,11 @@ export const DEFAULT_ROTATION_RESET: RotationResetConfig = {
   resetHour: 0,
   resetTz: "America/New_York",
 };
+/** Rotation milestones: every `hours` of live play pays `reward` coins. */
+export const DEFAULT_ROTATION_MILESTONE = { hours: 10, reward: 25 };
+/** The Regular streak: `minHours` a week makes a Regular week, paying `base`
+ *  plus `step` per week before it in the run, up to `cap`. */
+export const DEFAULT_REGULAR_CONFIG = { minHours: 1, base: 10, step: 5, cap: 40 };
 
 const DAY = 86_400_000;
 const WEEK = 7 * DAY;

@@ -68,6 +68,14 @@ describe("resetItems", () => {
     ]);
   });
 
+  it("keeps goals on Monday midnight when the Rotation reset moves, with its own entry", () => {
+    const items = resetItems(Date.UTC(2026, 11, 7), Date.UTC(2026, 11, 10), { ...ET, resetDow: 2, resetHour: 10 });
+    expect(items.map((i) => [i.title, new Date(i.start).toISOString(), i.detail[0]])).toEqual([
+      ["New weekly goals", "2026-12-07T05:00:00.000Z", "Three fresh weekly goals."],
+      ["Rotation check-ins reset", "2026-12-08T15:00:00.000Z", "Check in on your Rotation games again."],
+    ]);
+  });
+
   it("keeps midnight Eastern across the clock change", () => {
     const items = resetItems(Date.UTC(2026, 9, 28), Date.UTC(2026, 10, 3), ET);
     expect(items.map((i) => new Date(i.start).toISOString())).toEqual([

@@ -20,6 +20,8 @@ import {
   type BonusEventRepeat,
 } from "../lib/bonusEvents";
 import { fromLocalDateTime, toLocalDateTime } from "../lib/cosmeticsPreview";
+import { toggleFilter } from "../lib/bazaarView";
+import { FilterChips } from "./FilterChips";
 
 const inputClass =
   "w-full rounded-lg border border-line bg-panel px-2 py-1.5 text-sm text-ink outline-none focus:border-brand";
@@ -97,51 +99,6 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
       <span>{label}</span>
       <span className="mt-1 block">{children}</span>
     </label>
-  );
-}
-
-/** Toggle chips for picking any number of names from a list (a group, not a
- *  <label>: a label would toggle its first chip when its text is tapped). */
-function ChipPicker({
-  label,
-  options,
-  selected,
-  onChange,
-}: {
-  label: string;
-  options: string[];
-  selected: string[];
-  onChange: (next: string[]) => void;
-}) {
-  return (
-    <div role="group" aria-label={label} className="text-sm text-ink">
-      <span>{label}</span>
-      <div className="mt-1 flex max-h-36 flex-wrap gap-1.5 overflow-y-auto">
-        {options.map((o) => {
-          const on = selected.includes(o);
-          return (
-            <button
-              key={o}
-              type="button"
-              aria-pressed={on}
-              onClick={() =>
-                onChange(
-                  on ? selected.filter((s) => s !== o) : [...selected, o],
-                )
-              }
-              className={
-                "rounded-full border px-2.5 py-1 text-xs transition " +
-                (on
-                  ? "border-brand bg-brand text-brand-fg"
-                  : "border-line bg-panel text-muted hover:text-ink")
-              }
-            >
-              {o}
-            </button>
-          );
-        })}
-      </div>
-    </div>
   );
 }
 
@@ -451,18 +408,22 @@ function EventForm({
           don&apos;t narrow that boost.
         </p>
       )}
-      <ChipPicker
-        label="Genres"
-        options={genreList}
-        selected={draft.genres}
-        onChange={(genres) => patch({ genres })}
-      />
-      <ChipPicker
-        label="Platforms (only players who own one see the event)"
-        options={platformList}
-        selected={draft.platforms}
-        onChange={(platforms) => patch({ platforms })}
-      />
+      <div className="max-h-40 overflow-y-auto">
+        <FilterChips
+          title="Genres"
+          options={genreList}
+          selected={draft.genres}
+          onToggle={(g) => patch({ genres: toggleFilter(draft.genres, g) })}
+        />
+      </div>
+      <div className="max-h-40 overflow-y-auto">
+        <FilterChips
+          title="Platforms (only players who own one see the event)"
+          options={platformList}
+          selected={draft.platforms}
+          onToggle={(pl) => patch({ platforms: toggleFilter(draft.platforms, pl) })}
+        />
+      </div>
       <label className="flex items-start gap-2 text-sm text-ink">
         <input
           type="checkbox"

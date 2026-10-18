@@ -6,7 +6,7 @@
 // the app already has. Pure (no React, no Supabase), unit-tested.
 
 import type { Game } from "../types";
-import { boostLabels, hasBoost, targetLabel, type BonusEventBoosts, type BonusEventTargets } from "./bonusEvents";
+import { boostLabels, coerceBoosts, coerceTargets, hasBoost, targetLabel } from "./bonusEvents";
 import { wallTimeInTz, type RotationResetConfig } from "./rotation";
 import { addCadence, type Subscription } from "./subscriptions";
 
@@ -29,9 +29,6 @@ export interface CalendarItem {
   forYou: boolean;
 }
 
-/** Feed items are calendar items; the alias names where they come from. */
-export type CalendarFeedItem = CalendarItem;
-
 const DAY = 86_400_000;
 
 function num(v: unknown, fallback = 0): number {
@@ -39,16 +36,8 @@ function num(v: unknown, fallback = 0): number {
   return Number.isFinite(n) ? n : fallback;
 }
 
-function maybeNum(v: unknown): number | null {
-  return v == null ? null : Number.isFinite(num(v, NaN)) ? num(v) : null;
-}
-
 function str(v: unknown): string {
   return typeof v === "string" ? v : "";
-}
-
-function strings(v: unknown): string[] {
-  return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string" && x.length > 0) : [];
 }
 
 /** calendar_feed's events and seasonal challenges, as calendar items. */
@@ -62,21 +51,8 @@ export function coerceCalendarFeed(raw: unknown): CalendarItem[] {
     const end = Date.parse(str(x.ends_at));
     if (!Number.isFinite(start) || !Number.isFinite(end) || !str(x.id)) continue;
     if (x.kind === "event") {
-      const boosts: BonusEventBoosts = {
-        bountyMult: num(x.bounty_mult, 1),
-        sessionMult: num(x.session_mult, 1),
-        rewardsMult: num(x.rewards_mult, 1),
-        startDiscountPct: num(x.start_discount_pct),
-        discountLimit: maybeNum(x.discount_limit),
-      };
-      const targets: BonusEventTargets = {
-        genres: strings(x.genres),
-        platforms: strings(x.platforms),
-        offMainPlatform: x.off_main_platform === true,
-        minHours: maybeNum(x.min_hours),
-        maxHours: maybeNum(x.max_hours),
-      };
-      const target = targetLabel(targets);
+      const boosts = coerceBoosts(x);
+      const target = targetLabel(coerceTargets(x));
       out.push({
         key: `event:${x.id}:${start}`,
         kind: hasBoost(boosts) ? "event" : "holiday",
@@ -123,16 +99,35 @@ function daysBetween(from: number, to: number): Date[] {
   return out;
 }
 
-/** When new weekly and monthly goals arrive, between `from` and `to`: the
- *  weekly reset day, and the 1st of each month, at the reset hour in the site
- *  timezone. (Daily goals reset every day; the page says so instead.) */
+/** When new weekly and monthly goals arrive, between `from` and `to`: Monday
+ *  and the 1st of each month at midnight in the site timezone, as the server
+ *  deals them (recap_week / challenge_month). The Rotation check-in resets
+ *  with the weekly goals unless an admin moved it, in which case it gets its
+ *  own entry. (Daily goals reset every midnight; the page says so instead.) */
 export function resetItems(from: number, to: number, cfg: RotationResetConfig): CalendarItem[] {
   const out: CalendarItem[] = [];
+  const rotationWithGoals = cfg.resetDow === 1 && cfg.resetHour === 0;
   for (const d of daysBetween(from, to)) {
     const y = d.getUTCFullYear();
     const m = d.getUTCMonth() + 1;
     const day = d.getUTCDate();
-    const at = wallTimeInTz(y, m, day, cfg.resetHour, cfg.resetTz);
+    if (!rotationWithGoals && d.getUTCDay() === cfg.resetDow) {
+      const at = wallTimeInTz(y, m, day, cfg.resetHour, cfg.resetTz);
+      if (at >= from && at < to) {
+        out.push({
+          key: `reset:rotation:${y}-${m}-${day}`,
+          kind: "reset",
+          title: "Rotation check-ins reset",
+          start: at,
+          end: null,
+          detail: ["Check in on your Rotation games again."],
+          prep: "",
+          personal: false,
+          forYou: true,
+        });
+      }
+    }
+    const at = wallTimeInTz(y, m, day, 0, cfg.resetTz);
     if (at < from || at >= to) continue;
     if (day === 1) {
       out.push({
@@ -147,14 +142,18 @@ export function resetItems(from: number, to: number, cfg: RotationResetConfig): 
         forYou: true,
       });
     }
-    if (d.getUTCDay() === cfg.resetDow) {
+    if (d.getUTCDay() === 1) {
       out.push({
         key: `reset:week:${y}-${m}-${day}`,
         kind: "reset",
         title: "New weekly goals",
         start: at,
         end: null,
-        detail: ["Three fresh weekly goals, and the Rotation check-in resets."],
+        detail: [
+          rotationWithGoals
+            ? "Three fresh weekly goals, and the Rotation check-in resets."
+            : "Three fresh weekly goals.",
+        ],
         prep: "",
         personal: false,
         forYou: true,

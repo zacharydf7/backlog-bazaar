@@ -144,6 +144,8 @@ import {
   DEFAULT_ROTATION_SLOTS,
   DEFAULT_ROTATION_CHECKIN_REWARD,
   DEFAULT_ROTATION_RESET,
+  DEFAULT_ROTATION_MILESTONE,
+  DEFAULT_REGULAR_CONFIG,
   coerceRegularStreak,
   type RegularStreak,
   type RotationResetConfig,
@@ -176,12 +178,13 @@ import { coerceAchievements, earnToastMessage } from "./lib/achievements";
 import { trackEvent } from "./lib/appEvents";
 import { coerceWeeklyRecap, type WeeklyRecap } from "./lib/weeklyRecap";
 import { browserTimeZone } from "./lib/timeZone";
-import { coerceCalendarFeed, type CalendarFeedItem } from "./lib/calendar";
+import { coerceCalendarFeed, type CalendarItem } from "./lib/calendar";
 import {
   coerceAdminBonusEvents,
   coerceBonusEvents,
   coerceBonusPerks,
   eventStartPrice,
+  nextEventBoundary,
   rewardsBoost,
   type AdminBonusEvent,
   type BonusEvent,
@@ -1414,10 +1417,7 @@ interface BazaarState {
   bazaarToWishlist: (id: string) => Promise<void>;
   // Buy a Bazaar game into Now Playing. The optional SlotChoice directs placement
   // (auto / force a general slot / a specific slot); omitted = auto-place.
-  // opts.eventPrice: the price a running coin event's discount brings it to
-  // (from previewStartPrice), so a game you can only afford discounted can
-  // start; the server still charges what it computes.
-  buyGame: (id: string, choice?: SlotChoice, opts?: { eventPrice?: number }) => Promise<void>;
+  buyGame: (id: string, choice?: SlotChoice) => Promise<void>;
   // Redeem one Onboarding Voucher to move a Bazaar game into Now Playing for free
   // (bypasses the coin activation fee). Strictly backlog → playing. choice as buyGame.
   redeemVoucher: (id: string, choice?: SlotChoice) => Promise<void>;
@@ -1709,9 +1709,6 @@ interface BazaarState {
   // Load the running and upcoming coin events that apply to you, and what
   // they do for each of your games.
   fetchBonusEvents: () => Promise<void>;
-  // What starting a game would cost under a running discount event (the
-  // purchase applies the same discount server-side). Null when none applies.
-  previewStartPrice: (gameId: string, price: number) => Promise<{ price: number; eventName: string } | null>;
   // Admin (economy.events): every coin event, archived included.
   fetchBonusEventsAdmin: () => Promise<AdminBonusEvent[]>;
   // Admin: create (id null) or edit a coin event. Resolves true on success.
@@ -1721,7 +1718,7 @@ interface BazaarState {
   // Admin: skip one run of a repeating event, or bring it back.
   skipBonusEventRun: (id: string, runStart: number, skip: boolean) => Promise<boolean>;
   // The site calendar's events and seasonal challenges between two times.
-  fetchCalendar: (from: number, to: number) => Promise<CalendarFeedItem[] | null>;
+  fetchCalendar: (from: number, to: number) => Promise<CalendarItem[] | null>;
   // Admin (challenges.manage): every seasonal event, archived included.
   fetchSeasonalChallengesAdmin: () => Promise<AdminSeasonalChallenge[]>;
   // Admin: create (id null) or edit a seasonal event. Resolves true on success.
@@ -2061,6 +2058,16 @@ async function refreshMilestoneDatesFromServer(
   }));
 }
 
+/** A numeric app_config value (numeric columns can arrive as strings), or the
+ *  default when it's missing or not a number. */
+function configNumber(v: unknown, fallback: number): number {
+  const n = typeof v === "string" ? Number(v) : typeof v === "number" ? v : NaN;
+  return Number.isFinite(n) ? n : fallback;
+}
+
+// The pending reload at the next coin event start/end (fetchBonusEvents).
+let bonusEventTimer: ReturnType<typeof setTimeout> | null = null;
+
 export const useStore = create<BazaarState>((set, get) => ({
   cloud: isCloudConfigured,
   initialized: false,
@@ -2081,10 +2088,10 @@ export const useStore = create<BazaarState>((set, get) => ({
   defaultCoin: DEFAULT_COIN,
   economy: DEFAULT_ECONOMY,
   rotationCheckinReward: DEFAULT_ROTATION_CHECKIN_REWARD,
-  rotationMilestone: { hours: 10, reward: 25 },
+  rotationMilestone: DEFAULT_ROTATION_MILESTONE,
   rotationProgress: {},
   regularStreak: null,
-  regularConfig: { minHours: 1, base: 10, step: 5, cap: 40 },
+  regularConfig: DEFAULT_REGULAR_CONFIG,
   rotationReset: DEFAULT_ROTATION_RESET,
   rotationCheckedIn: [],
   pendingRouteId: null,
@@ -2359,16 +2366,14 @@ export const useStore = create<BazaarState>((set, get) => ({
           ? cfg.rotation_checkin_reward
           : DEFAULT_ROTATION_CHECKIN_REWARD,
       regularConfig: {
-        minHours: Number(cfg?.regular_min_hours) > 0 ? Number(cfg?.regular_min_hours) : 1,
-        base: cfg?.regular_bonus_base != null ? Number(cfg.regular_bonus_base) : 10,
-        step: cfg?.regular_bonus_step != null ? Number(cfg.regular_bonus_step) : 5,
-        cap: cfg?.regular_bonus_cap != null ? Number(cfg.regular_bonus_cap) : 40,
+        minHours: configNumber(cfg?.regular_min_hours, DEFAULT_REGULAR_CONFIG.minHours),
+        base: configNumber(cfg?.regular_bonus_base, DEFAULT_REGULAR_CONFIG.base),
+        step: configNumber(cfg?.regular_bonus_step, DEFAULT_REGULAR_CONFIG.step),
+        cap: configNumber(cfg?.regular_bonus_cap, DEFAULT_REGULAR_CONFIG.cap),
       },
       rotationMilestone: {
-        hours: Number(cfg?.rotation_milestone_hours) > 0 ? Number(cfg?.rotation_milestone_hours) : 10,
-        reward: Number.isFinite(Number(cfg?.rotation_milestone_reward)) && cfg?.rotation_milestone_reward != null
-          ? Number(cfg?.rotation_milestone_reward)
-          : 25,
+        hours: configNumber(cfg?.rotation_milestone_hours, DEFAULT_ROTATION_MILESTONE.hours),
+        reward: configNumber(cfg?.rotation_milestone_reward, DEFAULT_ROTATION_MILESTONE.reward),
       },
       rotationReset: {
         resetDow:
@@ -5822,7 +5827,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     toast(`Moved ${game.title} to your wishlist`, Heart);
   },
 
-  buyGame: async (id, choice = { kind: "auto" }, opts) => {
+  buyGame: async (id, choice = { kind: "auto" }) => {
     const { cloud, games, coins, generalSlots, completionistSlots, myTargetedSlots } = get();
     const game = games.find((g) => g.id === id);
     if (!game || game.status !== "backlog") return;
@@ -5898,7 +5903,10 @@ export const useStore = create<BazaarState>((set, get) => ({
       economyOn,
       rec ? recDiscountedPrice(basePrice, get().recDiscountPct) : basePrice,
     );
-    if (!canAffordActivation(economyOn, coins, Math.min(price, opts?.eventPrice ?? price))) return;
+    // A running coin event's discount comes off server-side, so a game you can
+    // only afford discounted can still start.
+    const eventPrice = eventStartPrice(price, get().bonusPerks[id])?.price ?? price;
+    if (!canAffordActivation(economyOn, coins, eventPrice)) return;
 
     if (!cloud) {
       const next = games.map((g) =>
@@ -5948,10 +5956,14 @@ export const useStore = create<BazaarState>((set, get) => ({
       }
       return;
     }
-    const { coins: newCoins, slot_id } = data as { coins: number; slot_id: string | null };
-    // What the server actually charged: less than `price` when a coin event's
-    // start discount applied (the server takes it off).
-    const charged = economyOn ? Math.max(0, coins - newCoins) : price;
+    const { coins: newCoins, slot_id, price_paid } = data as {
+      coins: number;
+      slot_id: string | null;
+      price_paid: number | null;
+    };
+    // What the server charged: less than `price` when a coin event's start
+    // discount applied.
+    const charged = price_paid ?? price;
     if (charged < price) {
       toast(`Discount applied: you saved ${price - charged} coins on ${game.title}`, BadgePercent);
     }
@@ -7341,6 +7353,13 @@ export const useStore = create<BazaarState>((set, get) => ({
       set({ games: get().games.map((g) => (g.id === id ? { ...g, playedHours: total } : g)) });
     }
     await get().refreshHeldBounty(id);
+    // Time added to a Rotation game also counts toward its milestones and the
+    // Regular streak, and checks it in for the week (rotation_play_rewards).
+    const inRotation = get().games.find((g) => g.id === id)?.inRotation === true;
+    if (sessionBonus && inRotation && Number.isFinite(total) && total > before) {
+      set({ rotationCheckedIn: [...new Set([...get().rotationCheckedIn, id])] });
+      void get().fetchRotationProgress();
+    }
     // Added time can earn a Daily Session bonus server-side: re-read the
     // balance and say so (a hold release above already re-read it too).
     if (sessionBonus && Number.isFinite(total) && total > before) {
@@ -7355,7 +7374,12 @@ export const useStore = create<BazaarState>((set, get) => ({
         set({ coins });
         if (coins > coinsBefore) {
           const event = get().bonusPerks[id]?.session?.event;
-          toast(`Daily Session +${coins - coinsBefore}${event ? ` · ${event} bonus included` : ""}`, Sparkles);
+          toast(
+            inRotation
+              ? `+${coins - coinsBefore} coins for logging time`
+              : `Daily Session +${coins - coinsBefore}${event ? ` · ${event} bonus included` : ""}`,
+            Sparkles,
+          );
         }
       }
     }
@@ -8576,16 +8600,13 @@ export const useStore = create<BazaarState>((set, get) => ({
     ]);
     if (!events.error) set({ bonusEvents: coerceBonusEvents(events.data) });
     if (!perks.error) set({ bonusPerks: coerceBonusPerks(perks.data) });
-  },
-
-  previewStartPrice: async (gameId, price) => {
-    if (!supabase || !get().cloud || price <= 0) return null;
-    const { data, error } = await supabase
-      .rpc("preview_start_price", { p_game: gameId, p_price: price })
-      .single();
-    if (error || !data) return null;
-    const row = data as { price: number; event_name: string | null };
-    return row.event_name && row.price < price ? { price: row.price, eventName: row.event_name } : null;
+    // Load again when the next event starts or ends, so cards never keep a
+    // boost that's over (or miss one that began) while the app stays open.
+    if (bonusEventTimer != null) clearTimeout(bonusEventTimer);
+    const at = nextEventBoundary(get().bonusEvents, Date.now());
+    if (at != null) {
+      bonusEventTimer = setTimeout(() => void get().fetchBonusEvents(), Math.min(at - Date.now() + 1000, 2 ** 31 - 1));
+    }
   },
 
   fetchBonusEventsAdmin: async () => {
@@ -11328,6 +11349,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       slot_id: string | null;
       status: string;
       fee_covered: number | null;
+      price_paid: number | null;
     };
     // The inviter couldn't cover the fee they offered — nothing changed
     // server-side; the caller decides (pay their own way, or wait).
@@ -11346,7 +11368,7 @@ export const useStore = create<BazaarState>((set, get) => ({
                 // server stamped price_paid 0, so a later shelve refunds nothing);
                 // otherwise what was charged (less than `price` under a coin
                 // event discount).
-                pricePaid: gifted ? 0 : get().economyEnabled ? Math.max(0, coins - (res.coins ?? coins)) : price,
+                pricePaid: gifted ? 0 : (res.price_paid ?? price),
                 slotId: null,
                 completionist: false,
                 coOp: true,

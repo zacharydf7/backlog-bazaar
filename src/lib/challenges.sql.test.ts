@@ -61,7 +61,7 @@ beforeAll(async () => {
     create table public.game_status_events (user_id uuid, game_id uuid, to_status text,
       created_at timestamptz not null default now());
     create table public.playtime_events (user_id uuid, game_id uuid, hours real, source text not null default 'live',
-      created_at timestamptz not null default now());
+      in_rotation boolean not null default false, created_at timestamptz not null default now());
     create table public.action_undos (user_id uuid, game_id uuid, action text, undone_at timestamptz,
       created_at timestamptz not null default now());
     create table public.play_sessions (user_id uuid, status text, ended_at timestamptz);
@@ -94,6 +94,7 @@ beforeAll(async () => {
   await db.exec(fn("player_tz"));
   await db.exec(fn("set_my_time_zone"));
   await db.exec(fn("challenge_metric_keys"));
+  await db.exec(fn("rotation_live_hours"));
   await db.exec(fn("challenge_metric"));
   await db.exec(fn("challenge_month"));
   await db.exec(fn("challenge_goal_start"));
@@ -579,14 +580,15 @@ describe("daily & weekly goals", () => {
     expect(await applies("has_finishable")).toBe(true);
   });
 
-  it("counts Rotation hours only on Rotation games, and only live play", async () => {
+  it("counts Rotation hours only for play logged while in Rotation, and only live play", async () => {
     const R = "00000000-0000-4000-8000-0000000000e5";
     const N = "00000000-0000-4000-8000-0000000000e6";
     await db.exec(`
       insert into public.games (id, user_id, status, in_rotation, ongoing) values
         ('${R}', '${ME}', 'playing', true, true), ('${N}', '${ME}', 'playing', false, false);
-      insert into public.playtime_events (user_id, game_id, hours, source) values
-        ('${ME}', '${R}', 2, 'live'), ('${ME}', '${R}', 30, 'live'), ('${ME}', '${N}', 3, 'live');
+      insert into public.playtime_events (user_id, game_id, hours, source, in_rotation) values
+        ('${ME}', '${R}', 2, 'live', true), ('${ME}', '${R}', 30, 'live', true), ('${ME}', '${N}', 3, 'live', false),
+        ('${ME}', '${R}', 4, 'live', false); -- before it joined Rotation
     `);
     const r = await db.query<{ v: string }>(
       "select public.challenge_metric($1, 'rotation_hours', now() - interval '1 hour', now() + interval '1 hour') as v",

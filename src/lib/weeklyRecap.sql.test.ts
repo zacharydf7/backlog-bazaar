@@ -47,7 +47,8 @@ beforeAll(async () => {
     create table public.rotation_checkins (user_id uuid, game_id uuid, created_at timestamptz not null default now());
     create table public.regular_weeks (user_id uuid, week date, streak integer);
     create table public.playtime_events (user_id uuid, game_id uuid, game_title text, hours real,
-      source text not null default 'live', created_at timestamptz not null default now());
+      source text not null default 'live', in_rotation boolean not null default false,
+      created_at timestamptz not null default now());
     create table public.action_undos (user_id uuid, game_id uuid, action text, undone_at timestamptz,
       created_at timestamptz not null default now());
     create table public.game_status_events (user_id uuid, game_id uuid, to_status text,
@@ -74,7 +75,7 @@ beforeAll(async () => {
       week_start date, data jsonb, created_at timestamptz not null default now(), seen_at timestamptz,
       unique (user_id, week_start));
   `);
-  for (const name of ["is_live_play", "player_tz", "recap_week", "build_weekly_recap", "weekly_recap", "mark_weekly_recap_seen"]) {
+  for (const name of ["is_live_play", "player_tz", "recap_week", "rotation_live_hours", "build_weekly_recap", "weekly_recap", "mark_weekly_recap_seen"]) {
     await db.exec(fn(name));
   }
 });
@@ -136,8 +137,8 @@ describe("weekly_recap", () => {
     `);
     expect((await recap())!.data).toMatchObject({ play: { rotation: { hours: 0, games: 0, checkins: 2 } } });
     await db.exec(`delete from public.weekly_recaps;
-      insert into public.playtime_events (user_id, game_id, game_title, hours, created_at)
-        values ('${ME}', '${G2}', 'Hearthstone', 1.5, ${LAST_WEEK});`);
+      insert into public.playtime_events (user_id, game_id, game_title, hours, in_rotation, created_at)
+        values ('${ME}', '${G2}', 'Hearthstone', 1.5, true, ${LAST_WEEK});`);
     expect((await recap())!.data).toMatchObject({ play: { rotation: { hours: 1.5, games: 1, checkins: 2 } } });
   });
 

@@ -40,8 +40,7 @@ beforeEach(() => {
       economy: { price: DEFAULT_PRICE_FORMULA, bounty: DEFAULT_BOUNTY_FORMULA },
       buyGame,
       redeemVoucher,
-      previewStartPrice: vi.fn(async () => null),
-      bonusEvents: [],
+      bonusPerks: {},
     }),
   );
 });
@@ -65,61 +64,32 @@ describe("ActivationModal", () => {
     expect(redeemVoucher).not.toHaveBeenCalled();
   });
 
-  it("shows a coin event's start discount and pays the discounted fee", async () => {
-    const previewStartPrice = vi.fn(async (_id: string, price: number) => ({
-      price: Math.floor(price / 2),
-      eventName: "Cheap Starts",
-    }));
-    act(() => useStore.setState({ previewStartPrice }));
-    render(<ActivationModal game={game()} onClose={() => {}} />);
-    const banner = await screen.findByRole("status");
-    expect(banner.textContent).toMatch(/Cheap Starts/);
-    const full = previewStartPrice.mock.calls[0][1];
-    expect(banner.textContent).toContain(`You save ${(full - Math.floor(full / 2)).toLocaleString()} coins`);
-    expect(banner.textContent).toMatch(/Finishing still pays the full bounty/);
-    const coinBtn = screen.getByRole("button", { name: /Pay with coins/i });
-    expect(coinBtn.querySelector("s")?.textContent).toBe(full.toLocaleString());
-    fireEvent.click(coinBtn);
-    expect(buyGame).toHaveBeenCalledWith("g1", { kind: "general" }, { eventPrice: Math.floor(full / 2) });
-  });
-
-  it("names the event's % and the discounted starts left after this one", async () => {
+  it("shows a coin event's start discount and pays the discounted fee", () => {
     act(() =>
       useStore.setState({
-        previewStartPrice: vi.fn(async (_id: string, price: number) => ({
-          price: Math.floor(price / 2),
-          eventName: "Half Off",
-        })),
-        bonusEvents: [
-          {
-            id: "e1",
-            name: "Half Off",
-            description: "",
-            startsAt: 0,
-            endsAt: Date.now() + 86_400_000,
-            repeat: null,
-            prepTip: "",
-            bountyMult: 1,
-            sessionMult: 1,
-            rewardsMult: 1,
-            startDiscountPct: 50,
-            discountLimit: 2,
-            discountUsed: 0,
-            genres: [],
-            platforms: [],
-            offMainPlatform: false,
-            minHours: null,
-            maxHours: null,
-            playerCap: null,
-            capUsed: 0,
-          },
-        ],
+        bonusPerks: { g1: { discount: { event: "Cheap Starts", pct: 50, capLeft: null }, saved: 0 } },
       }),
     );
     render(<ActivationModal game={game()} onClose={() => {}} />);
-    const banner = await screen.findByRole("status");
+    const banner = screen.getByRole("status");
+    expect(banner.textContent).toMatch(/Cheap Starts/);
     expect(banner.textContent).toMatch(/50% off/);
-    expect(banner.textContent).toMatch(/After this, 1 discounted start left\./);
+    const coinBtn = screen.getByRole("button", { name: /Pay with coins/i });
+    const full = Number(coinBtn.querySelector("s")!.textContent!.replace(/\D/g, ""));
+    expect(banner.textContent).toContain(`You save ${Math.floor(full / 2).toLocaleString()} coins`);
+    expect(banner.textContent).toMatch(/Finishing still pays the full bounty/);
+    fireEvent.click(coinBtn);
+    expect(buyGame).toHaveBeenCalledWith("g1", { kind: "general" });
+  });
+
+  it("names the discounted starts left after this one", () => {
+    act(() =>
+      useStore.setState({
+        bonusPerks: { g1: { discount: { event: "Half Off", pct: 50, capLeft: null, startsLeft: 2 }, saved: 0 } },
+      }),
+    );
+    render(<ActivationModal game={game()} onClose={() => {}} />);
+    expect(screen.getByRole("status").textContent).toMatch(/After this, 1 discounted start left\./);
   });
 
   it("hides the voucher option when the balance is zero", () => {

@@ -124,6 +124,28 @@ function repeatOf(v: unknown): BonusEventRepeat | null {
   return v === "weekly" || v === "monthly" || v === "month_days" || v === "month_weekend" ? v : null;
 }
 
+/** An event row's boosts (also read by the calendar feed). */
+export function coerceBoosts(r: Record<string, unknown>): BonusEventBoosts {
+  return {
+    bountyMult: num(r.bounty_mult, 1),
+    sessionMult: num(r.session_mult, 1),
+    rewardsMult: num(r.rewards_mult, 1),
+    startDiscountPct: num(r.start_discount_pct),
+    discountLimit: maybeNum(r.discount_limit),
+  };
+}
+
+/** An event row's game targets (also read by the calendar feed). */
+export function coerceTargets(r: Record<string, unknown>): BonusEventTargets {
+  return {
+    genres: strings(r.genres),
+    platforms: strings(r.platforms),
+    offMainPlatform: r.off_main_platform === true,
+    minHours: maybeNum(r.min_hours),
+    maxHours: maybeNum(r.max_hours),
+  };
+}
+
 function common(r: Record<string, unknown>) {
   return {
     id: typeof r.id === "string" ? r.id : "",
@@ -133,16 +155,8 @@ function common(r: Record<string, unknown>) {
     endsAt: time(r.ends_at) ?? 0,
     repeat: repeatOf(r.repeat),
     prepTip: typeof r.prep_tip === "string" ? r.prep_tip : "",
-    bountyMult: num(r.bounty_mult, 1),
-    sessionMult: num(r.session_mult, 1),
-    rewardsMult: num(r.rewards_mult, 1),
-    startDiscountPct: num(r.start_discount_pct),
-    discountLimit: maybeNum(r.discount_limit),
-    genres: strings(r.genres),
-    platforms: strings(r.platforms),
-    offMainPlatform: r.off_main_platform === true,
-    minHours: maybeNum(r.min_hours),
-    maxHours: maybeNum(r.max_hours),
+    ...coerceBoosts(r),
+    ...coerceTargets(r),
     playerCap: maybeNum(r.player_cap),
   };
 }
@@ -214,7 +228,8 @@ export function eventIsLive(e: Pick<BonusEvent, "startsAt" | "endsAt">, now: num
   return e.startsAt <= now && now < e.endsAt;
 }
 
-const DAY = 86_400_000;
+const HOUR = 3_600_000;
+const DAY = 24 * HOUR;
 
 /** Why a draft can't be saved yet, or null when it's ready (mirrors the
  *  bonus_events checks so the form explains instead of erroring). */
@@ -229,8 +244,9 @@ export function bonusEventDraftProblem(d: BonusEventDraft): string | null {
     if (!Number.isFinite(d.endsAt)) return "Pick a start and an end.";
     if (d.endsAt <= d.startsAt) return "The end must come after the start.";
   }
-  if (d.repeat === "weekly" && d.endsAt - d.startsAt > 7 * DAY) return "A weekly event can run at most 7 days.";
-  if (d.repeat === "monthly" && d.endsAt - d.startsAt > 28 * DAY) return "A monthly event can run at most 28 days.";
+  // (+1 hour: a run that spans a clock change is an hour longer in real time.)
+  if (d.repeat === "weekly" && d.endsAt - d.startsAt > 7 * DAY + HOUR) return "A weekly event can run at most 7 days.";
+  if (d.repeat === "monthly" && d.endsAt - d.startsAt > 28 * DAY + HOUR) return "A monthly event can run at most 28 days.";
   if (d.repeat === "month_days") {
     const f = d.repeatFrom;
     const t = d.repeatTo;
@@ -253,6 +269,12 @@ export function bonusEventDraftProblem(d: BonusEventDraft): string | null {
     return "Discounted starts must be a whole number above 0 (or leave it empty).";
   }
   return null;
+}
+
+/** When the next listed event starts or ends after `now` (null when none). */
+export function nextEventBoundary(events: Pick<BonusEvent, "startsAt" | "endsAt">[], now: number): number | null {
+  const times = events.flatMap((e) => [e.startsAt, e.endsAt]).filter((t) => t > now);
+  return times.length > 0 ? Math.min(...times) : null;
 }
 
 /** "2 days" / "5h" until `at` (at least 1h). */
@@ -311,7 +333,8 @@ export function repeatLabel(s: BonusEventSchedule): string | null {
 
 /** What running events do for one of your games (my_bonus_event_perks). */
 export interface BonusEventPerk {
-  discount?: { event: string; pct: number; capLeft: number | null };
+  /** startsLeft: discounted starts left this run (null = no limit). */
+  discount?: { event: string; pct: number; capLeft: number | null; startsLeft?: number | null };
   /** On a Bazaar game: what it would get if started and finished in time. */
   bounty?: { event: string; factor: number; capLeft: number | null };
   /** Daily Session coins, on a Now Playing game. */
@@ -331,7 +354,14 @@ export function coerceBonusPerks(raw: unknown): Record<string, BonusEventPerk> {
     const se = r.session as Record<string, unknown> | undefined;
     out[id] = {
       ...(d && typeof d.event === "string" && num(d.pct) > 0
-        ? { discount: { event: d.event, pct: num(d.pct), capLeft: maybeNum(d.cap_left) } }
+        ? {
+            discount: {
+              event: d.event,
+              pct: num(d.pct),
+              capLeft: maybeNum(d.cap_left),
+              startsLeft: maybeNum(d.starts_left),
+            },
+          }
         : {}),
       ...(b && typeof b.event === "string" && num(b.factor) > 1
         ? { bounty: { event: b.event, factor: num(b.factor), capLeft: maybeNum(b.cap_left) } }

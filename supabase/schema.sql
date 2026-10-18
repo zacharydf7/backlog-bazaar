@@ -6980,12 +6980,15 @@ drop function if exists public.apply_purchase(uuid, integer, uuid, boolean, bool
 -- leave an ambiguous overload). Old deployed clients calling with six args
 -- still resolve against the new signature.
 drop function if exists public.apply_purchase(uuid, integer, uuid, boolean, boolean, boolean);
+-- (Re-dropped each apply: price_paid, 2026-10-17, widened the result so the
+-- app shows the price actually charged after any event discount.)
+drop function if exists public.apply_purchase(uuid, integer, uuid, boolean, boolean, boolean, boolean);
 create or replace function public.apply_purchase(
   p_game uuid, p_price integer, p_slot uuid default null,
   p_general boolean default false, p_completionist boolean default false,
   p_family_discount boolean default false, p_coop boolean default false
 )
-returns table (coins integer, slot_id uuid)
+returns table (coins integer, slot_id uuid, price_paid integer)
 language plpgsql
 security definer set search_path = public
 as $$
@@ -7170,7 +7173,7 @@ begin
             'recs');
   end if;
 
-  return query select v_new_coins, v_slot;
+  return query select v_new_coins, v_slot, p_price;
 end;
 $$;
 
@@ -9206,26 +9209,8 @@ begin
   -- Daily Session bonus (see pay_session_bonus), and for Rotation play, any
   -- hours milestone and this week's Regular bonus.
   v_bonus := public.pay_session_bonus(auth.uid(), p_game, p_hours);
-  if exists (select 1 from public.games where id = p_game and in_rotation) then
-    v_milestone := public.pay_rotation_milestones(auth.uid(), p_game);
-    v_regular := public.pay_regular_week(auth.uid());
-    -- Logging time on a Rotation game is playing it this week, so it checks
-    -- the game in if it isn't already (owner, 2026-10-17): the same check-in,
-    -- reward and history row as the button. v_checkin stays null when no
-    -- check-in happened (already done, or one raced in first).
-    if not exists (
-      select 1 from public.rotation_checkins r, public.app_config c
-       where c.id = 1 and r.user_id = auth.uid() and r.game_id = p_game
-         and r.created_at >= public.rotation_period_start(now(), coalesce(c.rotation_reset_dow, 0),
-                                                          coalesce(c.rotation_reset_hour, 0), c.rotation_reset_tz)
-    ) then
-      begin
-        select ci.awarded into v_checkin from public.rotation_checkin(p_game) ci;
-      exception when raise_exception then
-        v_checkin := null;
-      end;
-    end if;
-  end if;
+  select r.milestone, r.regular, r.checkin into v_milestone, v_regular, v_checkin
+    from public.rotation_play_rewards(p_game) r;
   select coins into v_coins from public.profiles where id = auth.uid();
 
   return query select v_coins, v_played, v_bonus, v_milestone, v_regular, v_checkin;
@@ -12177,8 +12162,26 @@ drop policy if exists "rotation_milestones_select_own" on public.rotation_milest
 create policy "rotation_milestones_select_own" on public.rotation_milestones
   for select to authenticated using (auth.uid() = user_id);
 
+-- A game's live hours toward Rotation milestones: play logged while it was in
+-- Rotation, at most 24 hours on any one day (the player's), since no day
+-- holds more play; without that, repeated 24-hour logs would mint coins.
+create or replace function public.rotation_game_hours(p_user uuid, p_game uuid)
+returns numeric
+language sql
+stable
+set search_path = public
+as $$
+  select coalesce(sum(least(d.hours, 24)), 0)::numeric
+    from (select greatest(sum(e.hours), 0) as hours
+            from public.playtime_events e
+           where e.user_id = p_user and e.game_id = p_game and e.in_rotation
+             and public.is_live_play(e.source, e.hours)
+           group by (e.created_at at time zone public.player_tz(p_user))::date) d;
+$$;
+revoke execute on function public.rotation_game_hours(uuid, uuid) from public, anon, authenticated;
+
 -- Pay any milestones this game has newly reached; returns the coins paid.
--- Internal: called by log_playtime (the stopwatch logs through it too).
+-- Internal: called through rotation_play_rewards.
 create or replace function public.pay_rotation_milestones(p_user uuid, p_game uuid)
 returns integer
 language plpgsql
@@ -12201,10 +12204,7 @@ begin
   end if;
   select coalesce(c.rotation_milestone_hours, 10), coalesce(c.rotation_milestone_reward, 25)
     into v_step, v_reward from public.app_config c where c.id = 1;
-  select coalesce(sum(e.hours), 0) into v_total
-    from public.playtime_events e
-   where e.user_id = p_user and e.game_id = p_game and e.in_rotation
-     and public.is_live_play(e.source, e.hours);
+  v_total := public.rotation_game_hours(p_user, p_game);
   select coalesce(max(m.milestone), 0) into v_paid
     from public.rotation_milestones m where m.user_id = p_user and m.game_id = p_game;
   v_reach := floor(v_total / v_step)::integer;
@@ -12237,9 +12237,7 @@ stable
 security definer set search_path = public
 as $$
   select coalesce(jsonb_object_agg(g.id, jsonb_build_object(
-           'hours', round((select coalesce(sum(e.hours), 0) from public.playtime_events e
-                            where e.user_id = auth.uid() and e.game_id = g.id and e.in_rotation
-                              and public.is_live_play(e.source, e.hours))::numeric, 2),
+           'hours', round(public.rotation_game_hours(auth.uid(), g.id), 2),
            'paid', (select coalesce(max(m.milestone), 0) from public.rotation_milestones m
                      where m.user_id = auth.uid() and m.game_id = g.id))), '{}'::jsonb)
     from public.games g
@@ -12386,6 +12384,47 @@ end;
 $$;
 revoke execute on function public.my_regular_streak() from public, anon;
 grant execute on function public.my_regular_streak() to authenticated;
+
+-- Everything logged play on a Rotation game earns beyond the Daily Session:
+-- any hours milestone, this week's Regular bonus, and the week's check-in if
+-- it hasn't been done (owner, 2026-10-17: logging time is playing it this
+-- week; same check-in, reward and history row as the button). checkin is
+-- null when no check-in happened (already done, or one raced in first).
+-- Nothing for a game that isn't in Rotation. Internal: called by
+-- log_playtime and set_platform_playtime as the caller.
+create or replace function public.rotation_play_rewards(p_game uuid)
+returns table (milestone integer, regular integer, checkin integer)
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  v_me        uuid := auth.uid();
+  v_milestone integer := 0;
+  v_regular   integer := 0;
+  v_checkin   integer;
+begin
+  if not exists (select 1 from public.games where id = p_game and user_id = v_me and in_rotation) then
+    return query select 0, 0, null::integer;
+    return;
+  end if;
+  v_milestone := public.pay_rotation_milestones(v_me, p_game);
+  v_regular := public.pay_regular_week(v_me);
+  if not exists (
+    select 1 from public.rotation_checkins r, public.app_config c
+     where c.id = 1 and r.user_id = v_me and r.game_id = p_game
+       and r.created_at >= public.rotation_period_start(now(), coalesce(c.rotation_reset_dow, 0),
+                                                        coalesce(c.rotation_reset_hour, 0), c.rotation_reset_tz)
+  ) then
+    begin
+      select ci.awarded into v_checkin from public.rotation_checkin(p_game) ci;
+    exception when raise_exception then
+      v_checkin := null;
+    end;
+  end if;
+  return query select v_milestone, v_regular, v_checkin;
+end;
+$$;
+revoke execute on function public.rotation_play_rewards(uuid) from public, anon, authenticated;
 
 -- ---------------------------------------------------------------------------
 -- Play-session stopwatch: start a
@@ -12731,9 +12770,11 @@ begin
    returning played_hours into v_total;
 
   -- Time added here is logged play too, so it earns a Daily Session bonus
-  -- like the Log button (a correction downward never does).
+  -- and any Rotation rewards like the Log button (a correction downward never
+  -- does).
   if p_hours > v_current and p_session_bonus then
     perform public.pay_session_bonus(auth.uid(), p_game, p_hours - v_current);
+    perform public.rotation_play_rewards(p_game);
   end if;
 
   return v_total;
@@ -13805,7 +13846,9 @@ declare
     'story_order_bonus', 'collectors_record_bonus', 'review_bonus',
     'review_bonus_min_chars', 'session_bonus', 'session_bonus_min_minutes',
     'session_bonus_daily_cap', 'bounty_gate_pct', 'challenge_goal_reward', 'challenge_set_bonus',
-    'challenge_daily_reward', 'challenge_weekly_reward', 'challenge_weekly_sweep'
+    'challenge_daily_reward', 'challenge_weekly_reward', 'challenge_weekly_sweep',
+    'rotation_milestone_hours', 'rotation_milestone_reward', 'regular_min_hours',
+    'regular_bonus_base', 'regular_bonus_step', 'regular_bonus_cap'
   ];
 begin
   foreach v_key in array v_cols loop
@@ -16901,13 +16944,15 @@ $$;
 -- added (a defaulted extra arg would otherwise leave an ambiguous overload).
 drop function if exists public.respond_co_op_pact(uuid, boolean, uuid, integer, uuid, boolean, boolean, boolean);
 drop function if exists public.respond_co_op_pact(uuid, boolean, uuid, integer, uuid, boolean, boolean, boolean, boolean);
+-- (Re-dropped each apply: price_paid, 2026-10-17, widened the result.)
+drop function if exists public.respond_co_op_pact(uuid, boolean, uuid, integer, uuid, boolean, boolean, boolean, boolean, boolean);
 create or replace function public.respond_co_op_pact(
   p_id uuid, p_accept boolean, p_game uuid default null,
   p_price integer default 0, p_slot uuid default null, p_general boolean default false,
   p_completionist boolean default false, p_family_discount boolean default false,
   p_player2 boolean default false, p_self_pay boolean default true
 )
-returns table (coins integer, slot_id uuid, status text, game_id uuid, fee_covered integer)
+returns table (coins integer, slot_id uuid, status text, game_id uuid, fee_covered integer, price_paid integer)
 language plpgsql security definer set search_path = public
 as $$
 #variable_conflict use_column
@@ -16927,6 +16972,7 @@ declare
   v_inviter_name  text;
   v_inviter_coins integer;
   v_gift          integer;
+  v_price_paid    integer;
   v_created       boolean := false;
   v_fee_due       boolean;
   v_my_coins      integer;
@@ -16952,7 +16998,7 @@ begin
     values (v_pact.inviter, 'co_op_declined', 'Co-op Pact declined',
             v_name || ' declined the pact for ' || v_pact.title,
             case when v_pact.inviter_game is not null then 'game:' || v_pact.inviter_game end);
-    return query select null::integer, null::uuid, 'declined'::text, null::uuid, null::integer;
+    return query select null::integer, null::uuid, 'declined'::text, null::uuid, null::integer, null::integer;
     return;
   end if;
 
@@ -17001,7 +17047,7 @@ begin
       select coins into v_my_coins from public.profiles where id = v_me;
       if not coalesce(p_self_pay, true) or coalesce(v_my_coins, 0) < p_price then
         return query select null::integer, null::uuid, 'pending'::text,
-                            null::uuid, null::integer;
+                            null::uuid, null::integer, null::integer;
         return;
       end if;
     else
@@ -17036,7 +17082,7 @@ begin
                          then 'game:' || v_pact.inviter_game end);
           end if;
           return query select null::integer, null::uuid, 'pending'::text,
-                              null::uuid, null::integer;
+                              null::uuid, null::integer, null::integer;
           return;
         end if;
         -- The caller chose to pay their own way — the standard activation below
@@ -17102,7 +17148,7 @@ begin
   -- refunds nothing and the gift can never be turned back into the invitee's
   -- coins).
   if v_game.status = 'backlog' then
-    select ap.coins, ap.slot_id into v_coins, v_slot
+    select ap.coins, ap.slot_id, ap.price_paid into v_coins, v_slot, v_price_paid
       from public.apply_purchase(v_game.id,
                                  case when v_gift is not null then 0 else p_price end,
                                  null, false, false, p_family_discount, true) ap;
@@ -17164,7 +17210,7 @@ begin
                   then ' You covered their ' || v_gift || '-coin activation fee.' else '' end,
           case when v_pact.inviter_game is not null then 'game:' || v_pact.inviter_game end);
 
-  return query select v_coins, v_slot, v_status, v_game.id, v_gift;
+  return query select v_coins, v_slot, v_status, v_game.id, v_gift, v_price_paid;
 end;
 $$;
 
@@ -19184,11 +19230,14 @@ as $$
    where e.user_id = p_user
   union all
   -- Coins earned: every payout, less any undone (an undo's own row takes it
-  -- back; an undo never counts as earning).
+  -- back; an undo never counts as earning), and less a bounty's held and
+  -- fee-repaid parts (released holds come back as bounty_release), so a
+  -- finish and its undo net to nothing.
   select 'coins_earned', coalesce(sum(e.coin_delta), 0)::numeric
     from public.coin_events e
    where e.user_id = p_user and e.kind <> 'opening'
-     and (case when e.kind like 'undo%' then e.coin_delta < 0 else e.coin_delta > 0 end)
+     and (case when e.kind like 'undo%' or e.kind in ('bounty_held', 'length_debt')
+               then e.coin_delta < 0 else e.coin_delta > 0 end)
   union all
   select 'games_owned',
          count(distinct coalesce(
@@ -19656,14 +19705,8 @@ as $$
     when 'rotation_checkins' then
       (select count(*) from public.rotation_checkins r
         where r.user_id = p_user and r.created_at >= p_from and r.created_at < p_to)
-    -- Live play on Rotation (live-service / ongoing) games (2026-10-17).
-    when 'rotation_hours' then
-      (select greatest(coalesce(sum(e.hours), 0), 0)
-         from public.playtime_events e
-         join public.games g on g.id = e.game_id
-        where e.user_id = p_user and public.is_live_play(e.source, e.hours)
-          and (coalesce(g.ongoing, false) or coalesce(g.in_rotation, false))
-          and e.created_at >= p_from and e.created_at < p_to)
+    -- Live play logged while a game was in Rotation (2026-10-17).
+    when 'rotation_hours' then public.rotation_live_hours(p_user, p_from, p_to)
     -- Different games with play logged.
     when 'games_played' then
       (select count(distinct p.key) from plays p where p.created_at >= p_from)
@@ -20783,16 +20826,14 @@ begin
                             limit 1) t),
       -- Rotation (live-service) play and check-ins (2026-10-17).
       'rotation', (select jsonb_build_object(
-                     'hours', round(greatest(coalesce(sum(e.hours), 0), 0)::numeric, 1),
+                     'hours', round(public.rotation_live_hours(p_user, p_from, p_to), 1),
                      'games', count(distinct e.game_id) filter (where e.hours > 0),
                      'checkins', (select count(*) from public.rotation_checkins r
                                    where r.user_id = p_user and r.created_at >= p_from and r.created_at < p_to),
                      'regular_streak', (select rw.streak from public.regular_weeks rw
                                          where rw.user_id = p_user and rw.week = (p_from at time zone v_tz)::date))
                      from public.playtime_events e
-                     join public.games g on g.id = e.game_id
-                    where e.user_id = p_user and public.is_live_play(e.source, e.hours)
-                      and (coalesce(g.ongoing, false) or coalesce(g.in_rotation, false))
+                    where e.user_id = p_user and e.in_rotation and public.is_live_play(e.source, e.hours)
                       and e.created_at >= p_from and e.created_at < p_to)
     ),
     'clears', (
@@ -21031,8 +21072,9 @@ end $$;
 alter table public.bonus_events drop constraint if exists bonus_events_repeat_shape;
 alter table public.bonus_events add constraint bonus_events_repeat_shape check (
   repeat is null
-  or (repeat = 'weekly' and ends_at - starts_at <= interval '7 days')
-  or (repeat = 'monthly' and ends_at - starts_at <= interval '28 days')
+  -- (+1 hour: a run that spans a clock change is an hour longer in real time.)
+  or (repeat = 'weekly' and ends_at - starts_at <= interval '7 days 1 hour')
+  or (repeat = 'monthly' and ends_at - starts_at <= interval '28 days 1 hour')
   or (repeat = 'month_days'
       and ((repeat_from between 1 and 28 and repeat_to between repeat_from and 28)
         or (repeat_from between -28 and -1 and repeat_to between repeat_from and -1)))
@@ -21190,6 +21232,7 @@ declare
   v_s     timestamptz;
   v_e     timestamptz;
   v_skip  boolean;
+  v_llen  interval;
 begin
   if p_event.repeat is null then
     if p_event.ends_at > p_from and p_event.starts_at < p_to then
@@ -21202,6 +21245,9 @@ begin
   if p_event.repeat in ('weekly', 'monthly') then
     v_step  := case p_event.repeat when 'weekly' then interval '7 days' else interval '1 month' end;
     v_local := p_event.starts_at at time zone v_tz;
+    -- A run's length in local time, so it ends at the same wall-clock time
+    -- even when a clock change falls inside it.
+    v_llen  := (p_event.ends_at at time zone v_tz) - v_local;
     -- Start a run early so one still going at p_from is included.
     if p_from - v_len <= p_event.starts_at then
       v_k := 0;
@@ -21214,7 +21260,7 @@ begin
     for i in 0 .. 600 loop
       v_s := (v_local + (v_k + i) * v_step) at time zone v_tz;
       exit when v_s >= p_to or (p_event.repeat_until is not null and v_s >= p_event.repeat_until);
-      v_e := v_s + v_len;
+      v_e := (v_local + (v_k + i) * v_step + v_llen) at time zone v_tz;
       if v_e > p_from then
         v_skip := public.bonus_event_run_skipped(p_event.id, v_s);
         if p_with_skipped or not v_skip then
@@ -21278,37 +21324,73 @@ as $$
 $$;
 revoke execute on function public.bonus_event_occurrence(public.bonus_events, timestamptz) from public, anon, authenticated;
 
--- The strongest running event for one kind of boost ('bounty' | 'session' |
--- 'rewards' | 'discount') on this game (claims aren't tied to a game), with
--- how much of its per-player cap is left (null = no cap).
+-- The running events with this player's use of each this run: coins left
+-- under its per-player cap (null = no cap) and discounted starts used. One
+-- pass, shared by best_bonus_event and my_bonus_event_perks.
+create or replace function public.live_bonus_events(p_user uuid)
+returns table (ev public.bonus_events, occ_end timestamptz, cap_left integer, discounts_used integer)
+language sql
+stable
+security definer set search_path = public
+as $$
+  select e, o.occ_end,
+         case when e.player_cap is null then null
+              else e.player_cap - coalesce((select sum(p.amount) from public.bonus_event_payouts p
+                                             where p.event_id = e.id and p.user_id = p_user
+                                               and p.created_at >= o.occ_start), 0)::integer end,
+         (select count(*)::integer from public.bonus_event_payouts p
+           where p.event_id = e.id and p.user_id = p_user and p.kind = 'discount'
+             and p.created_at >= o.occ_start)
+    from public.bonus_events e
+    cross join lateral public.bonus_event_occurrence(e, now()) o
+   where e.archived_at is null and o.live;
+$$;
+revoke execute on function public.live_bonus_events(uuid) from public, anon, authenticated;
+
+-- What an event gives for one kind of boost ('bounty' | 'session' | 'rewards'
+-- multipliers, 'discount' percent).
+create or replace function public.bonus_event_factor(e public.bonus_events, p_kind text)
+returns numeric
+language sql
+immutable
+as $$
+  select case p_kind when 'bounty' then e.bounty_mult when 'session' then e.session_mult
+                     when 'rewards' then e.rewards_mult when 'discount' then e.start_discount_pct::numeric end;
+$$;
+
+-- Can a live event still boost this kind for this player? It boosts it, its
+-- cap has coins left, and a discount has starts left (game targets are
+-- checked separately, as rewards aren't tied to a game).
+create or replace function public.bonus_event_usable(
+  e public.bonus_events, p_kind text, p_cap_left integer, p_discounts_used integer
+)
+returns boolean
+language sql
+immutable
+as $$
+  select coalesce(public.bonus_event_factor(e, p_kind) > case p_kind when 'discount' then 0 else 1 end, false)
+     and (p_cap_left is null or p_cap_left > 0)
+     and (p_kind <> 'discount' or e.discount_limit is null or p_discounts_used < e.discount_limit);
+$$;
+
+-- The strongest usable event for one kind of boost on this game (claims
+-- aren't tied to a game), with how much of its per-player cap is left.
 create or replace function public.best_bonus_event(p_user uuid, p_game uuid, p_kind text)
 returns table (event_id uuid, event_name text, factor numeric, cap_left integer)
 language sql
 stable
 security definer set search_path = public
 as $$
-  select e.id, e.name,
-         case p_kind when 'bounty' then e.bounty_mult when 'session' then e.session_mult
-                     when 'rewards' then e.rewards_mult else e.start_discount_pct::numeric end,
-         case when e.player_cap is null then null
-              else e.player_cap - coalesce((select sum(p.amount) from public.bonus_event_payouts p
-                                             where p.event_id = e.id and p.user_id = p_user
-                                               and p.created_at >= o.occ_start), 0)::integer end
-    from public.bonus_events e
-    cross join lateral public.bonus_event_occurrence(e, now()) o
-   where e.archived_at is null and o.live
-     and case p_kind when 'bounty' then e.bounty_mult > 1 when 'session' then e.session_mult > 1
-                     when 'rewards' then e.rewards_mult > 1 when 'discount' then e.start_discount_pct > 0
-                     else false end
-     and (p_kind = 'rewards' or public.bonus_event_applies(e, p_user, p_game))
-     and (p_kind <> 'discount' or e.discount_limit is null
-          or (select count(*) from public.bonus_event_payouts p
-               where p.event_id = e.id and p.user_id = p_user and p.kind = 'discount'
-                 and p.created_at >= o.occ_start) < e.discount_limit)
-   order by 3 desc, o.occ_end
+  select (l.ev).id, (l.ev).name, public.bonus_event_factor(l.ev, p_kind), l.cap_left
+    from public.live_bonus_events(p_user) l
+   where public.bonus_event_usable(l.ev, p_kind, l.cap_left, l.discounts_used)
+     and (p_kind = 'rewards' or public.bonus_event_applies(l.ev, p_user, p_game))
+   order by 3 desc, l.occ_end
    limit 1;
 $$;
 revoke execute on function public.best_bonus_event(uuid, uuid, text) from public, anon, authenticated;
+revoke execute on function public.bonus_event_factor(public.bonus_events, text) from public, anon, authenticated;
+revoke execute on function public.bonus_event_usable(public.bonus_events, text, integer, integer) from public, anon, authenticated;
 
 -- Pay a running event's extra on a payout (the bounty paid at finish, a Daily
 -- Session bonus, a claim): adds the coins, writes the 'event_bonus' ledger row
@@ -21326,6 +21408,7 @@ declare
   v_title  text;
 begin
   if p_base is null or p_base <= 0 or not public.economy_enabled(p_user) then return 0; end if;
+  perform 1 from public.profiles where id = p_user for update;
   select * into e from public.best_bonus_event(p_user, p_game, p_kind);
   if not found then return 0; end if;
   v_extra := floor(p_base * (e.factor - 1))::integer;
@@ -21360,6 +21443,9 @@ begin
     return query select p_price, null::text;
     return;
   end if;
+  if p_record then
+    perform 1 from public.profiles where id = p_user for update;
+  end if;
   select * into e from public.best_bonus_event(p_user, p_game, 'discount');
   if not found then
     return query select p_price, null::text;
@@ -21380,22 +21466,9 @@ end;
 $$;
 revoke execute on function public.bonus_event_discount(uuid, uuid, integer, boolean) from public, anon, authenticated;
 
--- What starting one of your games would cost under a running discount event,
--- for the activation dialog (the purchase itself applies the same discount).
-create or replace function public.preview_start_price(p_game uuid, p_price integer)
-returns table (price integer, event_name text)
-language plpgsql
-security definer set search_path = public
-as $$
-#variable_conflict use_column
-begin
-  if auth.uid() is null then raise exception 'Not authenticated'; end if;
-  if not exists (select 1 from public.games where id = p_game and user_id = auth.uid()) then
-    raise exception 'Game not available';
-  end if;
-  return query select d.price, d.event_name from public.bonus_event_discount(auth.uid(), p_game, p_price, false) d;
-end;
-$$;
+-- (preview_start_price retired 2026-10-17: the start dialog prices from
+-- my_bonus_event_perks like every other surface.)
+drop function if exists public.preview_start_price(uuid, integer);
 
 -- Is a running or upcoming event something this player could use? An event
 -- with no game filters is for everyone; otherwise they need a Bazaar or Now
@@ -21464,26 +21537,37 @@ declare
   v_me uuid := auth.uid();
 begin
   if v_me is null then raise exception 'Not authenticated'; end if;
-  if not public.economy_enabled(v_me) or not exists (
-       select 1 from public.bonus_events e
-        cross join lateral public.bonus_event_occurrence(e, now()) o
-        where e.archived_at is null and o.live
-          and (e.bounty_mult > 1 or e.session_mult > 1 or e.start_discount_pct > 0)) then
-    return '{}'::jsonb;
-  end if;
+  if not public.economy_enabled(v_me) then return '{}'::jsonb; end if;
   return coalesce((
+    with live as materialized (select * from public.live_bonus_events(v_me))
     select jsonb_object_agg(x.id, x.perk)
       from (
         select g.id,
                jsonb_strip_nulls(jsonb_build_object(
-                 'discount', (select jsonb_build_object('event', d.event_name, 'pct', d.factor, 'cap_left', d.cap_left)
-                                from public.best_bonus_event(v_me, g.id, 'discount') d
-                               where g.status = 'backlog'),
-                 'bounty', (select jsonb_build_object('event', b.event_name, 'factor', b.factor, 'cap_left', b.cap_left)
-                              from public.best_bonus_event(v_me, g.id, 'bounty') b),
-                 'session', (select jsonb_build_object('event', x.event_name, 'factor', x.factor, 'cap_left', x.cap_left)
-                               from public.best_bonus_event(v_me, g.id, 'session') x
-                              where g.status = 'playing'),
+                 'discount', case when g.status = 'backlog' then (
+                     select jsonb_build_object('event', (l.ev).name, 'pct', (l.ev).start_discount_pct,
+                                               'cap_left', l.cap_left,
+                                               'starts_left', (l.ev).discount_limit - l.discounts_used)
+                       from live l
+                      where public.bonus_event_usable(l.ev, 'discount', l.cap_left, l.discounts_used)
+                        and public.bonus_event_applies(l.ev, v_me, g.id)
+                      order by (l.ev).start_discount_pct desc, l.occ_end limit 1) end,
+                 'bounty', (
+                     select jsonb_build_object('event', (l.ev).name, 'factor', (l.ev).bounty_mult,
+                                               'cap_left', l.cap_left)
+                       from live l
+                      where public.bonus_event_usable(l.ev, 'bounty', l.cap_left, l.discounts_used)
+                        and public.bonus_event_applies(l.ev, v_me, g.id)
+                      order by (l.ev).bounty_mult desc, l.occ_end limit 1),
+                 'session', case when g.status = 'playing' then (
+                     select jsonb_build_object('event', (l.ev).name, 'factor', (l.ev).session_mult,
+                                               'cap_left', l.cap_left)
+                       from live l
+                      where public.bonus_event_usable(l.ev, 'session', l.cap_left, l.discounts_used)
+                        and public.bonus_event_applies(l.ev, v_me, g.id)
+                      order by (l.ev).session_mult desc, l.occ_end limit 1) end,
+                 -- A discount saved on this run counts as paid at finish
+                 -- (apply_finish), so it shows even once its event is over.
                  'saved', case when g.status = 'playing' then
                             nullif((select coalesce(sum(p.amount), 0) from public.bonus_event_payouts p
                                      where p.game_id = g.id and p.user_id = v_me and p.kind = 'discount'
@@ -21760,7 +21844,6 @@ values ('00000000-0000-4000-8000-0000000ee003', 'Collector''s Week',
         'month_days', -7, -1)
 on conflict (id) do nothing;
 
-revoke execute on function public.preview_start_price(uuid, integer) from public, anon;
 revoke execute on function public.list_bonus_events() from public, anon;
 revoke execute on function public.my_bonus_event_perks() from public, anon;
 grant execute on function public.my_bonus_event_perks() to authenticated;
@@ -21769,7 +21852,6 @@ revoke execute on function public.admin_skip_bonus_event_run(uuid, timestamptz, 
 revoke execute on function public.calendar_feed(timestamptz, timestamptz) from public, anon;
 revoke execute on function public.admin_archive_bonus_event(uuid, boolean) from public, anon;
 revoke execute on function public.admin_list_bonus_events() from public, anon;
-grant execute on function public.preview_start_price(uuid, integer) to authenticated;
 grant execute on function public.list_bonus_events() to authenticated;
 grant execute on function public.admin_save_bonus_event(uuid, jsonb) to authenticated;
 grant execute on function public.admin_skip_bonus_event_run(uuid, timestamptz, boolean) to authenticated;

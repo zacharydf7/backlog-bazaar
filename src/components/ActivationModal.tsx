@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { createPortal } from "react-dom";
 import { X, Gamepad2, Ticket, Lock, ArrowRight, Target, Handshake, BadgePercent, type LucideIcon } from "lucide-react";
 import type { Game } from "../types";
@@ -10,6 +10,7 @@ import { isReplayFinish, isFamilyDiscounted } from "../lib/families";
 import { canStartGame, canEnterLane, type SlotChoice } from "../lib/slots";
 import { canRedeemVoucher } from "../lib/vouchers";
 import { activePactForCard } from "../lib/coopPacts";
+import { eventStartPrice } from "../lib/bonusEvents";
 import { useScrollLock } from "../lib/useScrollLock";
 import { useHistoryDismiss } from "../lib/useHistoryDismiss";
 import { CoinIcon } from "./CoinIcon";
@@ -36,7 +37,7 @@ function choiceKey(c: SlotChoice): string {
  * preselected). Strictly Bazaar → Now Playing — never reachable from the Wishlist.
  */
 export function ActivationModal({ game, onClose }: { game: Game; onClose: () => void }) {
-  const { coins, vouchers, economy, games, compilations, generalSlots, completionistSlots, replayBonusPct, buyGame, redeemVoucher, economyEnabled, recommendations, recDiscountPct, userId, coOpPacts, bountyRate, previewStartPrice } =
+  const { coins, vouchers, economy, games, compilations, generalSlots, completionistSlots, replayBonusPct, buyGame, redeemVoucher, economyEnabled, recommendations, recDiscountPct, userId, coOpPacts, bountyRate, bonusPerks } =
     useStore();
   const [working, setWorking] = useState<"coins" | "voucher" | null>(null);
 
@@ -59,29 +60,13 @@ export function ActivationModal({ game, onClose }: { game: Game; onClose: () => 
     : fullPrice;
   const price = activeRec ? recDiscountedPrice(preRecPrice, recDiscountPct) : preRecPrice;
   // A running coin event's start discount, which the server applies to
-  // `price` when you start (asked for here so the fee shown is the fee paid).
-  const [eventPrice, setEventPrice] = useState<{ price: number; eventName: string } | null>(null);
-  useEffect(() => {
-    if (!economyEnabled || price <= 0) return;
-    let alive = true;
-    void previewStartPrice(game.id, price).then((r) => {
-      if (alive) setEventPrice(r);
-    });
-    return () => {
-      alive = false;
-    };
-  }, [game.id, price, economyEnabled, previewStartPrice]);
-  const payPrice = eventPrice?.price ?? price;
-  // The running event behind the discount (matched by name, which is all the
-  // preview returns), for its % and how many discounted starts remain.
-  const bonusEvents = useStore((s) => s.bonusEvents);
-  const discountEvent = eventPrice
-    ? bonusEvents.find((e) => e.name === eventPrice.eventName && e.startDiscountPct > 0)
-    : undefined;
-  const startsLeftAfter =
-    discountEvent?.discountLimit != null
-      ? Math.max(0, discountEvent.discountLimit - discountEvent.discountUsed - 1)
-      : null;
+  // `price` when you start (priced like every card, so the fee shown is the
+  // fee paid).
+  const perk = bonusPerks[game.id];
+  const eventStart = economyEnabled ? eventStartPrice(price, perk) : null;
+  const payPrice = eventStart?.price ?? price;
+  const startsLeft = perk?.discount?.startsLeft;
+  const startsLeftAfter = eventStart && startsLeft != null ? Math.max(0, startsLeft - 1) : null;
   const bounty = computeFormula(game, economy.bounty);
   const reward = applyBountyRate(
     computeFinishReward(isReplayFinish(games, game), bounty, replayBonusPct),
@@ -119,8 +104,7 @@ export function ActivationModal({ game, onClose }: { game: Game; onClose: () => 
   async function pickCoins() {
     if (working || !canAfford || !hasOpenSlot) return;
     setWorking("coins");
-    if (eventPrice) await buyGame(game.id, choice, { eventPrice: eventPrice.price });
-    else await buyGame(game.id, choice);
+    await buyGame(game.id, choice);
     onClose();
   }
   async function pickVoucher() {
@@ -168,14 +152,14 @@ export function ActivationModal({ game, onClose }: { game: Game; onClose: () => 
         <div className="flex flex-col gap-2 px-5 pb-5 pt-2">
           {/* A coin event discount, impossible to miss: what you pay, what you
               save, and that the finish still pays in full. */}
-          {economyEnabled && eventPrice && (
+          {eventStart && (
             <div className="rounded-2xl border-2 border-success bg-success/10 px-4 py-3" role="status">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-success">
-                  <BadgePercent size={17} /> {eventPrice.eventName}
+                  <BadgePercent size={17} /> {eventStart.event}
                 </span>
                 <span className="rounded-full bg-success px-2.5 py-0.5 text-xs font-bold uppercase tracking-wide text-surface">
-                  {discountEvent ? `${discountEvent.startDiscountPct}% off` : "Discounted"}
+                  {eventStart.pct}% off
                 </span>
               </div>
               <p className="mt-1.5 text-sm text-ink">
@@ -269,9 +253,9 @@ export function ActivationModal({ game, onClose }: { game: Game; onClose: () => 
                       Family Discount
                     </span>
                   )}
-                  {eventPrice && (
+                  {eventStart && (
                     <span className="rounded-full bg-success/15 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-success">
-                      {eventPrice.eventName}
+                      {eventStart.event}
                     </span>
                   )}
                 </>
@@ -285,7 +269,7 @@ export function ActivationModal({ game, onClose }: { game: Game; onClose: () => 
               {economyEnabled && (
                 <span className="inline-flex items-center gap-1">
                   <CoinIcon size={14} />{" "}
-                  {familyDiscount || eventPrice ? (
+                  {familyDiscount || eventStart ? (
                     <>
                       <s className="font-normal opacity-60">
                         {(familyDiscount ? fullPrice : price).toLocaleString()}

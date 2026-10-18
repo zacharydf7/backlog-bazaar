@@ -80,6 +80,9 @@ beforeAll(async () => {
     "bonus_event_run_skipped",
     "bonus_event_runs",
     "bonus_event_occurrence",
+    "live_bonus_events",
+    "bonus_event_factor",
+    "bonus_event_usable",
     "best_bonus_event",
     "bonus_event_pay",
     "bonus_event_discount",
@@ -230,6 +233,18 @@ describe("bonus_event_pay", () => {
     expect(await pay("bounty", 80)).toBe(80);
   });
 
+  it("passes over an event whose cap is used up for the next best one", async () => {
+    const capped = await event({ name: "'Double'", player_cap: "50" });
+    await event({ name: "'Bounty Weekend'", bounty_mult: "1.5" });
+    await db.query(
+      "insert into public.bonus_event_payouts (event_id, event_name, user_id, kind, amount) values ($1, 'Double', $2, 'bounty', 50)",
+      [capped, U],
+    );
+    expect(await pay("bounty", 100)).toBe(50);
+    const label = await db.query<{ label: string }>("select label from public.coin_events");
+    expect(label.rows).toEqual([{ label: "Bounty Weekend" }]);
+  });
+
   it("takes the strongest matching event", async () => {
     await event({ bounty_mult: "1.5" });
     await event({ name: "'Triple'", bounty_mult: "3" });
@@ -365,13 +380,26 @@ describe("my_bonus_event_perks", () => {
       [id, U, SW],
     );
     expect(await perks()).toEqual({
-      [PS]: { discount: { event: "Double Bounty", pct: 50 }, bounty: { event: "Double Bounty", factor: 2 } },
+      [PS]: {
+        // One of the two discounted starts went on the Switch game's run.
+        discount: { event: "Double Bounty", pct: 50, starts_left: 1 },
+        bounty: { event: "Double Bounty", factor: 2 },
+      },
       [SW]: {
         bounty: { event: "Double Bounty", factor: 2 },
         session: { event: "Double Bounty", factor: 3 },
         saved: 20,
       },
     });
+  });
+
+  it("keeps a run's discount saving after the event is over", async () => {
+    await db.exec(`update public.games set status = 'playing', started_at = now() - interval '2 hours' where id = '${SW}'`);
+    await db.query(
+      "insert into public.bonus_event_payouts (event_name, user_id, game_id, kind, amount, created_at) values ('Old', $1, $2, 'discount', 30, now() - interval '1 hour')",
+      [U, SW],
+    );
+    expect(await perks()).toEqual({ [SW]: { saved: 30 } });
   });
 
   it("drops the discount once the player's discounted starts are used", async () => {
@@ -429,6 +457,18 @@ describe("monthly patterns", () => {
     // October 2026 ends on a Saturday: its last weekend runs into November.
     await db.exec(`update public.bonus_events set starts_at = '2026-10-01 00:00 America/New_York' where id = '${last}'`);
     expect(await runs(last, "2026-10-01Z", "2026-11-01Z")).toEqual([
+      ["2026-10-31T04:00:00.000Z", "2026-11-02T05:00:00.000Z"],
+    ]);
+  });
+
+  it("ends a weekly run at local midnight even across the clock change", async () => {
+    const id = await event({
+      starts_at: "'2026-10-17 00:00 America/New_York'",
+      ends_at: "'2026-10-19 00:00 America/New_York'",
+      repeat: "'weekly'",
+    });
+    // Oct 31 (EDT) to Nov 2 (EST): 49 real hours, still midnight to midnight.
+    expect(await runs(id, "2026-10-30Z", "2026-11-03Z")).toEqual([
       ["2026-10-31T04:00:00.000Z", "2026-11-02T05:00:00.000Z"],
     ]);
   });

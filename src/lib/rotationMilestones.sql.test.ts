@@ -51,7 +51,9 @@ beforeAll(async () => {
       p_game_title text, p_label text, p_detail jsonb default '{}'::jsonb)
       returns void language sql as $$ insert into public.coin_events values (p_user, p_kind, p_coin_delta, p_label) $$;
   `);
+  await db.exec(`create function public.player_tz(p_user uuid) returns text language sql as $$ select 'America/New_York' $$`);
   await db.exec(fn("is_live_play"));
+  await db.exec(fn("rotation_game_hours"));
   await db.exec(fn("pay_rotation_milestones"));
 });
 
@@ -68,14 +70,11 @@ beforeEach(async () => {
   `);
 });
 
-async function log(hours: number, inRotation = true, source = "live") {
-  await db.query("insert into public.playtime_events (user_id, game_id, hours, source, in_rotation) values ($1, $2, $3, $4, $5)", [
-    U,
-    R,
-    hours,
-    source,
-    inRotation,
-  ]);
+async function log(hours: number, inRotation = true, source = "live", ago = "0 seconds") {
+  await db.query(
+    "insert into public.playtime_events (user_id, game_id, hours, source, in_rotation, created_at) values ($1, $2, $3, $4, $5, now() - $6::interval)",
+    [U, R, hours, source, inRotation, ago],
+  );
   const r = await db.query<{ paid: number }>("select public.pay_rotation_milestones($1, $2) as paid", [U, R]);
   return r.rows[0].paid;
 }
@@ -95,12 +94,17 @@ describe("pay_rotation_milestones", () => {
     ]);
   });
 
-  it("pays every milestone a long session crosses", async () => {
-    expect(await log(21)).toBe(50);
-    expect((await db.query("select milestone from public.rotation_milestones order by milestone")).rows).toEqual([
-      { milestone: 1 },
-      { milestone: 2 },
-    ]);
+  it("pays every milestone a long session crosses, day after day", async () => {
+    expect(await log(21, true, "live", "2 days")).toBe(50);
+    expect(await log(14, true, "live", "1 day")).toBe(25);
+    expect(await log(9)).toBe(25);
+    expect((await db.query("select count(*)::int as n from public.rotation_milestones")).rows).toEqual([{ n: 4 }]);
+  });
+
+  it("counts at most 24 hours on any one day, so repeated logs can't mint coins", async () => {
+    for (let i = 0; i < 9; i++) await log(20);
+    // 180 hours logged today count as 24: two milestones, not eighteen.
+    expect((await db.query("select count(*)::int as n from public.rotation_milestones")).rows).toEqual([{ n: 2 }]);
   });
 
   it("counts only live play logged while the game was in Rotation", async () => {
