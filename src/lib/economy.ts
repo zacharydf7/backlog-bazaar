@@ -14,7 +14,7 @@
 //
 // All functions here are pure, so they can be unit-tested without React/Supabase.
 
-import type { GameMeta } from "../types";
+import type { BountyBasis, GameMeta } from "../types";
 import { isModifierOnly, totalCost } from "./copies";
 
 /** Assumed length (hours) when a game has no recorded length. */
@@ -168,6 +168,30 @@ export function formulaBreakdown(
     sum += contribution;
   }
   return { base: Math.round(cfg.base), factors, total: Math.max(0, Math.round(sum)) };
+}
+
+/** The full bounty a finish pays (game_bounty): the bounty formula on the
+ *  run's locked inputs while it's in play (copies' cost, Added date, rating,
+ *  and freshness measured at the start), the live game otherwise (a lock left
+ *  from an earlier run is replaced at the next start). Length and logged hours
+ *  are always live. The locked cost stands in as one copy, owned or held as
+ *  the run's copies were. */
+export function computeBounty(
+  game: EconGame & { status?: string; bountyBasis?: BountyBasis | null },
+  cfg: FormulaConfig,
+): number {
+  const b = game.status === "playing" ? game.bountyBasis : null;
+  if (!b) return computeFormula(game, cfg);
+  return computeFormula(
+    {
+      ...game,
+      addedAt: b.addedAt ?? undefined,
+      rating: b.rating,
+      copies: [{ id: "basis", platform: "", cost: b.paid, ...(b.modifierOnly ? { acquisition: "subscription" as const } : {}) }],
+    },
+    cfg,
+    b.at,
+  );
 }
 
 /** The total coins a formula yields for a game (price or bounty). */

@@ -121,6 +121,12 @@ describe("recommendationForGame", () => {
     expect(recommendationForGame([r], "me", mine)?.id).toBe("r1");
   });
 
+  it("matches on any shared catalog id, as the server does", () => {
+    const r = rec({ receiver: "me", status: "pending", catalogId: "cat-1" });
+    const mine = { id: "g1", rawgId: 5, catalogId: "cat-1" } as never;
+    expect(recommendationForGame([r], "me", mine)?.id).toBe("r1");
+  });
+
   it("ignores resolved recs, other receivers, and unrelated games", () => {
     const done = rec({ receiver: "me", status: "activated", rawgId: 46667 });
     expect(recommendationForGame([done], "me", { id: "g1", rawgId: 46667 } as never)).toBeNull();

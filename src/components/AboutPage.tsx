@@ -179,12 +179,16 @@ export function AboutPage() {
               games that have lingered in your Bazaar the longest. The date that drives this is
               the <strong className="text-ink">Added</strong> milestone on the game&apos;s page —
               backdate it to when you really bought the game (an old purchase you only just
-              imported, say) and the price settles to match.
+              imported, say) and the price settles to match. It can move earlier, but not past the
+              day the game joined your library.
             </p>
             <p>
               Finishing a game pays a <strong className="text-ink">bounty</strong> starting at{" "}
-              <Coin n={bountyBase} />. You finish games to earn and spend coins to start new ones —
-              roughly enough to afford one new game per game you complete.
+              <Coin n={bountyBase} />. It&apos;s set when you start the game, from the same details
+              as its price, so editing them while you play doesn&apos;t move it (a length change
+              still does).
+              You finish games to earn and spend coins to start new ones — roughly enough to afford
+              one new game per game you complete.
             </p>
             <p>
               Finish games back-to-back and you build a{" "}

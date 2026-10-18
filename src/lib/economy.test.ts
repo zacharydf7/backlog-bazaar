@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  computeBounty,
   computeFormula,
   formulaBreakdown,
   recencyFraction,
@@ -341,5 +342,43 @@ describe("normalizeFormula", () => {
     expect(
       "modifierRecencyPct" in normalizeFormula({ modifierRecencyPct: "x" }, DEFAULT_PRICE_FORMULA),
     ).toBe(false);
+  });
+});
+
+describe("computeBounty", () => {
+  const cfg: FormulaConfig = {
+    base: 40,
+    recencyDecayYears: 1,
+    factors: {
+      length: { enabled: true, weight: 5 },
+      recency: { enabled: true, weight: 150 },
+      paid: { enabled: true, weight: 1 },
+      played: { enabled: false, weight: 0 },
+      rating: { enabled: true, weight: 2 },
+    },
+  };
+  const start = Date.parse("2026-10-01T00:00:00Z");
+  const game = { title: "x", genres: [], hours: 10, copies: [{ id: "c", platform: "PC", cost: 20 }], addedAt: start, rating: 3 };
+
+  it("prices a run on its locked inputs, whatever the game says now, with the live length", () => {
+    const basis = { at: start, addedAt: start, paid: 20, rating: 3, modifierOnly: false };
+    const locked = computeBounty({ ...game, status: "playing", bountyBasis: basis }, cfg);
+    expect(locked).toBe(computeFormula(game, cfg, start));
+    const edited = {
+      ...game,
+      status: "playing",
+      copies: [{ id: "c", platform: "PC", cost: 500 }],
+      addedAt: Date.now(),
+      rating: 5,
+      bountyBasis: basis,
+    };
+    expect(computeBounty(edited, cfg)).toBe(locked);
+    expect(computeBounty({ ...edited, personalHours: 14 }, cfg)).toBe(locked + 20);
+  });
+
+  it("prices a game with no lock, or one not in play, on the game as it stands", () => {
+    expect(computeBounty(game, cfg)).toBe(computeFormula(game, cfg));
+    const oldRun = { at: start - 400 * 86_400_000, addedAt: start, paid: 0, rating: 0, modifierOnly: false };
+    expect(computeBounty({ ...game, status: "backlog", bountyBasis: oldRun }, cfg)).toBe(computeFormula(game, cfg));
   });
 });

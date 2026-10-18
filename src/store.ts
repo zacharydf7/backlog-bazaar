@@ -118,6 +118,7 @@ import {
   type ClearStreakConfig,
 } from "./lib/pricing";
 import {
+  computeBounty,
   computeFormula,
   lengthActivationFee,
   normalizeFormula,
@@ -6204,6 +6205,12 @@ export const useStore = create<BazaarState>((set, get) => ({
     if (error) {
       if (error.message.includes("PREREQUISITE_LOCKED")) {
         toast("Story-locked — finish its prerequisite first", Lock);
+      } else if (error.message.includes("PRICE_CHANGED")) {
+        // The server prices the start itself; one above the price shown is
+        // refused. Re-read what moves it so the card shows the new price.
+        void refreshGameFromServer(id);
+        void get().fetchRecommendations();
+        toast(`The price of ${game.title} changed. Refresh to see the new price.`, Coins);
       } else {
         set({ error: error.message });
       }
@@ -6214,8 +6221,8 @@ export const useStore = create<BazaarState>((set, get) => ({
       slot_id: string | null;
       price_paid: number | null;
     };
-    // What the server charged: less than `price` when a coin event's start
-    // discount applied.
+    // What the server charged (it prices the start itself): less than `price`
+    // when a coin event's start discount applied.
     const charged = price_paid ?? price;
     if (charged < price) {
       toast(`Discount applied: you saved ${price - charged} coins on ${game.title}`, BadgePercent);
@@ -6245,6 +6252,8 @@ export const useStore = create<BazaarState>((set, get) => ({
     // A recommended game just activated — the server resolved the rec (and
     // paid the sender); refresh so the tag drops and the sent list updates.
     if (rec) void get().fetchRecommendations();
+    // The run's bounty inputs were locked at the start (games.bounty_basis).
+    void refreshGameFromServer(id);
     toast(economyOn ? `Bought ${game.title} — now playing!` : `Started ${game.title}!`, Gamepad2);
   },
 
@@ -6312,6 +6321,7 @@ export const useStore = create<BazaarState>((set, get) => ({
           : g,
       ),
     });
+    void refreshGameFromServer(id); // the run's locked bounty inputs
     toast(`Used a voucher — ${game.title} is now playing!`, Ticket);
   },
 
@@ -6347,6 +6357,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       return;
     }
     set({ games: get().games.map(apply) });
+    void refreshGameFromServer(id); // the run's locked bounty inputs
     toast(`Replaying ${game.title} — back in Now Playing`, Gamepad2);
   },
 
@@ -6432,6 +6443,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       return;
     }
     set({ games: get().games.map(apply) });
+    void refreshGameFromServer(id); // the run's locked bounty inputs
     toast(`${game.title} is now in your Completionist lane`, Gamepad2);
   },
 
@@ -9995,7 +10007,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     // free while it was off — pays nothing (the server enforces both).
     const economyOn = get().economyEnabled;
     const freeStart = game.startedEconomyOff === true;
-    const fullReward = computeFormula(game, get().economy.bounty);
+    const fullReward = computeBounty(game, get().economy.bounty);
     const payable = effectiveFinishRewards(economyOn, freeStart, {
       full: fullReward,
       replay: computeReplayBonus(fullReward, replayBonusPct),
@@ -11645,7 +11657,12 @@ export const useStore = create<BazaarState>((set, get) => ({
       })
       .single();
     if (error) {
-      set({ error: error.message });
+      if (error.message.includes("PRICE_CHANGED")) {
+        void refreshGameFromServer(gameId);
+        toast(`The price of ${game.title} changed. Refresh to see the new price.`, Coins);
+      } else {
+        set({ error: error.message });
+      }
       return false;
     }
     const res = data as {
@@ -11681,6 +11698,7 @@ export const useStore = create<BazaarState>((set, get) => ({
             : g,
         ),
       });
+      void refreshGameFromServer(gameId); // the run's locked bounty inputs
     } else {
       // An already-playing plain Focus copy migrated into the Co-op lane
       // server-side (slot freed) — mirror it without waiting on a refetch.

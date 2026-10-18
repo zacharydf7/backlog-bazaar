@@ -130,6 +130,7 @@ export interface Game extends GameMeta {
   originalPlatform?: string | null; // a bundled game's original console (issue 86fc0b4b) — a display label telling same-named versions apart; boards, filters and stats go by the bundle's copies
   private?: boolean; // hidden from visitors to your Bazaar (owner-only; never affects the economy)
   demo?: boolean; // a wishlist game being tried as a demo (src/lib/demos.ts)
+  bountyBasis?: BountyBasis | null; // a run's bounty inputs, locked at its start (server-kept)
   stealth?: boolean; // added via Stealth Add — never broadcasts to friends (no activity-feed posts) and never touches the Clear Streak; implies private at add time, and stays in force if the game is later made visible
   priority?: GamePriority | null; // user-assigned triage tier (essential/high/medium/low); null = unassigned (the default). Personal metadata only — never affects the economy. See src/lib/gamePriority.ts
   resumed?: boolean; // a finished game pulled back into play for free (replay/endless) — re-finishing pays the Replay Bonus
@@ -370,6 +371,17 @@ export interface CoOpPartnerOption {
   displayName: string;
   avatarUrl: string | null;
   ownsGame: boolean;
+}
+
+/** A run's bounty inputs, locked by the server when it starts (games.bounty_basis):
+ *  the player-editable ones and the moment freshness is measured. computeBounty
+ *  prices a finish on them, as game_bounty does. */
+export interface BountyBasis {
+  at: number;
+  addedAt: number | null;
+  paid: number;
+  rating: number;
+  modifierOnly: boolean;
 }
 
 /** The kinds of milestone broadcast to the activity feed. */

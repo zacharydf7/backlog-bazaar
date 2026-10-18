@@ -238,7 +238,14 @@ describe("pactJoinDraft", () => {
     const draft = pactJoinDraft(
       pact({ partnerGameHours: 30, partnerGameImage: "img.jpg" }),
     );
-    expect(draft).toEqual({ title: "Hollow Knight", genres: [], hours: 30, image: "img.jpg" });
+    expect(draft).toEqual({
+      title: "Hollow Knight",
+      genres: [],
+      hours: 30,
+      image: "img.jpg",
+      // The seat the join creates, held on the partner's copy.
+      copies: [{ id: "player2", platform: "", acquisition: "player2" }],
+    });
     // addedAt stays absent: the formula reads it as "acquired right now".
     expect("addedAt" in draft).toBe(false);
   });

@@ -78,6 +78,7 @@ import {
 } from "../lib/pricing";
 import { recDiscountedPrice, recommendationForGame } from "../lib/recommendations";
 import {
+  computeBounty,
   computeFormula,
   formulaBreakdown,
   lengthActivationFee,
@@ -450,7 +451,7 @@ export function GameActions({
   // applies it at purchase (bonus_event_discount).
   const eventStart = economyEnabled ? eventStartPrice(price, perk) : null;
   const startPrice = eventStart?.price ?? price;
-  const bounty = computeFormula(game, economy.bounty);
+  const bounty = computeBounty(game, economy.bounty);
   // A resumed game (a finished game pulled back for free) or a family edition whose
   // family is already cleared re-finishes for the smaller Replay Bonus — mirror the
   // server (apply_finish) so the card never advertises the full bounty for free.
@@ -468,7 +469,7 @@ export function GameActions({
   // shorter length, its extra fee refunded (finishGame settles it first).
   const settleTo = game.status === "playing" ? beatenFinishLength(game, isCompletionist) : undefined;
   const finishAs = settleTo != null ? { ...game, personalHours: settleTo } : game;
-  const finishBounty = computeFormula(finishAs, economy.bounty);
+  const finishBounty = computeBounty(finishAs, economy.bounty);
   // At the player's bounty rate, each part rounded as apply_finish rounds it.
   const reward = showEconomy
     ? isCompletionist

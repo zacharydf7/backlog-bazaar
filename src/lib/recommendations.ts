@@ -128,8 +128,9 @@ export function sentRecommendations(
 
 /** The live (pending/imported) recommendation that covers one of MY library
  *  rows — the receiver-side match that drives the card tag and the activation
- *  discount. Explicit import link first; shared catalog identity otherwise
- *  (crosswalk-aware via catalogKey). Oldest first, matching the server. */
+ *  discount. Explicit import link, the same catalog identity (crosswalk-aware
+ *  via catalogKey), or any shared catalog id, as game_live_recommendation
+ *  matches. Oldest first. */
 export function recommendationForGame(
   recs: GameRecommendation[],
   userId: string | null,
@@ -137,6 +138,7 @@ export function recommendationForGame(
 ): GameRecommendation | null {
   if (!userId) return null;
   const key = catalogKey(game);
+  const shares = (a: unknown, b: unknown) => a != null && a === b;
   const live = recs
     .filter((r) => r.receiver === userId && (r.status === "pending" || r.status === "imported"))
     .filter(
@@ -147,7 +149,10 @@ export function recommendationForGame(
             rawgId: r.rawgId ?? undefined,
             igdbId: r.igdbId ?? undefined,
             catalogId: r.catalogId ?? undefined,
-          }) === key),
+          }) === key) ||
+        shares(game.rawgId, r.rawgId) ||
+        shares(game.igdbId, r.igdbId) ||
+        shares(game.catalogId, r.catalogId),
     );
   return live.sort((a, b) => a.createdAt - b.createdAt)[0] ?? null;
 }

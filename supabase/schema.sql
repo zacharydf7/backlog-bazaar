@@ -6478,7 +6478,8 @@ begin
     if new.status = 'playing' or new.price_paid is not null or new.reward is not null
        or new.started_at is not null or new.resumed or new.completionist or new.in_rotation
        or new.slot_id is not null or new.co_op or new.personal_hours is not null
-       or new.length_premium_owed <> 0 or new.length_fee_credit <> 0 then
+       or new.length_premium_owed <> 0 or new.length_fee_credit <> 0
+       or new.bounty_basis is not null or new.added_ceiling is not null then
       raise exception 'SERVER_COLUMNS: start a game through the Bazaar';
     end if;
     return new;
@@ -6497,7 +6498,9 @@ begin
      or (new.hours is distinct from old.hours and (old.hours is not null or old.status = 'playing'))
      or new.length_premium_owed is distinct from old.length_premium_owed
      or new.length_fee_credit is distinct from old.length_fee_credit
-     or new.length_fee_credit_run is distinct from old.length_fee_credit_run then
+     or new.length_fee_credit_run is distinct from old.length_fee_credit_run
+     or new.bounty_basis is distinct from old.bounty_basis
+     or new.added_ceiling is distinct from old.added_ceiling then
     raise exception 'SERVER_COLUMNS: that change goes through the server';
   end if;
   return new;
@@ -7078,7 +7081,12 @@ drop function if exists public.apply_purchase(uuid, integer, uuid, boolean, bool
 -- fee is the Replay-Bonus percentage of the full price — cost mirrors payout).
 -- Ledger-only distinction: the coin event's kind becomes
 -- 'family_discount_purchase' ("Family Discount Activation") instead of
--- 'purchase'. Price stays client-computed, like every activation.
+-- 'purchase'. Server-side pricing (owner, 2026-10-18): the price is
+-- game_start_price's and the family discount is derived here. p_price is only
+-- the price the player was shown (a higher server price is refused);
+-- p_family_discount is ignored, kept so deployed clients' calls resolve. A
+-- co-op accept whose fee the inviter gifted marks the transaction
+-- (app.co_op_gift) to start at 0.
 -- p_coop: activate straight into the Co-op Pacts lane (uncapped, no Focus slot
 -- consumed — like Rotation). Only respond_co_op_pact passes it; a pact accept
 -- must never be blocked by a full Focus lane. A plain buy of a card already
@@ -7128,33 +7136,47 @@ declare
   -- Coin events: the price before any event discount, and the event's name.
   v_full_price     integer;
   v_discount_event text;
+  v_row            public.games%rowtype;
+  v_family_discount boolean;
 begin
-  -- The price comes from the client: a negative one would ADD coins below.
-  if p_price is null or p_price < 0 then
-    raise exception 'Invalid price';
-  end if;
-  -- Economy off: activation is FREE — the fee is forced to zero server-side
-  -- (whatever a client passed), the balance stays frozen, and no ledger row is
-  -- written. Everything else (gates, slots, lanes, the state change) is
-  -- untouched. The stamp trigger marks the run started_economy_off so it can
-  -- never pay a bounty later, even after toggling back on.
-  if not v_econ then
-    p_price := 0;
-  end if;
-
-  select title, family_id, rawg_id, igdb_id, catalog_id
-    into v_title, v_family, v_rawg, v_igdb, v_catalog
+  -- Locked first, so the price and the run's bounty lock (games_lock_bounty_basis,
+  -- at the status update below) read the same row.
+  select * into v_row
     from public.games
-   where id = p_game and user_id = auth.uid() and status = 'backlog';
+   where id = p_game and user_id = auth.uid() and status = 'backlog'
+     for update;
   if not found then
     raise exception 'Game not available to buy';
   end if;
+  v_title := v_row.title;
+  v_family := v_row.family_id;
+  v_rawg := v_row.rawg_id;
+  v_igdb := v_row.igdb_id;
+  v_catalog := v_row.catalog_id;
+
+  -- The server's own price. Economy off: activation is FREE, the balance
+  -- stays frozen and no ledger row is written (everything else, gates, slots,
+  -- lanes, runs as usual); the stamp trigger marks the run started_economy_off
+  -- so it can never pay a bounty later. A gifted co-op fee starts at 0 too.
+  -- p_price is the price the player was shown: a start that now costs more
+  -- (family or recommendation state changed elsewhere) is refused rather than
+  -- charged, and the app re-reads and shows the new price.
+  v_family_discount := public.game_family_discounted(v_row);
+  if not v_econ or coalesce(current_setting('app.co_op_gift', true), '') = '1' then
+    v_full_price := 0;
+  else
+    v_full_price := public.game_start_price(v_row);
+  end if;
+  if coalesce(p_price, 0) > 0 and v_full_price > p_price then
+    raise exception 'PRICE_CHANGED';
+  end if;
+  p_price := v_full_price;
 
   -- Story locking: a game with an unfinished prerequisite can't be started.
   perform public.assert_prerequisite_cleared(p_game);
 
-  -- A running coin event's start discount comes off here (the client sends
-  -- the price before it); the saving counts toward the event's cap.
+  -- A running coin event's start discount comes off here; the saving counts
+  -- toward the event's cap.
   v_full_price := p_price;
   if v_econ and p_price > 0 then
     select d.price, d.event_name into p_price, v_discount_event
@@ -7216,7 +7238,7 @@ begin
   if v_econ then
     perform public.log_coin_event(
       auth.uid(),
-      case when coalesce(p_family_discount, false) then 'family_discount_purchase' else 'purchase' end,
+      case when v_family_discount then 'family_discount_purchase' else 'purchase' end,
       -p_price, 0, v_new_coins, null, p_game, v_title,
       case when v_discount_event is not null then v_discount_event || ' discount' end,
       case when v_discount_event is not null
@@ -7236,14 +7258,8 @@ begin
   select r.id, r.sender, r.game_title
     into v_rec_id, v_rec_sender, v_rec_title
     from public.game_recommendations r
-   where r.receiver = auth.uid()
-     and r.status in ('pending', 'imported')
-     and (r.imported_game_id = p_game
-       or public.game_identity_keys(v_rawg, v_igdb, v_catalog)
-          && public.game_identity_keys(r.rawg_id, r.igdb_id, r.catalog_id))
-   order by r.created_at
-   limit 1
-   for update;
+   where r.id = public.game_live_recommendation(v_row)
+     for update;
   if v_rec_id is not null then
     v_bounty := 0;
     if v_econ and p_price > 0 and public.economy_enabled(v_rec_sender) then
@@ -7924,6 +7940,8 @@ declare
   v_shadow_base  integer := 0;
   -- Coin events: the boost paid on this finish.
   v_event_bonus  integer := 0;
+  -- Server-side amounts: the full bounty.
+  v_full           integer;
 begin
   -- Snapshot the pre-action reversible state (slot/lane flags + tag) so undo_action
   -- can restore the game exactly; the update below destroys these.
@@ -7943,26 +7961,26 @@ begin
   end if;
 
   -- Replay (smaller/zero base) if another edition in the same family is already
-  -- finished, OR the game is a resumed finished game (pulled back for free) — so a
-  -- free replay can't farm a full bounty. The resumed flag carries the rule.
+  -- finished (a retired one was never cleared), OR the game is a resumed finished
+  -- game (pulled back for free) — so a free replay can't farm a full bounty. The
+  -- resumed flag carries the rule. isReplayFinish in src/lib/families.ts mirrors it.
   v_replay := coalesce(v_resumed, false)
     or (v_family is not null and exists (
       select 1 from public.games g
        where g.user_id = auth.uid() and g.family_id = v_family
-         and g.id <> p_game and g.status = 'finished'
+         and g.id <> p_game and g.status = 'finished' and coalesce(g.finish_tag, '') <> 'retired'
     ));
 
+  -- The server's own amounts (owner, 2026-10-18): the full bounty from the
+  -- run's locked inputs, and the Replay and Completion Bonuses as their shares
+  -- of it. p_full_reward, p_replay_reward and p_completion_reward are ignored,
+  -- kept so deployed clients' calls resolve.
+  select public.game_bounty(g) into v_full from public.games g where g.id = p_game;
   -- Base reward: a first-clear pays the full bounty; a replay/already-finished clear
   -- pays the Replay Bonus normally, but 0 when completing (the Completion Bonus is
   -- the reward for the extra 100% effort — no replay-bonus double-dip).
-  if v_completion then
-    v_base  := case when v_replay then 0 else greatest(0, coalesce(p_full_reward, 0)) end;
-    v_bonus := greatest(0, coalesce(p_completion_reward, 0));
-  else
-    v_base  := case when v_replay then greatest(0, coalesce(p_replay_reward, 0))
-                    else greatest(0, coalesce(p_full_reward, 0)) end;
-    v_bonus := 0;
-  end if;
+  select p.base, p.bonus into v_base, v_bonus
+    from public.finish_reward_parts(v_full, v_replay, coalesce(v_completion, false)) p;
 
   -- Economy off (or a run that was activated for free while it was off): the
   -- finish itself proceeds, but it pays nothing — now or ever. The stamp makes
@@ -13205,9 +13223,7 @@ create trigger games_log_status
 -- its add doesn't break the chain. The streak discourages BUYING before
 -- clearing; trying a Game Pass title isn't that. Unlike stealth this is
 -- one-directional on purpose: finishing such a game still EXTENDS the streak
--- (a subscription-only player isn't doing the discouraged thing, and the
--- price the client sends apply_purchase is already self-declared, so there is
--- no integrity to defend — the coins are a self-discipline device). Unknown
+-- (a subscription-only player isn't doing the discouraged thing). Unknown
 -- acquisition values read as owned so junk can never widen the exemption; DLC
 -- rows are owned CONTENT and don't count as base copies. Mirrors
 -- isModifierOnly / addBreaksClearStreak in src/lib/{copies,pricing}.ts.
@@ -17316,6 +17332,7 @@ declare
   v_fee_due       boolean;
   v_my_coins      integer;
   v_warned        boolean;
+  v_fee           integer := 0;
 begin
   if v_me is null then raise exception 'Not authenticated'; end if;
 
@@ -17356,7 +17373,8 @@ begin
      and public.co_op_card_on_platform(g.copies, v_platform)
      and (p_game is null or g.id = p_game)
    order by (g.status = 'playing') desc, g.added_at desc
-   limit 1;
+   limit 1
+     for update;
 
   if v_game.id is not null and v_game.status = 'finished'
      and coalesce(v_game.finish_tag, '') = 'retired' then
@@ -17374,9 +17392,25 @@ begin
   -- status 'pending' so the client can present the choice.
   v_fee_due := (v_game.id is null and coalesce(p_player2, false))
                or v_game.status = 'backlog';
+  -- The fee is the server's own start price (owner, 2026-10-18): for the bound
+  -- Bazaar copy, or for the Player 2 card as the insert below will make it.
+  -- p_price is only the invitee's quote, checked when they start their own
+  -- copy (not a card this join creates, whose details the client can't see).
+  if v_fee_due then
+    if v_game.id is not null then
+      v_fee := public.game_start_price(v_game);
+    else
+      select g.* into v_src
+        from public.games g
+       where g.id = v_pact.inviter_game and g.user_id = v_pact.inviter;
+      if v_src.id is not null then
+        v_fee := public.game_start_price(public.co_op_join_draft(v_src, v_me, v_platform));
+      end if;
+    end if;
+  end if;
   -- Economy off on the invitee's side: their activation runs at 0 anyway
   -- (apply_purchase forces it), so there is no fee to gift.
-  if v_fee_due and coalesce(v_pact.covers_fee, false) and coalesce(p_price, 0) > 0
+  if v_fee_due and coalesce(v_pact.covers_fee, false) and v_fee > 0
      and public.economy_enabled(v_me) then
     if not public.economy_enabled(v_pact.inviter) then
       -- The inviter's balance is frozen — the gift can't be honoured. Resolve
@@ -17384,38 +17418,38 @@ begin
       -- it (the standard activation below charges them), else stop with
       -- 'pending' so the client can present the choice.
       select coins into v_my_coins from public.profiles where id = v_me;
-      if not coalesce(p_self_pay, true) or coalesce(v_my_coins, 0) < p_price then
+      if not coalesce(p_self_pay, true) or coalesce(v_my_coins, 0) < v_fee then
         return query select null::integer, null::uuid, 'pending'::text,
                             null::uuid, null::integer, null::integer;
         return;
       end if;
     else
       update public.profiles
-         set coins = coins - p_price
-       where id = v_pact.inviter and coins >= p_price
+         set coins = coins - v_fee
+       where id = v_pact.inviter and coins >= v_fee
        returning coins into v_inviter_coins;
       if v_inviter_coins is not null then
-        v_gift := p_price;
+        v_gift := v_fee;
         perform public.log_coin_event(
-          v_pact.inviter, 'co_op_gift', -p_price, 0, v_inviter_coins, null,
+          v_pact.inviter, 'co_op_gift', -v_fee, 0, v_inviter_coins, null,
           v_pact.inviter_game, v_pact.title, null,
           jsonb_build_object('pact', p_id, 'partner', v_me)
         );
       else
         select coins into v_my_coins from public.profiles where id = v_me;
-        if not coalesce(p_self_pay, true) or coalesce(v_my_coins, 0) < p_price then
+        if not coalesce(p_self_pay, true) or coalesce(v_my_coins, 0) < v_fee then
           select exists (
             select 1 from public.co_op_pact_events e
              where e.pact_id = p_id and e.action = 'fee_shortfall'
           ) into v_warned;
           insert into public.co_op_pact_events (pact_id, actor, target, action, title, detail)
           values (p_id, v_me, v_pact.inviter, 'fee_shortfall', v_pact.title,
-                  jsonb_build_object('price', p_price));
+                  jsonb_build_object('price', v_fee));
           if not v_warned then
             insert into public.notifications (user_id, type, title, body, link)
             values (v_pact.inviter, 'co_op_fee_short', 'Your pact gift needs more coins',
                     v_name || ' tried to accept the pact for ' || v_pact.title
-                    || ' but you''re short of the ' || p_price
+                    || ' but you''re short of the ' || v_fee
                     || '-coin activation fee you offered to cover',
                     case when v_pact.inviter_game is not null
                          then 'game:' || v_pact.inviter_game end);
@@ -17487,10 +17521,15 @@ begin
   -- refunds nothing and the gift can never be turned back into the invitee's
   -- coins).
   if v_game.status = 'backlog' then
+    -- A gifted fee starts the card at 0 (apply_purchase reads the mark).
+    if v_gift is not null then
+      perform set_config('app.co_op_gift', '1', true);
+    end if;
     select ap.coins, ap.slot_id, ap.price_paid into v_coins, v_slot, v_price_paid
       from public.apply_purchase(v_game.id,
-                                 case when v_gift is not null then 0 else p_price end,
-                                 null, false, false, p_family_discount, true) ap;
+                                 case when v_gift is null and not v_created then p_price else 0 end,
+                                 null, false, false, false, true) ap;
+    perform set_config('app.co_op_gift', '', true);
   elsif v_game.status = 'playing'
         and not coalesce(v_game.in_rotation, false)
         and not coalesce(v_game.completionist, false)
@@ -22795,6 +22834,11 @@ begin
      or new.status <> 'backlog' then
     return null;
   end if;
+  -- A pre-order marked on a game already owned didn't arrive with it, so its
+  -- Added date stays (games_cap_added_at didn't move its limit).
+  if new.added_ceiling is not null and new.added_ceiling::date < v_on then
+    return null;
+  end if;
   update public.game_milestones m
      set occurred_on = v_on
    where m.id = (select m2.id from public.game_milestones m2
@@ -25285,7 +25329,7 @@ $$;
 
 -- A complete formula from a stored one, each missing or malformed setting
 -- taken from p_fallback: the SQL mirror of normalizeFormula in
--- src/lib/economy.ts (minus modifierRecencyPct, which only prices copies).
+-- src/lib/economy.ts.
 create or replace function public.econ_normalize(p_raw jsonb, p_fallback jsonb)
 returns jsonb
 language sql
@@ -25305,17 +25349,26 @@ as $$
                'weight', case when jsonb_typeof(p_raw #> array['factors', k, 'weight']) = 'number'
                               then p_raw #> array['factors', k, 'weight']
                               else coalesce(p_fallback #> array['factors', k, 'weight'], '0'::jsonb) end))
-        from unnest(array['length', 'recency', 'paid', 'played', 'rating']) k));
+        from unnest(array['length', 'recency', 'paid', 'played', 'rating']) k))
+  || case when jsonb_typeof(p_raw -> 'modifierRecencyPct') = 'number'
+            then jsonb_build_object('modifierRecencyPct', greatest(0, least(100, (p_raw ->> 'modifierRecencyPct')::numeric)))
+          when jsonb_typeof(p_fallback -> 'modifierRecencyPct') = 'number'
+            then jsonb_build_object('modifierRecencyPct', greatest(0, least(100, (p_fallback ->> 'modifierRecencyPct')::numeric)))
+          else '{}'::jsonb end;
 $$;
 
 -- Evaluate a complete formula: the SQL mirror of computeFormula in
 -- src/lib/economy.ts. total = round(base + each enabled weight x its unit),
 -- never below 0. Units: length = hours (12 when unknown), recency = 1 when
 -- just acquired fading to 0 over recencyDecayYears, paid = dollars, played =
--- hours, rating = stars. economyFormula.sql.test.ts runs both on the same inputs.
+-- hours, rating = stars; p_recency_scale is a modifier-only game's share of
+-- recency (econ_recency_scale). economyFormula.sql.test.ts runs both on the
+-- same inputs. Re-created without its old signature, which lacked the scale.
+drop function if exists public.econ_formula(jsonb, numeric, numeric, timestamptz, numeric, numeric, timestamptz);
 create or replace function public.econ_formula(
   p_cfg jsonb, p_hours numeric, p_paid numeric, p_acquired timestamptz,
-  p_played numeric default 0, p_rating numeric default 0, p_now timestamptz default now()
+  p_played numeric default 0, p_rating numeric default 0, p_now timestamptz default now(),
+  p_recency_scale numeric default 1
 )
 returns integer
 language sql
@@ -25331,7 +25384,8 @@ as $$
       ('recency', case when (p_cfg ->> 'recencyDecayYears')::numeric <= 0 then 0::numeric
                        else greatest(0::numeric, least(1::numeric,
                               1 - greatest(0::numeric, extract(epoch from p_now - coalesce(p_acquired, p_now))::numeric)
-                                  / (365.25 * 86400) / (p_cfg ->> 'recencyDecayYears')::numeric)) end),
+                                  / (365.25 * 86400) / (p_cfg ->> 'recencyDecayYears')::numeric)) end
+                  * coalesce(p_recency_scale, 1)),
       ('paid', coalesce(p_paid, 0)::numeric),
       ('played', coalesce(p_played, 0)::numeric),
       ('rating', coalesce(p_rating, 0)::numeric)
@@ -25351,6 +25405,308 @@ as $$
            public.econ_normalize(c.bounty_formula, public.econ_default_formula('bounty')))
     from public.app_config c where c.id = 1;
 $$;
+
+-- ---------------------------------------------------------------------------
+-- Server-side game pricing (owner, 2026-10-18). The server prices every start
+-- and pays every finish itself; the amounts a client sends are ignored. The
+-- mirrors in src/lib/economy.ts (computeFormula, computeBounty), families.ts
+-- and recommendations.ts keep the cards' numbers equal, and
+-- serverPricing.sql.test.ts runs both sides on the same inputs.
+-- ---------------------------------------------------------------------------
+
+-- The dollars recorded across a game's copies (totalCost in src/lib/copies.ts).
+create or replace function public.copies_total_cost(p_copies jsonb)
+returns numeric
+language sql
+immutable
+as $$
+  select coalesce(sum((c ->> 'cost')::numeric) filter (where jsonb_typeof(c -> 'cost') = 'number'), 0)
+    from jsonb_array_elements(case when jsonb_typeof(p_copies) = 'array' then p_copies else '[]'::jsonb end) c;
+$$;
+
+-- Held only through subscription / borrowed / Player 2 copies (isModifierOnly
+-- in src/lib/copies.ts): at least one base (non-DLC) copy, none plainly owned.
+create or replace function public.copies_modifier_only(p_copies jsonb)
+returns boolean
+language sql
+immutable
+as $$
+  select coalesce(count(*) > 0 and bool_and(coalesce(c ->> 'acquisition', '') in ('subscription', 'borrowed', 'player2')), false)
+    from jsonb_array_elements(case when jsonb_typeof(p_copies) = 'array' then p_copies else '[]'::jsonb end) c
+   where coalesce(c ->> 'format', '') <> 'dlc';
+$$;
+
+-- The share of the fresh-pickup term a game pays: modifierRecencyPct for a
+-- modifier-only game when the formula sets one, else all of it (unitOf's
+-- recency relief in src/lib/economy.ts).
+create or replace function public.econ_recency_scale(p_cfg jsonb, p_modifier_only boolean)
+returns numeric
+language sql
+immutable
+as $$
+  select case when p_modifier_only and jsonb_typeof(p_cfg -> 'modifierRecencyPct') = 'number'
+              then greatest(0, least(100, (p_cfg ->> 'modifierRecencyPct')::numeric)) / 100
+              else 1 end;
+$$;
+
+-- Does a Bazaar edition start at the Family Discount (isFamilyDiscounted in
+-- src/lib/families.ts)? Another edition of its family is playing, or finished
+-- and not retired.
+create or replace function public.game_family_discounted(g public.games)
+returns boolean
+language sql
+stable
+set search_path = public
+as $$
+  select g.family_id is not null and exists (
+    select 1 from public.games s
+     where s.user_id = g.user_id and s.family_id = g.family_id and s.id is distinct from g.id
+       and (s.status = 'playing' or (s.status = 'finished' and coalesce(s.finish_tag, '') <> 'retired')));
+$$;
+
+-- The live (pending or imported) recommendation a game's start resolves:
+-- the explicit import link, else any shared catalog identity; oldest first.
+-- game_start_price discounts on it and apply_purchase settles it.
+-- recommendationForGame in src/lib/recommendations.ts mirrors it.
+create or replace function public.game_live_recommendation(g public.games)
+returns uuid
+language sql
+stable
+set search_path = public
+as $$
+  select r.id
+    from public.game_recommendations r
+   where r.receiver = g.user_id and r.status in ('pending', 'imported')
+     and (r.imported_game_id = g.id
+       or public.game_identity_keys(g.rawg_id, g.igdb_id, g.catalog_id)
+          && public.game_identity_keys(r.rawg_id, r.igdb_id, r.catalog_id))
+   order by r.created_at
+   limit 1;
+$$;
+
+-- What starting a game costs before any coin-event discount: the price
+-- formula on the game as it stands, then the Family Discount (the Replay
+-- Bonus share of the price), then a friend's recommendation discount. The
+-- buyGame chain in src/store.ts mirrors it.
+create or replace function public.game_start_price(g public.games)
+returns integer
+language sql
+stable
+set search_path = public
+as $$
+  with cfg as (
+    select public.econ_normalize(c.price_formula, public.econ_default_formula('price')) as f,
+           greatest(0, least(100, coalesce(c.replay_bonus_pct, 25))) as replay_pct,
+           greatest(0, least(90, coalesce(c.rec_discount_pct, 20))) as rec_pct
+      from public.app_config c where c.id = 1
+  ), listed as (
+    select public.econ_formula(cfg.f, coalesce(g.personal_hours, g.hours)::numeric, public.copies_total_cost(g.copies),
+             g.added_at, coalesce(g.played_hours, 0)::numeric, coalesce(g.rating, 0)::numeric, now(),
+             public.econ_recency_scale(cfg.f, public.copies_modifier_only(g.copies))) as price
+      from cfg
+  ), family as (
+    select case when public.game_family_discounted(g)
+                then greatest(0, round(l.price * cfg.replay_pct / 100.0))::integer
+                else l.price end as price
+      from listed l, cfg
+  )
+  select case when public.game_live_recommendation(g) is not null
+         then greatest(0, round(f.price * (100 - cfg.rec_pct) / 100.0))::integer
+         else f.price end
+    from family f, cfg;
+$$;
+
+-- What a finish pays from the full bounty: a first clear pays it all; a
+-- replay pays the Replay Bonus share, or nothing on a completion run (the
+-- Completion Bonus share is that run's reward). computeFinishReward and
+-- computeCompletionReward in src/lib/pricing.ts mirror it.
+create or replace function public.finish_reward_parts(
+  p_full integer, p_replay boolean, p_completion boolean, out base integer, out bonus integer
+)
+language sql
+stable
+set search_path = public
+as $$
+  select case when p_completion then case when p_replay then 0 else greatest(0, p_full) end
+              when p_replay then greatest(0, round(greatest(0, p_full) * c.replay_pct / 100.0))::integer
+              else greatest(0, p_full) end,
+         case when p_completion then greatest(0, round(greatest(0, p_full) * c.completion_pct / 100.0))::integer
+              else 0 end
+    from (select greatest(0, least(100, coalesce(replay_bonus_pct, 25))) as replay_pct,
+                 greatest(0, least(100, coalesce(completion_bonus_pct, 50))) as completion_pct
+            from public.app_config where id = 1) c;
+$$;
+revoke execute on function public.finish_reward_parts(integer, boolean, boolean) from public, anon, authenticated;
+
+-- The Player 2 card a co-op join creates, as respond_co_op_pact prices its
+-- fee before inserting it: the inviter's game on the pact's platform, held on
+-- a 'player2' copy, joining the library now.
+create or replace function public.co_op_join_draft(p_src public.games, p_user uuid, p_platform text)
+returns public.games
+language plpgsql
+stable
+as $$
+declare
+  v_draft public.games%rowtype;
+begin
+  v_draft.user_id := p_user;
+  v_draft.status := 'backlog';
+  v_draft.rawg_id := p_src.rawg_id;
+  v_draft.catalog_id := p_src.catalog_id;
+  v_draft.hours := p_src.hours;
+  v_draft.rating := p_src.rating;
+  v_draft.added_at := now();
+  v_draft.played_hours := 0;
+  v_draft.copies := jsonb_build_array(jsonb_build_object('platform', p_platform, 'acquisition', 'player2'));
+  return v_draft;
+end;
+$$;
+revoke execute on function public.co_op_join_draft(public.games, uuid, text) from public, anon, authenticated;
+
+-- A run's bounty inputs, locked when it starts (owner, 2026-10-18): the
+-- player-editable ones (the copies' cost, the Added date, the rating) and the
+-- moment freshness is measured, so editing them mid-run can't move what the
+-- finish pays. Length and logged hours stay live: length changes go through
+-- set_personal_length's fees.
+alter table public.games add column if not exists bounty_basis jsonb;
+
+create or replace function public.game_bounty_basis(g public.games, p_at timestamptz)
+returns jsonb
+language sql
+stable
+as $$
+  select jsonb_build_object('at', p_at, 'added_at', g.added_at, 'paid', public.copies_total_cost(g.copies),
+                            'rating', coalesce(g.rating, 0), 'modifier_only', public.copies_modifier_only(g.copies));
+$$;
+
+-- The full bounty a finish pays, before the Replay or Completion share: the
+-- bounty formula on the run's locked inputs (live ones for a game with no
+-- lock), with the current length and logged hours. computeBounty in
+-- src/lib/economy.ts mirrors it.
+create or replace function public.game_bounty(g public.games)
+returns integer
+language sql
+stable
+set search_path = public
+as $$
+  select public.econ_formula(f.f, coalesce(g.personal_hours, g.hours)::numeric, (b.b ->> 'paid')::numeric,
+           (b.b ->> 'added_at')::timestamptz, coalesce(g.played_hours, 0)::numeric, (b.b ->> 'rating')::numeric,
+           (b.b ->> 'at')::timestamptz, public.econ_recency_scale(f.f, (b.b ->> 'modifier_only')::boolean))
+    from (select coalesce(g.bounty_basis, public.game_bounty_basis(g, now())) as b) b,
+         (select public.econ_normalize(c.bounty_formula, public.econ_default_formula('bounty')) as f
+            from public.app_config c where c.id = 1) f;
+$$;
+
+-- Lock the inputs whenever a run starts, whichever path started it (a buy, a
+-- voucher, a co-op accept, a replay or completion entry). An undo putting a
+-- finished game back in play keeps the lock it finished with.
+create or replace function public.games_lock_bounty_basis()
+returns trigger
+language plpgsql
+set search_path = public
+as $$
+begin
+  if new.status = 'playing' and (tg_op = 'INSERT' or old.status is distinct from 'playing')
+     and coalesce(current_setting('app.undo_in_progress', true), '') <> '1' then
+    new.bounty_basis := public.game_bounty_basis(new, now());
+  end if;
+  return new;
+end;
+$$;
+drop trigger if exists games_lock_bounty_basis on public.games;
+create trigger games_lock_bounty_basis
+  before insert or update of status on public.games
+  for each row execute function public.games_lock_bounty_basis();
+
+-- Games already in play when this shipped are locked now, with freshness as of
+-- their start (owner, 2026-10-18). Fills the new column only; re-running finds
+-- nothing left to fill.
+update public.games g
+   set bounty_basis = public.game_bounty_basis(g, coalesce(g.started_at, now()))
+ where g.status = 'playing' and g.bounty_basis is null;
+
+-- The Added date (the fresh-pickup factor) can be backdated, but not moved past
+-- the day the game joined the library (owner, 2026-10-18), so a game can't be
+-- made to look freshly picked up. added_ceiling is that moment: the add, a
+-- wishlist entry's import, or a pre-order's arrival (the arrival redate moves
+-- the Added date forward on purpose). Server-kept; null = no limit yet (a
+-- wishlist entry).
+alter table public.games add column if not exists added_ceiling timestamptz;
+
+create or replace function public.games_cap_added_at()
+returns trigger
+language plpgsql
+set search_path = public
+as $$
+begin
+  if tg_op = 'INSERT' then
+    if new.status <> 'wishlist' then
+      new.added_ceiling := now();
+    end if;
+  elsif old.status = 'wishlist' and new.status <> 'wishlist' then
+    -- Only a first arrival sets it: a game moved to the Wishlist and back
+    -- keeps the day it first joined.
+    new.added_ceiling := coalesce(old.added_ceiling, now());
+  elsif old.preordered_at is not null and new.preordered_at is null and new.status = 'backlog'
+        and (select max(e.created_at) from public.preorder_events e
+              where e.game_id = old.id and e.action = 'placed')
+            <= coalesce(old.added_ceiling, now()) + interval '1 day' then
+    -- A pre-order placed as the game joined arrives now (the arrival redate
+    -- moves its Added date here). One marked on a game already owned doesn't.
+    -- Placement is the server's 'placed' event time, never the client-written
+    -- preordered_at (pay_preorder_bonus reads it the same way).
+    new.added_ceiling := now();
+  end if;
+  if new.added_ceiling is not null and new.added_at > new.added_ceiling then
+    new.added_at := new.added_ceiling;
+  end if;
+  return new;
+end;
+$$;
+drop trigger if exists games_cap_added_at on public.games;
+create trigger games_cap_added_at
+  before insert or update of status, added_at, preordered_at on public.games
+  for each row execute function public.games_cap_added_at();
+
+-- An Added milestone (which drives added_at) can't be dated past that day
+-- either; a day of slack covers timezones ahead of the server's.
+create or replace function public.game_milestones_cap_added()
+returns trigger
+language plpgsql
+set search_path = public
+as $$
+declare
+  v_ceiling timestamptz;
+begin
+  if new.kind <> 'added' or coalesce(current_setting('app.undo_in_progress', true), '') = '1' then
+    return new;
+  end if;
+  select added_ceiling into v_ceiling from public.games where id = new.game_id;
+  if v_ceiling is not null and new.occurred_on > v_ceiling::date + 1 then
+    raise exception 'The Added date can''t be after %, when this game joined your library',
+      to_char(v_ceiling, 'Mon FMDD, YYYY');
+  end if;
+  return new;
+end;
+$$;
+drop trigger if exists game_milestones_cap_added on public.game_milestones;
+create trigger game_milestones_cap_added
+  before insert or update of occurred_on, kind on public.game_milestones
+  for each row execute function public.game_milestones_cap_added();
+
+-- Games already in the library: the latest of their Added date and their first
+-- arrival in it (the status log). Fills the new column only.
+update public.games g
+   set added_ceiling = greatest(g.added_at, coalesce((
+         select min(e.created_at) from public.game_status_events e
+          where e.game_id = g.id and e.to_status in ('backlog', 'playing', 'finished')), g.added_at))
+ where g.status <> 'wishlist' and g.added_ceiling is null;
+
+revoke execute on function public.game_family_discounted(public.games) from public, anon, authenticated;
+revoke execute on function public.game_live_recommendation(public.games) from public, anon, authenticated;
+revoke execute on function public.game_start_price(public.games) from public, anon, authenticated;
+revoke execute on function public.game_bounty(public.games) from public, anon, authenticated;
+revoke execute on function public.game_bounty_basis(public.games, timestamptz) from public, anon, authenticated;
 
 create table if not exists public.game_dlc (
   id              uuid primary key default gen_random_uuid(),

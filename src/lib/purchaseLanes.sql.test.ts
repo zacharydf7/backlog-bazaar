@@ -14,11 +14,31 @@ const schema = readFileSync(new URL("../../supabase/schema.sql", import.meta.url
 const start = schema.indexOf("create or replace function public.apply_purchase(");
 const body = schema.slice(start, schema.indexOf("\n$$;", start));
 
-describe("apply_purchase price guard", () => {
-  it("rejects a negative or missing client price before any coins move", () => {
-    const guard = body.search(/if p_price is null or p_price < 0 then\s+raise exception 'Invalid price';/);
-    expect(guard).toBeGreaterThan(-1);
-    expect(guard).toBeLessThan(body.indexOf("set coins = coins - p_price"));
+describe("apply_purchase pricing", () => {
+  it("charges the server's own price, never the client's, before any coins move", () => {
+    const priced = body.indexOf("v_full_price := public.game_start_price(v_row);");
+    const refused = body.indexOf("if coalesce(p_price, 0) > 0 and v_full_price > p_price then");
+    const charged = body.indexOf("p_price := v_full_price;");
+    expect(priced).toBeGreaterThan(-1);
+    expect(priced).toBeLessThan(refused);
+    expect(refused).toBeLessThan(charged);
+    expect(charged).toBeLessThan(body.indexOf("set coins = coins - p_price"));
+    expect(body).toMatch(/status = 'backlog'\s+for update;/);
+    expect(body).toContain("case when v_family_discount then 'family_discount_purchase' else 'purchase' end");
+  });
+});
+
+describe("apply_finish payout", () => {
+  const finishStart = schema.indexOf("create or replace function public.apply_finish(");
+  const finish = schema.slice(finishStart, schema.indexOf("\n$$;", finishStart));
+
+  it("pays the server's own bounty and bonus shares, never the client's amounts", () => {
+    expect(finish).toContain("select public.game_bounty(g) into v_full");
+    expect(finish).not.toMatch(/coalesce\(p_(full|replay|completion)_reward/);
+  });
+
+  it("doesn't count a retired edition as the family's clear", () => {
+    expect(finish).toContain("g.status = 'finished' and coalesce(g.finish_tag, '') <> 'retired'");
   });
 });
 

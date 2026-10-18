@@ -1,6 +1,7 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type {
   AdminSlotSummary,
+  BountyBasis,
   AdminUser,
   AppNotification,
   Badge,
@@ -117,6 +118,7 @@ export interface GameRow {
   private: boolean | null;
   stealth: boolean | null;
   demo?: boolean | null;
+  bounty_basis?: unknown;
   priority: string | null;
   original_platform: string | null;
   compilation_game_for?: string | null;
@@ -217,6 +219,7 @@ export function rowToGame(r: GameRow): Game {
     private: r.private ?? false,
     stealth: r.stealth ?? false,
     demo: r.demo ?? false,
+    bountyBasis: coerceBountyBasis(r.bounty_basis),
     priority: coerceGamePriority(r.priority),
     originalPlatform: r.original_platform ?? null,
     compilationGameFor: r.compilation_game_for ?? null,
@@ -990,6 +993,22 @@ export interface ActivityEventRow {
   created_at: string;
   cheer_count: number | string | null;
   cheered_by_me: boolean | null;
+}
+
+/** games.bounty_basis as the client reads it; null when absent or malformed. */
+export function coerceBountyBasis(raw: unknown): BountyBasis | null {
+  if (raw == null || typeof raw !== "object") return null;
+  const b = raw as Record<string, unknown>;
+  const at = typeof b.at === "string" ? Date.parse(b.at) : NaN;
+  if (!Number.isFinite(at)) return null;
+  const addedAt = typeof b.added_at === "string" ? Date.parse(b.added_at) : NaN;
+  return {
+    at,
+    addedAt: Number.isFinite(addedAt) ? addedAt : null,
+    paid: typeof b.paid === "number" ? b.paid : 0,
+    rating: typeof b.rating === "number" ? b.rating : 0,
+    modifierOnly: b.modifier_only === true,
+  };
 }
 
 export function rowToActivityEvent(r: ActivityEventRow): ActivityEvent {

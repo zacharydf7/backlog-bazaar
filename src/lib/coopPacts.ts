@@ -120,6 +120,8 @@ export function pactJoinDraft(pact: CoOpPact): EconGame {
     genres: [],
     hours: pact.partnerGameHours ?? undefined,
     image: pact.partnerGameImage ?? undefined,
+    // The seat the join creates: held on the partner's copy (co_op_join_draft).
+    copies: [{ id: "player2", platform: pact.partnerGamePlatform ?? "", acquisition: "player2" }],
   };
 }
 
