@@ -55,6 +55,7 @@ import { FinishTagBadge } from "./FinishTagBadge";
 import { ClearLogChip } from "./ClearLogChip";
 import { ScoreChip } from "./StarRating";
 import { useViewing } from "../lib/viewContext";
+import { useActiveExpansion } from "./ExpansionControls";
 
 /** One game's board card — a focused visual anchor. It surfaces only the cover
  *  art, the title, and a clean tag per unique platform you own it on; all the
@@ -82,6 +83,8 @@ export function GameCard({
    *  card): the platform tags then aggregate the whole deck, top card first. */
   stack?: Game[];
 }) {
+  // The story expansion this game is playing, if any (your own DLC only).
+  const expansion = useActiveExpansion(game.id);
   const { bazaarToWishlist, bazaarToFinished, importFromWishlist, removeGame, compilations, setCompilationChildStatus, expandGameToCompilation, parentTemplates, setGamePrivate, severFamily } =
     useStore();
   const { readOnly } = useViewing();
@@ -758,9 +761,11 @@ export function GameCard({
           <div>
             {/* A unified family card wears the family's display name (which
                 falls back to the primary's own title). */}
+            {/* An expansion run leads with the expansion it's playing. */}
             <h3 className="font-display text-lg font-semibold leading-tight text-ink">
-              {fam ? fam.name : <TitleWithOrigin game={game} />}
+              {expansion ? expansion.name : fam ? fam.name : <TitleWithOrigin game={game} />}
             </h3>
+            {expansion && <p className="text-xs text-muted">{game.title} expansion</p>}
             <div className="mt-1 flex flex-wrap items-center gap-1">
               {/* Triage tier (issue 901eb363) — owner-only, like the Private
                   chip: your urgency ranking is planning metadata, not part of

@@ -31,7 +31,7 @@ beforeAll(async () => {
       ongoing boolean not null default false, hours real, personal_hours real, played_hours real,
       length_premium_owed integer not null default 0, length_fee_credit integer not null default 0,
       length_fee_credit_run timestamptz, started_economy_off boolean not null default false,
-      bounty_basis jsonb, added_ceiling timestamptz,
+      bounty_basis jsonb, added_ceiling timestamptz, expansion_run boolean not null default false,
       started_story_locked boolean not null default false, progress_note text);
     grant all on public.games to authenticated;
   `);
@@ -79,6 +79,7 @@ describe("games_guard_server_columns", () => {
     ["clear its length debt", "update public.games set length_premium_owed = 5"],
     ["rewrite its locked bounty inputs", "update public.games set bounty_basis = '{\"paid\": 999}'"],
     ["lift its Added-date limit", "update public.games set added_ceiling = now() + interval '1 year'"],
+    ["put it in the DLC lane", "update public.games set expansion_run = true"],
     ["start a run directly", "insert into public.games (id, title, status) values (gen_random_uuid(), 'Free', 'playing')"],
     ["add a game with a price paid", "insert into public.games (id, title, price_paid) values (gen_random_uuid(), 'Paid', 999)"],
   ])("refuses a player's direct write to %s", async (_label, sql) => {

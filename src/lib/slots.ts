@@ -143,18 +143,20 @@ export function rotationMeterCells(used: number): number {
 // ---------------------------------------------------------------------------
 // Now Playing lanes. Every playing game lives in exactly one lane, derived by
 // precedence from its flags (mirrors the SQL on profiles.*_slots):
-//   in_rotation → Rotation; else completionist → Completionist; else resumed →
-//   Replay; else co_op → Co-op Pacts; else Focus.
+//   expansion_run → DLC; else in_rotation → Rotation; else completionist →
+//   Completionist; else resumed → Replay; else co_op → Co-op Pacts; else Focus.
 // Each capped lane has its own independent per-user capacity (general_slots,
-// replay_slots, completionist_slots); Rotation and Co-op are uncapped. The
+// replay_slots, completionist_slots); Rotation, DLC and Co-op are uncapped. The
 // capacity helpers below parallel the Rotation ones so the lanes behave
 // identically.
 // ---------------------------------------------------------------------------
 
-/** The five Now Playing lanes. */
-export type Lane = "focus" | "replay" | "completionist" | "rotation" | "coop";
+/** The Now Playing lanes. */
+export type Lane = "focus" | "replay" | "dlc" | "completionist" | "rotation" | "coop";
 
 type LaneFlags = {
+  /** Playing one of its story expansions (games.expansion_run). */
+  expansionRun?: boolean;
   inRotation?: boolean;
   completionist?: boolean;
   resumed?: boolean;
@@ -168,6 +170,7 @@ type LaneFlags = {
 export const LANE_ORDER: readonly Lane[] = [
   "focus",
   "replay",
+  "dlc",
   "completionist",
   "rotation",
   "coop",
@@ -178,6 +181,7 @@ export const LANE_ORDER: readonly Lane[] = [
 export const LANE_LABEL: Record<Lane, string> = {
   focus: "Focus",
   replay: "Replay",
+  dlc: "DLC",
   completionist: "Completionist",
   rotation: "Rotation",
   coop: "Co-op",
@@ -185,6 +189,8 @@ export const LANE_LABEL: Record<Lane, string> = {
 
 /** Which lane a playing game belongs to, by flag precedence. */
 export function laneOf(g: LaneFlags): Lane {
+  // An expansion run is a resumed game, so it must win over Replay.
+  if (g.expansionRun) return "dlc";
   if (g.inRotation) return "rotation";
   if (g.completionist) return "completionist";
   if (g.resumed) return "replay";
@@ -196,9 +202,10 @@ export function laneOf(g: LaneFlags): Lane {
  *  Order within each lane is preserved. */
 export function partitionByLane<T extends LaneFlags>(
   games: T[],
-): { focus: T[]; replay: T[]; completionist: T[]; rotation: T[]; coop: T[] } {
+): { focus: T[]; replay: T[]; dlc: T[]; completionist: T[]; rotation: T[]; coop: T[] } {
   const focus: T[] = [];
   const replay: T[] = [];
+  const dlc: T[] = [];
   const completionist: T[] = [];
   const rotation: T[] = [];
   const coop: T[] = [];
@@ -207,11 +214,12 @@ export function partitionByLane<T extends LaneFlags>(
       case "rotation": rotation.push(g); break;
       case "completionist": completionist.push(g); break;
       case "replay": replay.push(g); break;
+      case "dlc": dlc.push(g); break;
       case "coop": coop.push(g); break;
       default: focus.push(g);
     }
   }
-  return { focus, replay, completionist, rotation, coop };
+  return { focus, replay, dlc, completionist, rotation, coop };
 }
 
 /** Games currently playing in a given lane. */

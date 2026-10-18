@@ -14,6 +14,7 @@ import {
   Handshake,
   SlidersHorizontal,
   FlaskConical,
+  Package,
   type LucideIcon,
 } from "lucide-react";
 import { boardOf, isDemo } from "./lib/demos";
@@ -1602,6 +1603,7 @@ export default function App() {
 const LANE_META: Record<Lane, { icon: LucideIcon; label: string }> = {
   focus: { icon: Gamepad2, label: LANE_LABEL.focus },
   replay: { icon: RotateCcw, label: LANE_LABEL.replay },
+  dlc: { icon: Package, label: LANE_LABEL.dlc },
   completionist: { icon: Target, label: LANE_LABEL.completionist },
   rotation: { icon: InfinityIcon, label: LANE_LABEL.rotation },
   coop: { icon: Handshake, label: LANE_LABEL.coop },
@@ -1889,14 +1891,18 @@ function LaneRow({
   onJumpToSection: (anchorId: string) => void;
   dnd?: LaneDnd;
 }) {
-  const unlimited = lane === "rotation" || lane === "coop";
+  const unlimited = lane === "rotation" || lane === "coop" || lane === "dlc";
   const cap = Math.max(0, Math.floor(capacity));
   const reps = representativeOccupants(laneGames(playing, lane));
   const used = reps.length;
+  // With this many lanes, an empty one stays out of the way (owner,
+  // 2026-10-18), except Focus, where buys land, and any lane while a game is
+  // being dragged that it can take.
+  if (used === 0 && lane !== "focus" && !dnd?.planFor(lane)?.allowed) return null;
   const cells = unlimited ? rotationMeterCells(used) : Math.max(cap, used);
   if (cells === 0) return null;
   const full = !unlimited && used >= cap;
-  // An empty lane (no games) collapses to just its heading + meter on mobile,
+  // An empty Focus lane (except mid-drag) collapses to just its heading + meter on mobile,
   // where the single-column stack would otherwise waste a screenful on empty
   // "Open" tiles (issue 98ff1bf8). The lg 2-col grid always shows the full body.
   const empty = used === 0;
@@ -1906,11 +1912,13 @@ function LaneRow({
       ? "ongoing"
       : lane === "replay"
         ? "free re-play"
-        : lane === "completionist"
-          ? "100% run"
-          : lane === "coop"
-            ? "shared run"
-            : "";
+        : lane === "dlc"
+          ? "expansion"
+          : lane === "completionist"
+            ? "100% run"
+            : lane === "coop"
+              ? "shared run"
+              : "";
   const cards: SlotView[] = Array.from({ length: cells }).map((_, i) => ({
     key: `${lane}-${i}`,
     kind: lane,
@@ -2003,7 +2011,7 @@ function LaneRow({
       {/* The slot cards come straight under the single-line heading so they line up
           across both columns; the lane's note sits below them (its height varies).
           Rotation keeps the SAME two-tile footprint but carousels sideways once it
-          holds more than fits. An empty lane hides this whole body on mobile so the
+          holds more than fits. An empty Focus lane hides this whole body on mobile so the
           heading + meter alone mark its place (restored at lg, the 2-col grid). */}
       <div className={empty && !dnd?.dragging ? "hidden lg:block" : undefined}>
         {unlimited ? (
@@ -2127,6 +2135,16 @@ function NowPlayingSlots({
         dnd={dnd}
       />
       <LaneRow
+        lane="dlc"
+        anchor={DLC_ANCHOR}
+        title="DLC"
+        playing={playing}
+        note="Story expansions you're playing, no limit — an expansion never takes a Replay slot."
+        onJumpToGame={onJumpToGame}
+        onJumpToSection={onJumpToSection}
+        dnd={dnd}
+      />
+      <LaneRow
         lane="completionist"
         anchor={COMPLETIONIST_ANCHOR}
         title="Completionist"
@@ -2193,12 +2211,14 @@ function NowPlayingSlots({
 // headers can scroll to them.
 const FOCUS_ANCHOR = "np-focus";
 const REPLAY_ANCHOR = "np-replay";
+const DLC_ANCHOR = "np-dlc";
 const COMPLETIONIST_ANCHOR = "np-completionist";
 const ROTATION_ANCHOR = "np-rotation";
 const COOP_ANCHOR = "np-coop";
 const LANE_ANCHOR: Record<Lane, string> = {
   focus: FOCUS_ANCHOR,
   replay: REPLAY_ANCHOR,
+  dlc: DLC_ANCHOR,
   completionist: COMPLETIONIST_ANCHOR,
   rotation: ROTATION_ANCHOR,
   coop: COOP_ANCHOR,

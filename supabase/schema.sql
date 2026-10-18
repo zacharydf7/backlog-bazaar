@@ -6478,7 +6478,7 @@ begin
        or new.started_at is not null or new.resumed or new.completionist or new.in_rotation
        or new.slot_id is not null or new.co_op or new.personal_hours is not null
        or new.length_premium_owed <> 0 or new.length_fee_credit <> 0
-       or new.bounty_basis is not null or new.added_ceiling is not null then
+       or new.bounty_basis is not null or new.added_ceiling is not null or new.expansion_run then
       raise exception 'SERVER_COLUMNS: start a game through the Bazaar';
     end if;
     return new;
@@ -6499,7 +6499,8 @@ begin
      or new.length_fee_credit is distinct from old.length_fee_credit
      or new.length_fee_credit_run is distinct from old.length_fee_credit_run
      or new.bounty_basis is distinct from old.bounty_basis
-     or new.added_ceiling is distinct from old.added_ceiling then
+     or new.added_ceiling is distinct from old.added_ceiling
+     or new.expansion_run is distinct from old.expansion_run then
     raise exception 'SERVER_COLUMNS: that change goes through the server';
   end if;
   return new;
@@ -8815,7 +8816,7 @@ begin
   select count(distinct coalesce(family_id, id)) into v_used
     from public.games
    where user_id = auth.uid() and status = 'playing' and resumed
-     and not completionist and not in_rotation
+     and not completionist and not in_rotation and not expansion_run
      and coalesce(family_id, id) <> v_unit;
   if v_used >= coalesce(v_cap, 0) then
     raise exception 'Your Replay lane is full';
@@ -9164,6 +9165,7 @@ begin
          resumed       = (v_prev->>'resumed')::boolean,
          completionist = (v_prev->>'completionist')::boolean,
          in_rotation   = (v_prev->>'in_rotation')::boolean,
+         expansion_run = coalesce((v_prev->>'expansion_run')::boolean, false),
          ongoing       = (v_prev->>'ongoing')::boolean,
          finish_tag    = v_prev->>'finish_tag',
          started_at    = (v_prev->>'started_at')::timestamptz,
@@ -25290,7 +25292,7 @@ create trigger subscriptions_log_event
 -- 'dlc.preview' key retired with the old 'dlc' copy format). Three kinds,
 -- picked when adding:
 --   expansion  a story expansion with an ending (Ghost of Yotei's DLC). It's
---              played as an expansion RUN through the Replay lane, priced and
+--              played as an expansion RUN in the DLC lane, priced and
 --              paid by its own length, cost and date. The only kind that
 --              moves coins.
 --   update     new content for a game you keep playing (a Hearthstone card
@@ -25711,6 +25713,13 @@ revoke execute on function public.game_start_price(public.games) from public, an
 revoke execute on function public.game_bounty(public.games) from public, anon, authenticated;
 revoke execute on function public.game_bounty_basis(public.games, timestamptz) from public, anon, authenticated;
 
+-- expansion_run (owner, 2026-10-18): the game is playing one of its story
+-- expansions, in the uncapped DLC lane of Now Playing (no Replay slot). It
+-- keeps resumed = true for the replay economics (the base game pays no second
+-- bounty). Server-kept: start_expansion sets it, expansion_restore_game and
+-- undo put it back.
+alter table public.games add column if not exists expansion_run boolean not null default false;
+
 create table if not exists public.game_dlc (
   id              uuid primary key default gen_random_uuid(),
   user_id         uuid not null references auth.users (id) on delete cascade,
@@ -25840,6 +25849,13 @@ begin
 end;
 $$;
 
+-- Expansion runs already in progress when the DLC lane shipped move into it.
+-- Fills the new flag only; re-running finds nothing left to fill.
+update public.games g
+   set expansion_run = true
+ where g.status = 'playing' and not g.expansion_run
+   and exists (select 1 from public.game_dlc d where d.game_id = g.id and d.run_status = 'playing');
+
 -- Turn an old 'dlc' copy (the copy format DLC records replaced, 2026-10-18)
 -- into a DLC record: the record is added as save_game_dlc adds one, and the
 -- copy leaves the game's copies in the same step, so its cost is never
@@ -25949,7 +25965,7 @@ begin
   perform set_config('app.undo_in_progress', '1', true);
   perform set_config('app.expansion_write', '1', true);
   update public.games
-     set status = 'finished', slot_id = null, resumed = false,
+     set status = 'finished', slot_id = null, resumed = false, expansion_run = false,
          completionist = coalesce((p_dlc.run_prev ->> 'completionist')::boolean, false),
          in_rotation = coalesce((p_dlc.run_prev ->> 'in_rotation')::boolean, false),
          started_at = (p_dlc.run_prev ->> 'started_at')::timestamptz,
@@ -25967,8 +25983,8 @@ end;
 $$;
 revoke execute on function public.expansion_restore_game(public.game_dlc) from public, anon, authenticated;
 
--- Start an expansion run on a finished game: it moves into the Replay lane
--- (enter_replay checks the lane has room) and the start price is charged.
+-- Start an expansion run on a finished game: it moves into the uncapped DLC
+-- lane (no Replay slot needed) and the start price is charged.
 -- The game's finished state is snapshotted for the run's end.
 create or replace function public.start_expansion(p_dlc uuid)
 returns table (coins integer, price_paid integer)
@@ -26001,7 +26017,13 @@ begin
   v_paying := public.economy_enabled(v_uid) and v_quote.paying;
   if v_paying then v_price := v_quote.price; end if;
 
-  perform public.enter_replay(v_game.id);
+  -- Into the DLC lane: uncapped, so no Replay slot is needed (owner,
+  -- 2026-10-18). Otherwise the replay entry enter_replay makes.
+  update public.games
+     set status = 'playing', started_at = now(), price_paid = 0,
+         finished_at = null, reward = null, slot_id = null,
+         resumed = true, completionist = false, in_rotation = false, expansion_run = true
+   where id = v_game.id;
 
   perform 1 from public.profiles where id = v_uid for update;
   if v_price > 0 then
@@ -26130,7 +26152,7 @@ begin
   insert into public.action_undos (user_id, game_id, game_title, action, coins_delta, prev)
   values (v_uid, v_game.id, v_game.title, 'expansion_finish', v_reward + v_event + v_streak.bonus,
           jsonb_build_object(
-            'status', 'playing', 'slot_id', v_game.slot_id, 'resumed', true,
+            'status', 'playing', 'slot_id', v_game.slot_id, 'resumed', true, 'expansion_run', true,
             'completionist', coalesce(v_game.completionist, false),
             'in_rotation', coalesce(v_game.in_rotation, false), 'ongoing', coalesce(v_game.ongoing, false),
             'finish_tag', v_game.finish_tag, 'started_at', v_game.started_at,

@@ -48,7 +48,7 @@ export const RELEASES: Release[] = [
     tag: "feature",
     items: [
       "Add DLC from a game's Library tab: expansions, updates or items.",
-      "Story expansions cost coins to start and pay a bounty when cleared.",
+      "Story expansions play in their own DLC lane and pay a bounty when cleared.",
       "What you spent on DLC counts toward the game's total.",
       "Old DLC copies move over with one tap.",
     ],

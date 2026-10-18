@@ -51,7 +51,7 @@ beforeEach(() => vi.clearAllMocks());
 describe("ExpansionStartActions", () => {
   it("offers each unplayed story expansion and confirms its price and bounty", () => {
     setup([LEGENDS, { ...LEGENDS, id: "d2", name: "Played", runStatus: "cleared" }]);
-    render(<ExpansionStartActions game={GAME} showEconomy replayHasRoom />);
+    render(<ExpansionStartActions game={GAME} showEconomy />);
     expect(screen.queryByText(/Play Played/)).toBeNull();
     fireEvent.click(screen.getByText("Play Legends"));
     // Default formulas: 40 + 3 x 8 + 120 fresh; a flat 40 bounty after 4h.

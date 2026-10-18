@@ -29,6 +29,7 @@ import {
   Sparkles,
   BadgePercent,
   FlaskConical,
+  Package,
 } from "lucide-react";
 import { isDemo } from "../lib/demos";
 import { ownedInstanceCovering } from "../lib/addRouting";
@@ -105,6 +106,7 @@ const LANE_BADGE: Record<
 > = {
   focus: { icon: Gamepad2, label: LANE_LABEL.focus },
   replay: { icon: RotateCcw, label: LANE_LABEL.replay },
+  dlc: { icon: Package, label: LANE_LABEL.dlc },
   completionist: { icon: Target, label: LANE_LABEL.completionist },
   coop: { icon: Handshake, label: LANE_LABEL.coop },
 };
@@ -1662,7 +1664,7 @@ export function GameActions({
                     <InfinityIcon size={13} /> Convert to Endless
                   </button>
                 )}
-                <ExpansionStartActions game={game} showEconomy={showEconomy} replayHasRoom={replayHasRoom} />
+                <ExpansionStartActions game={game} showEconomy={showEconomy} />
               </>
             )}
           </div>

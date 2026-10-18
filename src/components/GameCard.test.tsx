@@ -25,6 +25,20 @@ beforeEach(() => {
   act(() => useStore.setState({ viewing: null, parentTemplates: [] }));
 });
 
+describe("GameCard during an expansion run", () => {
+  it("leads with the expansion it's playing", () => {
+    act(() =>
+      useStore.setState({
+        gameDlc: [{ id: "d1", gameId: "g1", kind: "expansion", name: "Echoes of Sekigahara", runStatus: "playing" } as never],
+      }),
+    );
+    render(<GameCard game={game({ title: "Ghost of Yotei", status: "playing", resumed: true, expansionRun: true })} />);
+    expect(screen.getByRole("heading", { name: "Echoes of Sekigahara" })).toBeTruthy();
+    expect(screen.getByText("Ghost of Yotei expansion")).toBeTruthy();
+    act(() => useStore.setState({ gameDlc: [] }));
+  });
+});
+
 describe("GameCard focused layout", () => {
   it("renders the title but relocates secondary metadata to the detail modal", () => {
     render(

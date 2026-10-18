@@ -352,6 +352,15 @@ describe("Rotation lane (capacity + flag)", () => {
     expect(rotation.map((g) => g.id)).toEqual(["b", "d"]);
   });
 
+  it("puts an expansion run in the DLC lane, not Replay, so it takes no Replay slot", () => {
+    const run = game("playing", { id: "r", resumed: true, expansionRun: true });
+    const replay = game("playing", { id: "p", resumed: true });
+    expect(laneOf(run)).toBe("dlc");
+    const lanes = partitionByLane([run, replay]);
+    expect(lanes.dlc.map((g) => g.id)).toEqual(["r"]);
+    expect(lanes.replay.map((g) => g.id)).toEqual(["p"]);
+  });
+
   it("partitionByLane handles all-focus and all-rotation", () => {
     const focusOnly = partitionByLane([game("playing"), game("playing")]);
     expect(focusOnly.rotation).toHaveLength(0);

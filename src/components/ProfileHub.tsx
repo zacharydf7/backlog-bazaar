@@ -21,6 +21,7 @@ import {
   Target,
   Handshake,
   Infinity as InfinityIcon,
+  Package,
   type LucideIcon,
 } from "lucide-react";
 import { useStore } from "../store";
@@ -893,6 +894,7 @@ function Module({
 const LANE_ICON: Record<Lane, LucideIcon> = {
   focus: Gamepad2,
   replay: RotateCcw,
+  dlc: Package,
   completionist: Target,
   rotation: InfinityIcon,
   coop: Handshake,

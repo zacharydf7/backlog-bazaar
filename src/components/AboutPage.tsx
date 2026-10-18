@@ -323,10 +323,12 @@ export function AboutPage() {
 
           <Section icon={Lock} title="Now Playing lanes & Shelve It">
             <p>
-              Now Playing is split into five lanes. Focus, Replay and Completionist each hold a
-              limited number of games — two apiece to start, and{" "}
+              Now Playing is split into lanes, and a lane only shows once a game is in it (Focus
+              always shows). Focus, Replay and Completionist each hold a limited number of games —
+              two apiece to start, and{" "}
               <strong className="text-ink">yours to change any time</strong> in Account settings
-              — so pick deliberately; Rotation (live-service games) and Co-op Pacts have no limit. <strong className="text-ink">Focus</strong> is for the games
+              — so pick deliberately; Rotation (live-service games), DLC (story expansions you&apos;re
+              playing) and Co-op Pacts have no limit. <strong className="text-ink">Focus</strong> is for the games
               you&apos;re working to finish (buying a game starts it here).{" "}
               <strong className="text-ink">Shelve It</strong> drops a Focus game back to your Bazaar
               and refunds everything you paid — changing your mind costs nothing.
@@ -526,9 +528,10 @@ export function AboutPage() {
             <strong className="text-ink">expansion</strong> you can finish, an{" "}
             <strong className="text-ink">update</strong> or season for a game you keep playing, or
             an <strong className="text-ink">item</strong> like a cosmetic or in-game currency. A
-            story expansion is played for its own coins: it costs coins to start and pays a
-            bounty when you clear it, both from its own length, cost and date, and it never
-            changes what the base game cost or paid. What you spent on DLC counts in the
+            story expansion is played for its own coins, in its own{" "}
+            <strong className="text-ink">DLC</strong> lane on Now Playing: it costs coins to start
+            and pays a bounty when you clear it, both from its own length, cost and date, and it
+            never changes what the base game cost or paid. What you spent on DLC counts in the
             game&apos;s spend and value totals.
           </Section>
 

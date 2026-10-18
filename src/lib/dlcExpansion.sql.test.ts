@@ -2,7 +2,7 @@
 //
 // Exercises the REAL DLC functions from schema.sql in PGlite: save_game_dlc,
 // the expansion run (start_expansion / finish_expansion / cancel_expansion
-// over enter_replay and advance_clear_streak), expansion_quote's server-side
+// in the DLC lane, beside enter_replay, and advance_clear_streak), expansion_quote's server-side
 // pricing frozen at the start, undo_action's expansion branch, and the guard
 // that keeps a running expansion's game from leaving through a plain finish.
 // has_permission, economy_enabled, log_coin_event and bonus_event_pay are
@@ -48,7 +48,7 @@ beforeAll(async () => {
       resumed boolean not null default false, slot_id uuid, family_id uuid, ongoing boolean not null default false,
       finish_tag text, length_premium_owed integer, stealth boolean not null default false,
       bounty_held integer not null default 0, bounty_held_total integer, bounty_gate_hours numeric,
-      copies jsonb not null default '[]'::jsonb);
+      copies jsonb not null default '[]'::jsonb, expansion_run boolean not null default false);
     create table public.activity_events (actor uuid, game_id uuid, kind text, created_at timestamptz not null default now());
     create table public.game_length_events (game_id uuid, created_at timestamptz not null default now());
     create table public.shadow_economy_adjustments (user_id uuid, game_id uuid, game_title text,
@@ -142,20 +142,55 @@ async function one<T>(sql: string, params: unknown[] = []): Promise<T> {
 }
 
 const coins = () => one<{ coins: number }>("select coins from public.profiles").then((r) => r.coins);
-const game = () => one<Record<string, unknown>>("select status, resumed, finished_at, reward, price_paid from public.games");
+const game = () =>
+  one<Record<string, unknown>>("select status, resumed, expansion_run, finished_at, reward, price_paid from public.games");
 const logHours = (h: number) => db.query("update public.games set played_hours = played_hours + $1", [h]);
 
 describe("expansion runs", () => {
-  it("prices the start from the server's formulas and moves the game into Replay", async () => {
+  it("prices the start from the server's formulas and moves the game into the DLC lane", async () => {
     const id = await addExpansion();
+    // A full Replay lane doesn't matter: the DLC lane has no limit.
+    await db.exec("update public.profiles set replay_slots = 0");
     // A just-acquired 8h, $20 expansion: 40 + 24 + 20 + 120.
     expect(await one("select * from public.start_expansion($1)", [id])).toEqual({ coins: 796, price_paid: 204 });
-    expect(await game()).toMatchObject({ status: "playing", resumed: true });
+    expect(await game()).toMatchObject({ status: "playing", resumed: true, expansion_run: true });
     expect(await one("select run_status, run_hours_start, run_price from public.game_dlc")).toEqual({
       run_status: "playing",
       run_hours_start: 40,
       run_price: 204,
     });
+  });
+
+  it("leaves the Replay slot free for a replay, which a plain replay still fills", async () => {
+    const G2 = "00000000-0000-4000-8000-0000000000b2";
+    const G3 = "00000000-0000-4000-8000-0000000000b3";
+    await db.query(
+      `insert into public.games (id, user_id, title, status, played_hours, finished_at)
+         values ($1, $3, 'Replay A', 'finished', 10, $4), ($2, $3, 'Replay B', 'finished', 10, $4)`,
+      [G2, G3, U, FINISHED],
+    );
+    await db.exec("update public.profiles set replay_slots = 1");
+    await db.query("select public.start_expansion($1)", [await addExpansion()]);
+    await db.query("select public.enter_replay($1)", [G2]);
+    expect(await one("select status, resumed from public.games where id = $1", [G2])).toEqual({
+      status: "playing",
+      resumed: true,
+    });
+    await expect(db.query("select public.enter_replay($1)", [G3])).rejects.toThrow();
+  });
+
+  it("moves a run already in progress into the DLC lane once, on re-apply too", async () => {
+    const backfill = schema.match(/update public\.games g\s+set expansion_run = true[^;]+;/g);
+    expect(backfill).toHaveLength(1);
+    const id = await addExpansion();
+    await db.query("select public.start_expansion($1)", [id]);
+    await db.exec("update public.games set expansion_run = false");
+    await db.exec(backfill![0]);
+    expect(await game()).toMatchObject({ status: "playing", expansion_run: true });
+    // A finished game with an owned (not running) expansion stays put.
+    await db.query("select public.cancel_expansion($1)", [id]);
+    await db.exec(backfill![0]);
+    expect(await game()).toMatchObject({ status: "finished", expansion_run: false });
   });
 
   it("pays the full bounty once the gate is logged, and restores the game as it was", async () => {
@@ -171,7 +206,7 @@ describe("expansion runs", () => {
     expect(r).toMatchObject({ reward: 250, streak: 1, event_bonus: 250 });
     expect(Number(r.logged_hours)).toBe(4);
     expect(await coins()).toBe(1000 - 204 + 250);
-    expect(await game()).toMatchObject({ status: "finished", resumed: false, reward: 300, price_paid: 150 });
+    expect(await game()).toMatchObject({ status: "finished", resumed: false, expansion_run: false, reward: 300, price_paid: 150 });
     expect(new Date((await game()).finished_at as string).toISOString()).toBe(new Date(FINISHED).toISOString());
     expect(await one("select action, coins_delta from public.action_undos")).toEqual({
       action: "expansion_finish",
@@ -213,7 +248,7 @@ describe("expansion runs", () => {
     await db.query("select public.start_expansion($1)", [id]);
     expect(await one("select refunded from public.cancel_expansion($1)", [id])).toEqual({ refunded: 204 });
     expect(await coins()).toBe(1000);
-    expect(await game()).toMatchObject({ status: "finished", reward: 300 });
+    expect(await game()).toMatchObject({ status: "finished", reward: 300, expansion_run: false });
     expect(await one("select run_status from public.game_dlc")).toEqual({ run_status: "owned" });
   });
 
@@ -333,7 +368,7 @@ describe("expansion runs", () => {
     await db.exec("update public.profiles set coins = coins + 250");
     expect(await one("select coins from public.undo_action($1)", [undo_id])).toEqual({ coins: 796 });
     expect(await one("select clear_streak from public.profiles")).toEqual({ clear_streak: 0 });
-    expect(await game()).toMatchObject({ status: "playing", resumed: true });
+    expect(await game()).toMatchObject({ status: "playing", resumed: true, expansion_run: true });
     expect(await one("select run_status from public.game_dlc")).toEqual({ run_status: "playing" });
   });
 

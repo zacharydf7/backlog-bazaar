@@ -118,6 +118,7 @@ export interface GameRow {
   private: boolean | null;
   stealth: boolean | null;
   demo?: boolean | null;
+  expansion_run?: boolean | null;
   bounty_basis?: unknown;
   priority: string | null;
   original_platform: string | null;
@@ -219,6 +220,7 @@ export function rowToGame(r: GameRow): Game {
     private: r.private ?? false,
     stealth: r.stealth ?? false,
     demo: r.demo ?? false,
+    expansionRun: r.expansion_run ?? false,
     bountyBasis: coerceBountyBasis(r.bounty_basis),
     priority: coerceGamePriority(r.priority),
     originalPlatform: r.original_platform ?? null,

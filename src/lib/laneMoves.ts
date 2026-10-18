@@ -15,7 +15,7 @@
 // the buttons use, so a drop can never overfill a lane.
 
 import type { Game } from "../types";
-import { canEnterLane, laneOf, type Lane } from "./slots";
+import { LANE_ORDER, canEnterLane, laneOf, type Lane } from "./slots";
 
 /** Per-user lane capacities, straight from the store. Rotation is absent on
  *  purpose — that lane is uncapped (see rotationMeterCells in slots.ts). */
@@ -48,6 +48,8 @@ export function planLaneMove(
   }
   const from = laneOf(game);
   if (from === to) return { allowed: false, reason: "Already in this lane" };
+  // An expansion run stays in the DLC lane until it's cleared or stopped.
+  if (from === "dlc") return { allowed: false, reason: "Clear or stop the expansion first" };
   // Where a stopped 100% run lands: Replay for a resumed game, the Co-op lane
   // for a pact-bound one, Focus otherwise.
   const coopReturn = pactBound && !game.resumed;
@@ -99,6 +101,9 @@ export function planLaneMove(
       }
       return { allowed: true, action: "exitCompletionist" };
 
+    case "dlc":
+      return { allowed: false, reason: "Expansions start from their game's DLC" };
+
     case "coop":
       if (from === "completionist" && coopReturn) {
         // Stopping the 100% run on a pacted card re-seats it here (uncapped).
@@ -117,6 +122,5 @@ export function legalLaneTargets(
   caps: LaneCaps,
   pactBound = false,
 ): Lane[] {
-  const all: Lane[] = ["focus", "replay", "completionist", "rotation", "coop"];
-  return all.filter((lane) => planLaneMove(game, games, lane, caps, pactBound).allowed);
+  return LANE_ORDER.filter((lane) => planLaneMove(game, games, lane, caps, pactBound).allowed);
 }

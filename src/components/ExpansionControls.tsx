@@ -34,15 +34,7 @@ function useExpansionQuote(dlc: GameDlc): ExpansionQuote {
 
 /** "Play <expansion>" on a finished game, one per story expansion not yet
  *  played, each confirming what it costs and pays. */
-export function ExpansionStartActions({
-  game,
-  showEconomy,
-  replayHasRoom,
-}: {
-  game: Game;
-  showEconomy: boolean;
-  replayHasRoom: boolean;
-}) {
+export function ExpansionStartActions({ game, showEconomy }: { game: Game; showEconomy: boolean }) {
   const all = useStore((s) => s.gameDlc);
   const [picked, setPicked] = useState<GameDlc | null>(null);
   const ready = all.filter((d) => d.gameId === game.id && d.kind === "expansion" && d.runStatus === "owned");
@@ -52,13 +44,8 @@ export function ExpansionStartActions({
         <button
           key={d.id}
           onClick={() => setPicked(d)}
-          disabled={!replayHasRoom}
-          title={
-            replayHasRoom
-              ? `Play the ${d.name} expansion`
-              : "Your Replay lane is full — free a slot, or raise its size in Account settings"
-          }
-          className="inline-flex items-center gap-1.5 text-xs text-subtle transition hover:text-ink disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:text-subtle"
+          title={`Play the ${d.name} expansion in your DLC lane`}
+          className="inline-flex items-center gap-1.5 text-xs text-subtle transition hover:text-ink"
         >
           <BookOpen size={13} /> Play {d.name}
         </button>

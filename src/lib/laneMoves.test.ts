@@ -142,6 +142,18 @@ describe("planLaneMove", () => {
   });
 });
 
+describe("the DLC lane", () => {
+  it("keeps an expansion run in its lane, and nothing drags into it", () => {
+    const run = game({ resumed: true, expansionRun: true });
+    expect(legalLaneTargets(run, [run], caps)).toEqual([]);
+    const g = game();
+    expect(planLaneMove(g, [g], "dlc", caps)).toEqual({
+      allowed: false,
+      reason: "Expansions start from their game's DLC",
+    });
+  });
+});
+
 describe("legalLaneTargets", () => {
   it("lists exactly the droppable lanes for a plain focus game", () => {
     const g = game();

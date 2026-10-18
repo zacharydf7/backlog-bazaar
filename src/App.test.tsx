@@ -180,37 +180,52 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: /^PC$/ })).toBeTruthy();
   });
 
-  it("collapses empty Now Playing lanes on mobile while keeping filled ones (98ff1bf8)", async () => {
+  it("hides empty Now Playing lanes, except Focus, and keeps filled ones", async () => {
     render(<App />);
     await screen.findAllByRole("heading", { name: /Backlog Bazaar/i });
 
-    // One game in the Focus lane (status "playing", no lane flags); Replay,
-    // Completionist, and Rotation all stay empty.
+    // One game in the Replay lane; Focus, DLC, Completionist, Rotation and
+    // Co-op are all empty.
     act(() =>
       useStore.setState({
         viewing: null,
-        games: [libGame({ id: "gp", title: "Now Playing Game", status: "playing" })],
+        games: [libGame({ id: "gr", title: "Replayed Game", status: "playing", resumed: true })],
       }),
     );
-
-    // Open the Now Playing board, where the four-lane slot meter renders.
     fireEvent.click(screen.getAllByRole("button", { name: /^Now Playing$/i })[0]);
 
-    // The filled Focus lane keeps its body (tiles + note) on every breakpoint —
-    // its wrapper carries no responsive-hide class.
+    // Focus stays even when empty: it's where a bought game starts. Empty, its
+    // body collapses on mobile and comes back at lg (98ff1bf8).
     const focusNote = await screen.findByText(/buying a game starts it here/i);
-    expect(focusNote.parentElement?.className ?? "").not.toMatch(/(^|\s)hidden(\s|$)/);
+    expect(focusNote.parentElement?.className ?? "").toMatch(/(^|\s)hidden(\s|$)/);
+    expect(focusNote.parentElement?.className ?? "").toMatch(/lg:block/);
+    // The filled Replay lane shows.
+    expect(screen.getByTitle("Jump to your Replay games")).toBeTruthy();
+    // Empty lanes stay out of the way (owner, 2026-10-18).
+    expect(screen.queryByText(/Story expansions you're playing/i)).toBeNull();
+    expect(screen.queryByText(/completing pays the Completion Bonus/i)).toBeNull();
+    expect(screen.queryByText(/Shared playthroughs with a friend/i)).toBeNull();
+  });
 
-    // An empty lane hides its body on mobile (reclaiming the empty "Open" tiles)
-    // and restores it at lg — the heading + meter still mark its place.
-    const replayNote = screen.getByText(/re-finishing pays the Replay Bonus/i);
-    expect(replayNote.parentElement?.className ?? "").toMatch(/(^|\s)hidden(\s|$)/);
-    expect(replayNote.parentElement?.className ?? "").toMatch(/lg:block/);
-    // The Replay heading itself never collapses — the lane stays discoverable,
-    // and it sits OUTSIDE the hidden body wrapper.
-    const replayHeading = screen.getByTitle("Jump to your Replay games");
-    expect(replayHeading).toBeTruthy();
-    expect(replayHeading.closest(".hidden")).toBeNull();
+  it("shows an empty lane during a drag only when it can take the dragged game", async () => {
+    render(<App />);
+    await screen.findAllByRole("heading", { name: /Backlog Bazaar/i });
+    act(() =>
+      useStore.setState({
+        viewing: null,
+        games: [libGame({ id: "gf", title: "Focus Game", status: "playing" })],
+      }),
+    );
+    fireEvent.click(screen.getAllByRole("button", { name: /^Now Playing$/i })[0]);
+
+    const tile = await screen.findByTitle(/Jump to Focus Game — or drag it/);
+    expect(screen.queryByText(/completing pays the Completion Bonus/i)).toBeNull();
+    fireEvent.dragStart(tile, { dataTransfer: { setData: () => {}, effectAllowed: "" } });
+    // Completionist can take a Focus game; the DLC lane never takes a drop.
+    expect(screen.getByText(/completing pays the Completion Bonus/i)).toBeTruthy();
+    expect(screen.queryByText(/Story expansions you're playing/i)).toBeNull();
+    fireEvent.dragEnd(tile);
+    expect(screen.queryByText(/completing pays the Completion Bonus/i)).toBeNull();
   });
 
   it("pages a large board behind a Show more control instead of mounting all cards (86dce059)", async () => {
