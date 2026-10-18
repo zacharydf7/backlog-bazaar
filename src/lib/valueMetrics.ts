@@ -63,9 +63,13 @@ export function valueStatusOf(
 /** The value verdict for a single game card. Wishlist entries are unowned —
  *  their (rare) recorded costs are hunting notes, not purchases — so they're
  *  never judged. */
-export function gameValueStatus(game: Game, target: number | null | undefined): ValueStatus | null {
+export function gameValueStatus(
+  game: Game,
+  target: number | null | undefined,
+  dlcSpend = 0,
+): ValueStatus | null {
   if (game.status === "wishlist") return null;
-  return valueStatusOf(totalCost(game.copies), game.playedHours ?? 0, target);
+  return valueStatusOf(totalCost(game.copies) + dlcSpend, game.playedHours ?? 0, target);
 }
 
 /** Format a $/hour rate for display, e.g. "$1.87/hr". */
@@ -124,13 +128,17 @@ export interface ValueFinancials {
 /** Compute the financial rollup for the current ledger view. `target` only
  *  gates the well-spent judgement — total spend and cost-per-hour are always
  *  available. */
-export function valueFinancials(games: Game[], target: number | null | undefined): ValueFinancials {
+export function valueFinancials(
+  games: Game[],
+  target: number | null | undefined,
+  dlcSpendOf: (game: Game) => number = () => 0,
+): ValueFinancials {
   let totalSpent = 0;
   let paidHours = 0;
   let wellSpent = 0;
   let eligible = 0;
   for (const g of games) {
-    const spend = totalCost(g.copies);
+    const spend = totalCost(g.copies) + dlcSpendOf(g);
     if (!(spend > 0)) continue; // zero-cost: bypass everything (never skews)
     totalSpent += spend;
     paidHours += Math.max(0, g.playedHours ?? 0);

@@ -136,6 +136,13 @@ describe("valueFinancials", () => {
     game({ id: "d", copies: [copy(0)], playedHours: 50 }), // $0 cost: bypassed too
   ];
 
+  it("counts each game's DLC in what it cost", () => {
+    const f = valueFinancials(lib, 2, (g) => (g.id === "b" ? 30 : 0));
+    expect(f.totalSpent).toBe(120);
+    // b now cost $60 at $2/hr: needs 30h, has 5h: still not met.
+    expect(f.wellSpent).toBe(1);
+  });
+
   it("sums spend and computes cost-per-hour over PAID games only", () => {
     const f = valueFinancials(lib, 2);
     expect(f.totalSpent).toBe(90);

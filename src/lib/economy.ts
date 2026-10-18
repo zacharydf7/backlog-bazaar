@@ -15,7 +15,7 @@
 // All functions here are pure, so they can be unit-tested without React/Supabase.
 
 import type { BountyBasis, GameMeta } from "../types";
-import { isModifierOnly, totalCost } from "./copies";
+import { isModifierOnly, nonDlcCopies, totalCost } from "./copies";
 
 /** Assumed length (hours) when a game has no recorded length. */
 export const DEFAULT_HOURS = 12;
@@ -135,7 +135,9 @@ function unitOf(key: FactorKey, game: EconGame, cfg: FormulaConfig, nowMs: numbe
       return recencyFraction(game.addedAt, cfg.recencyDecayYears, nowMs) * relief;
     }
     case "paid":
-      return totalCost(game.copies);
+      // DLC copies never count toward the base game's price or bounty (owner,
+      // 2026-10-18; copies_total_cost on the server).
+      return totalCost(nonDlcCopies(game.copies));
     case "played":
       return game.playedHours ?? 0;
     case "rating":

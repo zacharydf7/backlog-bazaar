@@ -84,10 +84,11 @@ export function rowsToCopies(rows: CopyRowDraft[]): GameCopy[] {
     });
 }
 
+// DLC isn't a copy format any more (owner, 2026-10-18): DLC is recorded on the
+// game page's DLC section, where an old DLC copy converts.
 const FORMATS: { value: CopyFormat; label: string }[] = [
   { value: "physical", label: "Physical" },
   { value: "digital", label: "Digital" },
-  { value: "dlc", label: "DLC" },
 ];
 
 /** Sentinel option value for the in-dropdown "Missing platform?" escape hatch —
@@ -95,9 +96,9 @@ const FORMATS: { value: CopyFormat; label: string }[] = [
 export const SHOW_ALL_PLATFORMS = "__show-all-platforms__";
 
 /** Editable list of the copies you own for a game: platform (with suggestions),
- *  an optional Physical/Digital/DLC toggle, cost, and note. Add as many as you
+ *  an optional Physical/Digital toggle, cost, and note. Add as many as you
  *  like, including multiple copies on the same platform (e.g. physical +
- *  digital, or the base game plus a DLC purchase). */
+ *  digital). */
 export function CopyRowsEditor({
   rows,
   onChange,
@@ -205,26 +206,31 @@ export function CopyRowsEditor({
             </button>
           </div>
           <div className="mt-2 flex flex-wrap items-center gap-2">
-            {/* Physical / Digital — optional; click the active one to clear it. */}
-            <div className="inline-flex overflow-hidden rounded-lg border border-line">
-              {FORMATS.map((f) => {
-                const active = r.format === f.value;
-                return (
-                  <button
-                    key={f.value}
-                    type="button"
-                    aria-pressed={active}
-                    onClick={() => update(r.id, { format: active ? "" : f.value })}
-                    className={
-                      "px-2.5 py-1.5 text-xs font-medium transition " +
-                      (active ? "bg-brand text-brand-fg" : "bg-surface text-muted hover:text-ink")
-                    }
-                  >
-                    {f.label}
-                  </button>
-                );
-              })}
-            </div>
+            {/* Physical / Digital — optional; click the active one to clear it. An
+                old DLC copy says where it goes now instead. */}
+            {r.format === "dlc" ? (
+              <span className="text-[11px] text-subtle">Old DLC copy: make it a DLC record in the game's DLC section</span>
+            ) : (
+              <div className="inline-flex overflow-hidden rounded-lg border border-line">
+                {FORMATS.map((f) => {
+                  const active = r.format === f.value;
+                  return (
+                    <button
+                      key={f.value}
+                      type="button"
+                      aria-pressed={active}
+                      onClick={() => update(r.id, { format: active ? "" : f.value })}
+                      className={
+                        "px-2.5 py-1.5 text-xs font-medium transition " +
+                        (active ? "bg-brand text-brand-fg" : "bg-surface text-muted hover:text-ink")
+                      }
+                    >
+                      {f.label}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
             {/* A Player 2 copy is someone else's — it never carries a cost
                 (issue 3eb956ff), so the field disappears (rowsToCopies drops
                 any previously-typed amount on save too). */}

@@ -41,6 +41,19 @@ export interface Release {
 export const RELEASES: Release[] = [
   // ── October 2026 ──────────────────────────────────────────────────────────
   {
+    id: "2026-10-18-dlc",
+    date: "2026-10-18",
+    title: "Track your DLC and expansions",
+    summary: "Record DLC on any game, and play story expansions for coins of their own.",
+    tag: "feature",
+    items: [
+      "Add DLC from a game's Library tab: expansions, updates or items.",
+      "Story expansions cost coins to start and pay a bounty when cleared.",
+      "What you spent on DLC counts toward the game's total.",
+      "Old DLC copies move over with one tap.",
+    ],
+  },
+  {
     id: "2026-10-18-demos",
     date: "2026-10-18",
     title: "Track the demos you play",
@@ -52,6 +65,7 @@ export const RELEASES: Release[] = [
       "Demo time earns no coins and doesn't count toward goals.",
       "Get the full game and your demo hours come along.",
     ],
+    link: { label: "Open Now Playing", view: "playing" },
   },
   {
     id: "2026-10-18-drop-in-sessions",

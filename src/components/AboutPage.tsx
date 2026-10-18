@@ -510,16 +510,26 @@ export function AboutPage() {
             with its own status, play time, and coin economy — finishing on PC and later buying
             (and beating) the Switch version are two real playthroughs, each with its own
             activation fee and bounty. On one platform&apos;s card you can track multiple copies:
-            each is <strong className="text-ink">Physical, Digital or DLC</strong> — a DLC row
-            records an expansion or season pass: its cost counts in your spend totals and it shows
-            with a small DLC tag, but it never counts as owning another copy of the base game.
-            Copy costs are just for your records — they never affect the coin economy. A copy
+            each is <strong className="text-ink">Physical or Digital</strong>. What you paid
+            counts in your spend totals, and the coin formula may count it toward the game&apos;s
+            price and bounty too. A copy
             you&apos;ve already beaten elsewhere wears a{" "}
             <strong className="text-ink">Cleared Elsewhere</strong> badge for context (never
             syncing anything), profile stats and achievements count distinct <em>games</em> so
             extra copies never inflate your totals, and the boards&apos;{" "}
             <strong className="text-ink">Stack</strong> toggle folds copies of one game into a
             single fan-out deck whenever you want a tidier shelf.
+          </Section>
+
+          <Section icon={Package} title="DLC & expansions">
+            Record DLC on a game&apos;s <strong className="text-ink">Library</strong> tab: a story{" "}
+            <strong className="text-ink">expansion</strong> you can finish, an{" "}
+            <strong className="text-ink">update</strong> or season for a game you keep playing, or
+            an <strong className="text-ink">item</strong> like a cosmetic or in-game currency. A
+            story expansion is played for its own coins: it costs coins to start and pays a
+            bounty when you clear it, both from its own length, cost and date, and it never
+            changes what the base game cost or paid. What you spent on DLC counts in the
+            game&apos;s spend and value totals.
           </Section>
 
           <Section icon={Package} title="Compilations">

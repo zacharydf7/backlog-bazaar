@@ -275,8 +275,7 @@ as $$
     'issues.moderate',
     'reports.moderate',
     'stats.view',
-    'roles.assign',
-    'dlc.preview'
+    'roles.assign'
   ]::text[];
 $$;
 
@@ -25287,8 +25286,9 @@ create trigger subscriptions_log_event
   for each row execute function public.log_subscription_event();
 
 -- ---------------------------------------------------------------------------
--- DLC on a game (owner, 2026-10-17; preview behind dlc.preview until it's
--- tuned). Three kinds, picked when adding:
+-- DLC on a game (owner, 2026-10-17; public since 2026-10-18, when the
+-- 'dlc.preview' key retired with the old 'dlc' copy format). Three kinds,
+-- picked when adding:
 --   expansion  a story expansion with an ending (Ghost of Yotei's DLC). It's
 --              played as an expansion RUN through the Replay lane, priced and
 --              paid by its own length, cost and date. The only kind that
@@ -25414,14 +25414,17 @@ $$;
 -- serverPricing.sql.test.ts runs both sides on the same inputs.
 -- ---------------------------------------------------------------------------
 
--- The dollars recorded across a game's copies (totalCost in src/lib/copies.ts).
+-- The dollars a game's price and bounty count: its copies' costs, but not a
+-- DLC copy's (owner, 2026-10-18: DLC prices its own run, so its dollars never
+-- raise the base game's coins). unitOf's paid factor in src/lib/economy.ts.
 create or replace function public.copies_total_cost(p_copies jsonb)
 returns numeric
 language sql
 immutable
 as $$
   select coalesce(sum((c ->> 'cost')::numeric) filter (where jsonb_typeof(c -> 'cost') = 'number'), 0)
-    from jsonb_array_elements(case when jsonb_typeof(p_copies) = 'array' then p_copies else '[]'::jsonb end) c;
+    from jsonb_array_elements(case when jsonb_typeof(p_copies) = 'array' then p_copies else '[]'::jsonb end) c
+   where coalesce(c ->> 'format', '') <> 'dlc';
 $$;
 
 -- Held only through subscription / borrowed / Player 2 copies (isModifierOnly
@@ -25761,6 +25764,10 @@ create table if not exists public.game_dlc_events (
 create index if not exists game_dlc_events_user_idx on public.game_dlc_events (user_id, created_at);
 alter table public.game_dlc_events enable row level security;
 revoke insert, update, delete on public.game_dlc_events from anon, authenticated;
+-- 'converted' (2026-10-18): an old DLC copy became this record.
+alter table public.game_dlc_events drop constraint if exists game_dlc_events_action_check;
+alter table public.game_dlc_events add constraint game_dlc_events_action_check
+  check (action in ('added', 'edited', 'removed', 'started', 'cleared', 'cancelled', 'undone', 'converted'));
 drop policy if exists "game_dlc_events_select_own" on public.game_dlc_events;
 create policy "game_dlc_events_select_own" on public.game_dlc_events
   for select to authenticated using (auth.uid() = user_id);
@@ -25785,7 +25792,6 @@ declare
   v_hours numeric := case when p_kind = 'expansion' then p_hours end;
 begin
   if v_uid is null then raise exception 'Not authenticated'; end if;
-  if not public.has_permission('dlc.preview') then raise exception 'Not allowed'; end if;
   if p_kind is null or p_kind not in ('expansion', 'update', 'item') then
     raise exception 'Pick what kind of DLC this is';
   end if;
@@ -25834,6 +25840,53 @@ begin
 end;
 $$;
 
+-- Turn an old 'dlc' copy (the copy format DLC records replaced, 2026-10-18)
+-- into a DLC record: the record is added as save_game_dlc adds one, and the
+-- copy leaves the game's copies in the same step, so its cost is never
+-- counted twice. The copies audit trigger logs the removal.
+-- A copy held through a subscription, loan or Player 2 seat, or carrying a
+-- member discount, is refused: a DLC record can't hold those yet, and
+-- converting would silently drop them (the discount from Subscriptions'
+-- savings, among others). The 'converted' event keeps the original copy.
+create or replace function public.convert_dlc_copy(
+  p_game uuid, p_copy text, p_kind text, p_name text, p_acquired_on date,
+  p_cost numeric, p_hours numeric, p_note text
+)
+returns uuid
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  v_id    uuid;
+  v_copy  jsonb;
+  v_title text;
+begin
+  if auth.uid() is null then raise exception 'Not authenticated'; end if;
+  -- Locked, so a copies edit can't land between the read and the write.
+  select g.title into v_title from public.games g where g.id = p_game and g.user_id = auth.uid() for update;
+  select c into v_copy
+    from public.games g, jsonb_array_elements(g.copies) c
+   where g.id = p_game and g.user_id = auth.uid() and c ->> 'id' = p_copy and c ->> 'format' = 'dlc';
+  if v_copy is null then
+    raise exception 'That DLC copy is no longer on this game';
+  end if;
+  if coalesce(v_copy ->> 'acquisition', 'owned') <> 'owned'
+     or coalesce(nullif(v_copy ->> 'memberSavings', '')::numeric, 0) > 0 then
+    raise exception 'This DLC copy has a subscription, loan or member discount on it, which a DLC record can''t hold yet, so it stays a copy for now';
+  end if;
+  v_id := public.save_game_dlc(null, p_game, p_kind, p_name, p_acquired_on, p_cost, p_hours, p_note);
+  update public.games g
+     set copies = (select coalesce(jsonb_agg(c order by i), '[]'::jsonb)
+                     from jsonb_array_elements(g.copies) with ordinality as e(c, i)
+                    where not coalesce(c ->> 'id' = p_copy and c ->> 'format' = 'dlc', false))
+   where g.id = p_game and g.user_id = auth.uid();
+  insert into public.game_dlc_events (user_id, dlc_id, game_id, game_title, dlc_name, action, detail)
+  values (auth.uid(), v_id, p_game, coalesce(v_title, ''), btrim(p_name), 'converted',
+          jsonb_build_object('copy', v_copy));
+  return v_id;
+end;
+$$;
+
 -- Remove a DLC record (soft: the row and its history stay). Not while its
 -- expansion run is in progress.
 create or replace function public.remove_game_dlc(p_id uuid)
@@ -25845,7 +25898,6 @@ declare
   v_dlc public.game_dlc;
 begin
   if auth.uid() is null then raise exception 'Not authenticated'; end if;
-  if not public.has_permission('dlc.preview') then raise exception 'Not allowed'; end if;
   select * into v_dlc from public.game_dlc
    where id = p_id and user_id = auth.uid() and removed_at is null for update;
   if not found then raise exception 'DLC not found'; end if;
@@ -25934,7 +25986,6 @@ declare
   v_coins  integer;
 begin
   if v_uid is null then raise exception 'Not authenticated'; end if;
-  if not public.has_permission('dlc.preview') then raise exception 'Not allowed'; end if;
   select * into v_dlc from public.game_dlc
    where id = p_dlc and user_id = v_uid and removed_at is null for update;
   if not found or v_dlc.kind <> 'expansion' then raise exception 'Expansion not found'; end if;
@@ -25988,8 +26039,7 @@ $$;
 -- rest is forfeited; the start price coming back is logged as a refund, not
 -- earnings. A paying clear with the gate met extends the Clear Streak when
 -- expansion_counts_streak is on. Undoable for a short window through
--- undo_action, like a finish. Like cancel_expansion, it isn't gated on
--- dlc.preview: a run that started must always be able to end.
+-- undo_action, like a finish.
 create or replace function public.finish_expansion(p_dlc uuid)
 returns table (coins integer, reward integer, logged_hours numeric, gate_hours numeric,
                streak integer, streak_bonus integer, new_record boolean, event_bonus integer,
@@ -26096,7 +26146,6 @@ $$;
 
 -- Stop an expansion run without clearing it: the game goes back to Finished
 -- as it was and the start price is refunded (frozen while the economy is off).
--- Not gated on dlc.preview, so a run can always end.
 create or replace function public.cancel_expansion(p_dlc uuid)
 returns table (coins integer, refunded integer)
 language plpgsql

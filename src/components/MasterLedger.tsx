@@ -54,6 +54,7 @@ import {
   type ValueFinancials,
 } from "../lib/valueMetrics";
 import type { CopyFormat, Game, GameStatus } from "../types";
+import { dlcSpendByGame } from "../lib/dlc";
 
 /** The Master Ledger: every owned game (Wishlist excluded) in one filterable,
  *  groupable dashboard, with account-wide library-health metrics up top. While
@@ -157,10 +158,12 @@ export function MasterLedger({
   // library, and their spend privacy is theirs to keep.
   const targetCostPerHour = useStore((s) => s.targetCostPerHour);
   const clearStreakBest = useStore((s) => s.clearStreakBest);
-  const financials = useMemo(
-    () => (viewing ? null : valueFinancials(filtered, targetCostPerHour)),
-    [viewing, filtered, targetCostPerHour],
-  );
+  const gameDlc = useStore((s) => s.gameDlc);
+  const financials = useMemo(() => {
+    if (viewing) return null;
+    const dlcByGame = dlcSpendByGame(gameDlc);
+    return valueFinancials(filtered, targetCostPerHour, (g) => dlcByGame.get(g.id) ?? 0);
+  }, [viewing, filtered, targetCostPerHour, gameDlc]);
   // Memberships: what every tracked plan has cost so far (account-wide — a
   // membership isn't a game, so it can't follow the filters) plus the member
   // discounts recorded on the games in view. Own ledger only, like financials.

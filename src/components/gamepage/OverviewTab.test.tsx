@@ -115,6 +115,24 @@ describe("Value played on the spend rollup (6c60c213 follow-up)", () => {
     expect(value.closest("span")?.className).not.toContain("text-success");
   });
 
+  it("counts your DLC in what the game cost, listed as its own lines", () => {
+    act(() =>
+      useStore.setState({
+        targetCostPerHour: null,
+        gameDlc: [
+          { id: "d1", gameId: "g1", kind: "expansion", name: "Echoes of Sekigahara", cost: 11.99 } as never,
+          { id: "d2", gameId: "other", kind: "item", name: "Elsewhere", cost: 5 } as never,
+        ],
+      }),
+    );
+    const g = game({ copies: [{ id: "c1", platform: "PC", cost: 60 }] });
+    render(<OverviewTab game={g} screenshots={[]} />);
+    expect(screen.getByText(/Spent \$71\.99/)).toBeTruthy();
+    expect(screen.getByText("Echoes of Sekigahara")).toBeTruthy();
+    expect(screen.queryByText("Elsewhere")).toBeNull();
+    act(() => useStore.setState({ gameDlc: [] }));
+  });
+
   it("stays silent with no target set (feature off)", () => {
     act(() => useStore.setState({ targetCostPerHour: null }));
     const g = game({ copies: [{ id: "c1", platform: "PC", cost: 60 }], playedHours: 40 });

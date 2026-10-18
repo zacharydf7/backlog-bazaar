@@ -1,4 +1,4 @@
-// DLC on a game (owner, 2026-10-17; preview behind dlc.preview). Three kinds:
+// DLC on a game (owner, 2026-10-17; public since 2026-10-18). Three kinds:
 //
 //   expansion  a story expansion with an ending (Ghost of Yotei's DLC). It's
 //              played as an expansion RUN through the Replay lane: it costs
@@ -177,7 +177,7 @@ function formulaFor(cfg: FormulaConfig, dlc: Pick<GameDlc, "name" | "hours" | "c
       title: dlc.name,
       genres: [],
       hours: dlc.hours ?? DEFAULT_HOURS,
-      copies: dlc.cost != null ? [{ id: "dlc", platform: "", format: "dlc", cost: dlc.cost }] : [],
+      copies: dlc.cost != null ? [{ id: "dlc", platform: "", cost: dlc.cost }] : [],
       addedAt: expansionAcquiredAt(dlc),
     },
     cfg,
@@ -220,4 +220,15 @@ export function expansionPayout(quote: ExpansionQuote, runPrice: number, loggedH
 /** Dollars recorded across a game's DLC. */
 export function dlcSpend(list: Pick<GameDlc, "cost">[]): number {
   return list.reduce((sum, d) => sum + (d.cost ?? 0), 0);
+}
+
+/** What the DLC on each game cost, by game id, for the spend and value totals
+ *  (owner, 2026-10-18: DLC counts in what a game cost you). */
+export function dlcSpendByGame(list: Pick<GameDlc, "gameId" | "cost">[]): Map<string, number> {
+  const byGame = new Map<string, number>();
+  for (const d of list) {
+    if (d.gameId == null || !(d.cost && d.cost > 0)) continue;
+    byGame.set(d.gameId, (byGame.get(d.gameId) ?? 0) + d.cost);
+  }
+  return byGame;
 }

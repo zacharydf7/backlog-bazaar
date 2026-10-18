@@ -1,10 +1,11 @@
-// The game page's DLC list (preview: dlc.preview): story expansions, new
-// content and purchases recorded on any instance in the hub, with what was
-// spent, and the form to add or edit one. See src/lib/dlc.ts.
+// The game page's DLC list: story expansions, new content and purchases
+// recorded on any instance in the hub, with what was spent, and the form to
+// add or edit one. Old 'dlc' copies (the copy format this replaced) are
+// listed here to turn into DLC records. See src/lib/dlc.ts.
 import { useState } from "react";
 import { createPortal } from "react-dom";
 import { BookOpen, Package, Pencil, Plus, Search, Sparkles, Trash2 } from "lucide-react";
-import type { Game } from "../../types";
+import type { Game, GameCopy } from "../../types";
 import { useStore } from "../../store";
 import {
   DLC_KINDS,
@@ -16,7 +17,7 @@ import {
   type DlcKind,
   type GameDlc,
 } from "../../lib/dlc";
-import { formatUsd } from "../../lib/copies";
+import { formatUsd, isModifierAcquisition } from "../../lib/copies";
 import { fetchHltbTimes } from "../../lib/gamedata";
 import { formatPlaytime } from "../../lib/playtime";
 import { hubRepresentative } from "../../lib/gameHub";
@@ -33,23 +34,33 @@ function runLabel(d: GameDlc): string | null {
   return null;
 }
 
+/** An old 'dlc' copy on one of the hub's games, waiting to become a record. */
+type OldDlcCopy = { gameId: string; copy: GameCopy };
+
+/** A DLC record can't hold a subscription, loan or Player 2 copy, or a member
+ *  discount, so those stay copies (convert_dlc_copy refuses them). */
+function convertible(copy: GameCopy): boolean {
+  return !isModifierAcquisition(copy.acquisition) && !(copy.memberSavings && copy.memberSavings > 0);
+}
+
 export function DlcBlock({ hub }: { hub: Game[] }) {
-  const canPreview = useStore((s) => s.can("dlc.preview"));
   const all = useStore((s) => s.gameDlc);
   const removeGameDlc = useStore((s) => s.removeGameDlc);
-  const [editing, setEditing] = useState<GameDlc | "new" | null>(null);
-  if (!canPreview) return null;
+  const [editing, setEditing] = useState<GameDlc | "new" | OldDlcCopy | null>(null);
 
   const ids = new Set(hub.map((g) => g.id));
   const list = all.filter((d) => d.gameId != null && ids.has(d.gameId));
   const spent = dlcSpend(list);
+  const oldCopies: OldDlcCopy[] = hub.flatMap((g) =>
+    (g.copies ?? []).filter((c) => c.format === "dlc").map((copy) => ({ gameId: g.id, copy })),
+  );
 
   return (
     <section className="rounded-xl border border-line bg-panel/30 px-3 py-2">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="min-w-0">
           <div className="mb-0.5 inline-flex items-center gap-1.5 text-[11px] font-medium text-accent">
-            <Package size={13} /> DLC <span className="text-subtle">· preview</span>
+            <Package size={13} /> DLC
           </div>
           <p className="text-xs text-muted">
             {list.length === 0
@@ -108,27 +119,83 @@ export function DlcBlock({ hub }: { hub: Game[] }) {
           })}
         </ul>
       )}
+      {oldCopies.length > 0 && (
+        <div className="mt-2 rounded-lg border border-dashed border-line px-2.5 py-2">
+          <p className="text-[11px] text-muted">
+            Recorded as a DLC copy before DLC had its own place. Make each a DLC record to keep it with the game's
+            DLC (its cost stays in what you spent).
+          </p>
+          <ul className="mt-1 flex flex-col divide-y divide-line">
+            {oldCopies.map((o) => (
+              <li key={o.copy.id} className="flex flex-wrap items-center gap-2 py-1.5">
+                <span className="min-w-0 flex-1 truncate text-sm text-ink">
+                  {o.copy.note || o.copy.platform || "DLC"}
+                  {o.copy.cost != null && <span className="text-[11px] text-subtle"> · {formatUsd(o.copy.cost)}</span>}
+                </span>
+                {convertible(o.copy) ? (
+                  <button
+                    type="button"
+                    onClick={() => setEditing(o)}
+                    className="shrink-0 rounded-lg border border-line bg-panel px-2 py-1 text-xs text-ink transition hover:border-brand/40 hover:text-accent"
+                  >
+                    Make it a DLC record
+                  </button>
+                ) : (
+                  <span className="text-[11px] text-subtle">
+                    Has a subscription, loan or member discount, so it stays a copy for now
+                  </span>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
       {editing && (
-        <DlcFormModal hub={hub} dlc={editing === "new" ? null : editing} onClose={() => setEditing(null)} />
+        <DlcFormModal
+          hub={hub}
+          dlc={editing === "new" || "copy" in editing ? null : editing}
+          fromCopy={editing !== "new" && "copy" in editing ? editing : null}
+          onClose={() => setEditing(null)}
+        />
       )}
     </section>
   );
 }
 
-function DlcFormModal({ hub, dlc, onClose }: { hub: Game[]; dlc: GameDlc | null; onClose: () => void }) {
+function DlcFormModal({
+  hub,
+  dlc,
+  fromCopy,
+  onClose,
+}: {
+  hub: Game[];
+  dlc: GameDlc | null;
+  /** Converting an old DLC copy: the form starts from its details. */
+  fromCopy: OldDlcCopy | null;
+  onClose: () => void;
+}) {
   useScrollLock(true);
   const saveGameDlc = useStore((s) => s.saveGameDlc);
+  const convertDlcCopy = useStore((s) => s.convertDlcCopy);
   const economy = useStore((s) => s.economy);
   const cfg = useStore((s) => s.expansionConfig);
   const gatePct = useStore((s) => s.bountyGatePct);
   const economyEnabled = useStore((s) => s.economyEnabled);
   const rep = hubRepresentative(hub);
-  const [gameId, setGameId] = useState(dlc?.gameId ?? rep.id);
+  const [gameId, setGameId] = useState(dlc?.gameId ?? fromCopy?.gameId ?? rep.id);
   const game = hub.find((g) => g.id === gameId) ?? rep;
   const [kind, setKind] = useState<DlcKind>(dlc?.kind ?? defaultDlcKind(game));
-  const [name, setName] = useState(dlc?.name ?? "");
-  const [acquiredOn, setAcquiredOn] = useState(dlc?.acquiredOn ?? todayISO());
-  const [cost, setCost] = useState(dlc?.cost != null ? String(dlc.cost) : "");
+  const [name, setName] = useState(dlc?.name ?? fromCopy?.copy.note ?? "");
+  // A converted copy without its own date takes the base game's Added date, so
+  // an old purchase never prices as freshly picked up.
+  const copyGame = fromCopy ? hub.find((g) => g.id === fromCopy.gameId) : undefined;
+  const [acquiredOn, setAcquiredOn] = useState(
+    dlc?.acquiredOn ??
+      fromCopy?.copy.acquiredAt?.slice(0, 10) ??
+      (copyGame?.addedAt ? todayISO(new Date(copyGame.addedAt)) : todayISO()),
+  );
+  const startCost = dlc?.cost ?? fromCopy?.copy.cost;
+  const [cost, setCost] = useState(startCost != null ? String(startCost) : "");
   const [hours, setHours] = useState(dlc?.hours != null ? String(dlc.hours) : "");
   const [note, setNote] = useState(dlc?.note ?? "");
   const [lookingUp, setLookingUp] = useState(false);
@@ -161,8 +228,7 @@ function DlcFormModal({ hub, dlc, onClose }: { hub: Game[]; dlc: GameDlc | null;
 
   async function save() {
     setSaving(true);
-    const ok = await saveGameDlc({
-      id: dlc?.id,
+    const details = {
       gameId,
       kind,
       name: name.trim(),
@@ -170,7 +236,10 @@ function DlcFormModal({ hub, dlc, onClose }: { hub: Game[]; dlc: GameDlc | null;
       cost: costNum,
       hours: kind === "expansion" ? hoursNum : null,
       note: note.trim() || null,
-    });
+    };
+    const ok = fromCopy
+      ? await convertDlcCopy(fromCopy.copy.id, details)
+      : await saveGameDlc({ id: dlc?.id, ...details });
     setSaving(false);
     if (ok) onClose();
   }
@@ -218,7 +287,7 @@ function DlcFormModal({ hub, dlc, onClose }: { hub: Game[]; dlc: GameDlc | null;
           {locked && <p className="text-[11px] text-subtle">You&apos;ve started this expansion, so its kind and length stay.</p>}
         </fieldset>
 
-        {hub.length > 1 && !dlc && (
+        {hub.length > 1 && !dlc && !fromCopy && (
           <label className="mb-3 block">
             <span className="mb-1 block text-xs text-muted">Which copy</span>
             <select value={gameId} onChange={(e) => setGameId(e.target.value)} className={field}>
@@ -313,7 +382,7 @@ function DlcFormModal({ hub, dlc, onClose }: { hub: Game[]; dlc: GameDlc | null;
             disabled={!valid || saving}
             className="flex-1 rounded-xl bg-brand px-3 py-2 text-sm font-semibold text-brand-fg transition hover:brightness-105 disabled:opacity-50"
           >
-            {saving ? "Saving…" : dlc ? "Save" : "Add DLC"}
+            {saving ? "Saving…" : dlc ? "Save" : fromCopy ? "Save as DLC" : "Add DLC"}
           </button>
           <button
             type="button"

@@ -30,11 +30,17 @@ describe("CopyRowsEditor showCost", () => {
     expect(screen.queryByRole("button", { name: /Add a version/i })).not.toBeNull();
   });
 
-  it("offers the three-way Physical / Digital / DLC format toggle", () => {
+  it("offers Physical / Digital, but not DLC (DLC has its own section now)", () => {
     render(<CopyRowsEditor rows={rows} onChange={() => {}} platformOptions={[]} />);
     expect(screen.queryByRole("button", { name: "Physical" })).not.toBeNull();
     expect(screen.queryByRole("button", { name: "Digital" })).not.toBeNull();
-    expect(screen.queryByRole("button", { name: "DLC" })).not.toBeNull();
+    expect(screen.queryByRole("button", { name: "DLC" })).toBeNull();
+  });
+
+  it("points an old DLC copy to the DLC section instead of the format toggle", () => {
+    render(<CopyRowsEditor rows={[{ ...rows[0], format: "dlc" }]} onChange={() => {}} platformOptions={[]} />);
+    expect(screen.getByText(/make it a DLC record/i)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Physical" })).toBeNull();
   });
 });
 

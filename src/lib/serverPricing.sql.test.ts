@@ -165,6 +165,18 @@ describe("game_start_price matches the buy chain", () => {
     }
   });
 
+  it("leaves a DLC copy's cost out of the base game's price", async () => {
+    const g = await addGame({
+      hours: 10,
+      copies: [
+        { id: "a", platform: "PC", cost: 30 },
+        { id: "d", platform: "PC", format: "dlc", cost: 20 },
+      ],
+    });
+    expect(await serverPrice(g.id)).toBe(computeFormula(g, price));
+    expect(computeFormula(g, price)).toBe(computeFormula({ ...g, copies: [g.copies![0]] }, price));
+  });
+
   it("gives a subscription-only game its share of freshness", async () => {
     const g = await addGame({ hours: 8, copies: [{ id: "a", platform: "PC", acquisition: "subscription" }] });
     expect(await serverPrice(g.id)).toBe(computeFormula(g, price));

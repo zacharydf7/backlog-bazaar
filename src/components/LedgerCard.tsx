@@ -22,6 +22,7 @@ import { useViewing } from "../lib/viewContext";
 import { GameValueBadge } from "./ValueBadge";
 import { GamePriorityBadge } from "./GamePriorityBadge";
 import { useCoverOf } from "../lib/useCoverOf";
+import { useDlcSpend } from "../lib/useDlcSpend";
 
 /** A uniform, read-only summary card for the Master Ledger. Unlike the board's
  *  GameCard (which surfaces state-specific actions — Buy, time trackers, the ⋮
@@ -46,7 +47,7 @@ export function LedgerCard({ game, family }: { game: Game; family?: Game[] }) {
   const stats = members ? familyStats(members) : null;
   const title = members ? familyName(members) : game.title;
   const owned = members ? familyPlatformTags(members) : ownedPlatformSummary(game.copies);
-  const spend = members ? stats!.totalCost : totalCost(game.copies);
+  const spend = (members ? stats!.totalCost : totalCost(game.copies)) + useDlcSpend()(members ?? [game]);
   const playedHours = members ? stats!.totalPlayed : (game.playedHours ?? 0);
   const showSpend = !hideSpend && spend > 0;
 

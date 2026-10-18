@@ -37,28 +37,76 @@ function dlc(over: Partial<GameDlc> = {}): GameDlc {
 }
 
 const saveGameDlc = vi.fn(async () => true);
+const convertDlcCopy = vi.fn(async () => true);
 
-function setup(list: GameDlc[], permitted = true) {
+function setup(list: GameDlc[], game: Game = GAME) {
   act(() =>
     useStore.setState({
       isAdmin: false,
-      permissions: permitted ? ["dlc.preview"] : [],
-      games: [GAME],
+      games: [game],
       gameDlc: list,
       economy: DEFAULT_ECONOMY,
       economyEnabled: true,
       saveGameDlc,
+      convertDlcCopy,
     }),
   );
-  render(<DlcBlock hub={[GAME]} />);
+  render(<DlcBlock hub={[game]} />);
 }
 
-beforeEach(() => saveGameDlc.mockClear());
+beforeEach(() => {
+  saveGameDlc.mockClear();
+  convertDlcCopy.mockClear();
+});
 
 describe("DlcBlock", () => {
-  it("stays hidden without the preview permission", () => {
-    setup([dlc()], false);
-    expect(screen.queryByText("Add DLC")).toBeNull();
+  it("converts on the copy's own game, without offering another, and dates an undated copy from the game", async () => {
+    const owner = {
+      ...GAME,
+      addedAt: Date.parse("2025-03-04T12:00:00Z"),
+      copies: [{ id: "old", platform: "PlayStation 5", format: "dlc", cost: 9.99, note: "Season Pass" }],
+    } as Game;
+    const other = { ...GAME, id: "g2", copies: [] } as Game;
+    act(() => useStore.setState({ games: [owner, other], gameDlc: [], economy: DEFAULT_ECONOMY, convertDlcCopy, saveGameDlc }));
+    render(<DlcBlock hub={[owner, other]} />);
+    fireEvent.click(screen.getByRole("button", { name: "Make it a DLC record" }));
+    expect(screen.queryByRole("combobox")).toBeNull();
+    expect(screen.getByDisplayValue("2025-03-04")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Save as DLC" }));
+    await waitFor(() => expect(convertDlcCopy).toHaveBeenCalledWith("old", expect.objectContaining({ gameId: "g1" })));
+  });
+
+  it("explains why a subscription or discounted DLC copy stays a copy", () => {
+    setup([], {
+      ...GAME,
+      copies: [{ id: "old", platform: "PS5", format: "dlc", acquisition: "subscription", provider: "PS Plus" }],
+    } as Game);
+    expect(screen.queryByRole("button", { name: "Make it a DLC record" })).toBeNull();
+    expect(screen.getByText(/stays a copy for now/)).toBeTruthy();
+  });
+
+  it("is open to every player", () => {
+    setup([]);
+    expect(screen.getByText("Add DLC")).toBeTruthy();
+  });
+
+  it("turns an old DLC copy into a DLC record, starting from its details", async () => {
+    const withCopy = {
+      ...GAME,
+      copies: [
+        { id: "base", platform: "PlayStation 5", format: "digital" },
+        { id: "old", platform: "PlayStation 5", format: "dlc", cost: 19.99, note: "Legends" },
+      ],
+    } as Game;
+    setup([], withCopy);
+    fireEvent.click(screen.getByRole("button", { name: "Make it a DLC record" }));
+    expect((screen.getByDisplayValue("Legends") as HTMLInputElement).value).toBe("Legends");
+    expect(screen.getByDisplayValue("19.99")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Save as DLC" }));
+    await waitFor(() =>
+      expect(convertDlcCopy).toHaveBeenCalledWith("old", expect.objectContaining({ gameId: "g1", name: "Legends", cost: 19.99 })),
+    );
+    expect(saveGameDlc).not.toHaveBeenCalled();
   });
 
   it("lists the game's DLC with what was spent and a cleared expansion's payout", () => {

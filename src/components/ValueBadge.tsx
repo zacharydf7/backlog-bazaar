@@ -10,6 +10,7 @@ import {
   valueTooltip,
   type ValueStatus,
 } from "../lib/valueMetrics";
+import { useDlcSpend } from "../lib/useDlcSpend";
 
 /** The "Money Well Spent" chip (issue 6c60c213): appears once a game's logged
  *  playtime has paid off its real-money purchase price at the player's target
@@ -35,6 +36,7 @@ export function ValueBadge({ status, target }: { status: ValueStatus; target: nu
 export function GameValueBadge({ game, members }: { game: Game; members?: Game[] }) {
   const target = useStore((s) => s.targetCostPerHour);
   const viewing = useStore((s) => s.viewing);
+  const dlcSpendOf = useDlcSpend();
   if (viewing || target == null) return null;
   // Wishlist entries are unowned — their recorded costs are hunting notes, not
   // purchases — so they never contribute to a rollup (gameValueStatus applies
@@ -43,9 +45,9 @@ export function GameValueBadge({ game, members }: { game: Game; members?: Game[]
   if (owned.length === 0) return null;
   const status =
     owned.length === 1
-      ? gameValueStatus(owned[0], target)
+      ? gameValueStatus(owned[0], target, dlcSpendOf(owned))
       : valueStatusOf(
-          owned.reduce((sum, g) => sum + totalCost(g.copies), 0),
+          owned.reduce((sum, g) => sum + totalCost(g.copies), 0) + dlcSpendOf(owned),
           owned.reduce((sum, g) => sum + (g.playedHours ?? 0), 0),
           target,
         );

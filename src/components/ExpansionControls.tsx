@@ -43,10 +43,8 @@ export function ExpansionStartActions({
   showEconomy: boolean;
   replayHasRoom: boolean;
 }) {
-  const canPreview = useStore((s) => s.can("dlc.preview"));
   const all = useStore((s) => s.gameDlc);
   const [picked, setPicked] = useState<GameDlc | null>(null);
-  if (!canPreview) return null;
   const ready = all.filter((d) => d.gameId === game.id && d.kind === "expansion" && d.runStatus === "owned");
   return (
     <>

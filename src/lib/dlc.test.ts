@@ -3,6 +3,7 @@ import {
   coerceGameDlc,
   defaultDlcKind,
   dlcSpend,
+  dlcSpendByGame,
   expansionAcquiredAt,
   expansionFormulas,
   expansionLoggedHours,
@@ -89,6 +90,16 @@ describe("helpers", () => {
 
   it("totals what was spent", () => {
     expect(dlcSpend([{ cost: 50 }, { cost: null }, { cost: 19.99 }])).toBeCloseTo(69.99);
+  });
+
+  it("totals what each game's DLC cost, skipping free and unlinked records", () => {
+    const byGame = dlcSpendByGame([
+      { gameId: "a", cost: 10 },
+      { gameId: "a", cost: 5.5 },
+      { gameId: "b", cost: null },
+      { gameId: null, cost: 9 },
+    ]);
+    expect([...byGame]).toEqual([["a", 15.5]]);
   });
 
   it("coerces rows, dropping malformed ones, with a run's frozen quote", () => {

@@ -35,6 +35,7 @@ import { JourneyTab } from "./JourneyTab";
 import { LibraryTab } from "./LibraryTab";
 import { ReviewTab } from "./ReviewTab";
 import { CommunityTab } from "./CommunityTab";
+import { useDlcSpend } from "../../lib/useDlcSpend";
 
 /** Which section pane is open. The tabs are data-driven so upcoming sections
  *  are one new entry. */
@@ -817,6 +818,7 @@ function HubStatsRow({
   onManage?: () => void;
 }) {
   const stats = familyStats(members);
+  const spent = stats.totalCost + useDlcSpend()(members);
   return (
     <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-line bg-panel/30 px-3 py-2">
       <div className="min-w-0">
@@ -829,9 +831,9 @@ function HubStatsRow({
             <Clock size={13} className="text-accent/70" /> {formatPlaytime(stats.totalPlayed)}{" "}
             played
           </span>
-          {!hideSpend && stats.totalCost > 0 && (
+          {!hideSpend && spent > 0 && (
             <span className="inline-flex items-center gap-1">
-              <Banknote size={13} className="text-accent/70" /> {formatUsd(stats.totalCost)} spent
+              <Banknote size={13} className="text-accent/70" /> {formatUsd(spent)} spent
             </span>
           )}
         </div>

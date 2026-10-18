@@ -47,7 +47,8 @@ beforeAll(async () => {
       completionist boolean not null default false, in_rotation boolean not null default false,
       resumed boolean not null default false, slot_id uuid, family_id uuid, ongoing boolean not null default false,
       finish_tag text, length_premium_owed integer, stealth boolean not null default false,
-      bounty_held integer not null default 0, bounty_held_total integer, bounty_gate_hours numeric);
+      bounty_held integer not null default 0, bounty_held_total integer, bounty_gate_hours numeric,
+      copies jsonb not null default '[]'::jsonb);
     create table public.activity_events (actor uuid, game_id uuid, kind text, created_at timestamptz not null default now());
     create table public.game_length_events (game_id uuid, created_at timestamptz not null default now());
     create table public.shadow_economy_adjustments (user_id uuid, game_id uuid, game_title text,
@@ -61,8 +62,6 @@ beforeAll(async () => {
     create table public.action_undos (id uuid primary key default gen_random_uuid(), user_id uuid, game_id uuid,
       game_title text, action text, coins_delta integer, prev jsonb, created_at timestamptz not null default now(),
       undone_at timestamptz);
-    create function public.has_permission(p_key text) returns boolean language sql
-      as $$ select coalesce(current_setting('test.perm', true), 'on') = 'on' $$;
     create function public.economy_enabled(p_user uuid) returns boolean language sql
       as $$ select economy from public.profiles where id = p_user $$;
     create function public.log_coin_event(p_user uuid, p_kind text, p_coin_delta integer,
@@ -79,6 +78,10 @@ beforeAll(async () => {
   for (const sql of settings!) await db.exec(sql);
   await db.exec(table("game_dlc"));
   await db.exec(table("game_dlc_events"));
+  // The event actions widened later in the schema ('converted').
+  for (const sql of schema.match(/alter table public\.game_dlc_events (?:drop|add) constraint[^;]+;/g) ?? []) {
+    await db.exec(sql);
+  }
   for (const name of [
     "econ_default_formula",
     "econ_normalize",
@@ -89,6 +92,7 @@ beforeAll(async () => {
     "enter_replay",
     "expansion_restore_game",
     "save_game_dlc",
+    "convert_dlc_copy",
     "remove_game_dlc",
     "start_expansion",
     "finish_expansion",
@@ -120,7 +124,6 @@ beforeEach(async () => {
       clear_streak_bonus_base, clear_streak_bonus_step, clear_streak_bonus_cap)
       values (1, '${JSON.stringify(PRICE)}', '${JSON.stringify(BOUNTY)}', 50, 3, 100, 25, 250);
     insert into public.profiles (id, coins) values ('${U}', 1000);
-    select set_config('test.perm', 'on', false);
     insert into public.games (id, user_id, title, status, played_hours, started_at, finished_at, reward, price_paid)
       values ('${G}', '${U}', 'Ghost of Yotei', 'finished', 40, '2026-06-01', '${FINISHED}', 300, 150);
   `);
@@ -300,14 +303,9 @@ describe("expansion runs", () => {
     ]);
   });
 
-  it("can always end a run, even without the preview permission", async () => {
-    const id = await addExpansion();
-    await db.query("select public.start_expansion($1)", [id]);
-    await db.exec("select set_config('test.perm', 'off', false)");
-    await expect(db.query("select public.save_game_dlc(null, $1, 'item', 'Coins', null, 5, null, null)", [G])).rejects.toThrow(
-      /Not allowed/,
-    );
-    expect(await one("select refunded from public.cancel_expansion($1)", [id])).toEqual({ refunded: 204 });
+  it("lets any player record DLC (no preview permission any more)", async () => {
+    const id = await one<{ id: string }>("select public.save_game_dlc(null, $1, 'item', 'Coins', null, 5, null, null) as id", [G]);
+    expect(id.id).toBeTruthy();
   });
 
   it("won't start on a retired game", async () => {
@@ -366,5 +364,59 @@ describe("expansion runs", () => {
     ).rejects.toThrow(/Expansion not found/);
     expect(await coins()).toBe(1000);
     expect((await db.query("select action from public.game_dlc_events")).rows).toEqual([{ action: "added" }]);
+  });
+});
+
+describe("an old DLC copy becoming a DLC record", () => {
+  beforeEach(async () => {
+    await db.query("update public.games set copies = $1::jsonb where id = $2", [
+      JSON.stringify([
+        { id: "base", platform: "PS5", format: "digital", cost: 70 },
+        { id: "old", platform: "PS5", format: "dlc", cost: 19.99, note: "Legends" },
+        { id: "extra", platform: "PC", format: "digital" },
+      ]),
+      G,
+    ]);
+  });
+
+  it("adds the record and takes the copy off the game in one step, keeping the rest in order", async () => {
+    await db.query("select public.convert_dlc_copy($1, 'old', 'expansion', 'Legends', current_date, 19.99, 8, null)", [G]);
+    expect((await db.query("select kind, name, cost from public.game_dlc")).rows).toEqual([
+      { kind: "expansion", name: "Legends", cost: "19.99" },
+    ]);
+    const copies = (await one<{ copies: { id: string }[] }>("select copies from public.games")).copies;
+    expect(copies.map((c) => c.id)).toEqual(["base", "extra"]);
+    const converted = await one<{ detail: { copy: { id: string; cost: number } } }>(
+      "select detail from public.game_dlc_events where action = 'converted'",
+    );
+    expect(converted.detail.copy).toMatchObject({ id: "old", cost: 19.99 });
+  });
+
+  it("keeps a copy a DLC record can't hold yet: a subscription one, or one with a member discount", async () => {
+    for (const extra of [{ acquisition: "subscription", provider: "PS Plus" }, { memberSavings: 4 }]) {
+      await db.query("update public.games set copies = $1::jsonb where id = $2", [
+        JSON.stringify([{ id: "old", platform: "PS5", format: "dlc", cost: 19.99, ...extra }]),
+        G,
+      ]);
+      await expect(
+        db.query("select public.convert_dlc_copy($1, 'old', 'item', 'Pass', null, 19.99, null, null)", [G]),
+      ).rejects.toThrow(/stays a copy/);
+    }
+    expect((await db.query("select count(*)::int as n from public.game_dlc")).rows).toEqual([{ n: 0 }]);
+  });
+
+  it("won't touch another player's game", async () => {
+    await db.query("update public.games set user_id = gen_random_uuid() where id = $1", [G]);
+    await expect(
+      db.query("select public.convert_dlc_copy($1, 'old', 'item', 'Legends', null, 19.99, null, null)", [G]),
+    ).rejects.toThrow(/no longer on this game/);
+  });
+
+  it("refuses a copy that isn't an old DLC copy on the game, changing nothing", async () => {
+    await expect(
+      db.query("select public.convert_dlc_copy($1, 'base', 'item', 'Base', null, 70, null, null)", [G]),
+    ).rejects.toThrow(/no longer on this game/);
+    expect((await db.query("select count(*)::int as n from public.game_dlc")).rows).toEqual([{ n: 0 }]);
+    expect((await one<{ copies: unknown[] }>("select copies from public.games")).copies).toHaveLength(3);
   });
 });

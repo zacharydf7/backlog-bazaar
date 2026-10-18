@@ -992,7 +992,7 @@ interface BazaarState {
   // The pre-order arrival bonus: coins, how many days ahead the pre-order must
   // be placed, and how many pay a month.
   preorderBonusConfig: PreorderBonusConfig;
-  // DLC on your games (preview: dlc.preview), and the admin's expansion
+  // DLC on your games, and the admin's expansion
   // settings (formulas left unset follow the game formulas).
   gameDlc: GameDlc[];
   expansionConfig: ExpansionConfig;
@@ -1963,6 +1963,20 @@ interface BazaarState {
     note: string | null;
   }) => Promise<boolean>;
   removeGameDlc: (id: string) => Promise<void>;
+  // Turn an old 'dlc' copy into a DLC record (the copy leaves the game's
+  // copies in the same step), with the record's details as saveGameDlc takes.
+  convertDlcCopy: (
+    copyId: string,
+    input: {
+      gameId: string;
+      kind: DlcKind;
+      name: string;
+      acquiredOn: string | null;
+      cost: number | null;
+      hours: number | null;
+      note: string | null;
+    },
+  ) => Promise<boolean>;
   startExpansion: (dlcId: string) => Promise<void>;
   finishExpansion: (dlcId: string) => Promise<void>;
   cancelExpansion: (dlcId: string) => Promise<void>;
@@ -2791,8 +2805,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     void get().evaluateAchievements().then(() => get().fetchWeeklyRecap());
     void get().fetchBonusEvents();
     void get().fetchRotationProgress();
-    // Loaded for everyone: a run in progress must stay visible (and endable)
-    // even if the preview permission goes away.
+    // Your DLC records, and any expansion run in progress.
     void get().fetchGameDlc();
 
     // Save the browser's timezone so Night Owl and "days played" count this
@@ -4468,6 +4481,27 @@ export const useStore = create<BazaarState>((set, get) => ({
     }
     await get().fetchGameDlc();
     toast(input.id ? `Updated ${input.name}` : `Added ${input.name}`, Package);
+    return true;
+  },
+
+  convertDlcCopy: async (copyId, input) => {
+    if (!supabase || !get().cloud) return false;
+    const { error } = await supabase.rpc("convert_dlc_copy", {
+      p_game: input.gameId,
+      p_copy: copyId,
+      p_kind: input.kind,
+      p_name: input.name,
+      p_acquired_on: input.acquiredOn,
+      p_cost: input.cost,
+      p_hours: input.hours,
+      p_note: input.note,
+    });
+    if (error) {
+      set({ error: error.message });
+      return false;
+    }
+    await Promise.all([get().fetchGameDlc(), refreshGameFromServer(input.gameId)]);
+    toast(`Moved ${input.name} to DLC`, Package);
     return true;
   },
 

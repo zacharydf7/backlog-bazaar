@@ -32,11 +32,10 @@ const startExpansion = vi.fn(async () => {});
 const finishExpansion = vi.fn(async () => {});
 const cancelExpansion = vi.fn(async () => {});
 
-function setup(list: GameDlc[], permitted = true) {
+function setup(list: GameDlc[]) {
   act(() =>
     useStore.setState({
       isAdmin: false,
-      permissions: permitted ? ["dlc.preview"] : [],
       gameDlc: list,
       economy: DEFAULT_ECONOMY,
       bountyGatePct: 50,
@@ -59,12 +58,6 @@ describe("ExpansionStartActions", () => {
     expect(screen.getByText(/Starting costs/).textContent).toMatch(/Starting costs\s+184\. Clearing it pays\s+40 once you've logged 4h/);
     fireEvent.click(screen.getByText("Play expansion"));
     expect(startExpansion).toHaveBeenCalledWith("d1");
-  });
-
-  it("shows nothing without the preview permission", () => {
-    setup([LEGENDS], false);
-    render(<ExpansionStartActions game={GAME} showEconomy replayHasRoom />);
-    expect(screen.queryByText("Play Legends")).toBeNull();
   });
 });
 

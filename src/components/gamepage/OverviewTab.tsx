@@ -23,6 +23,7 @@ import { ScreenshotGallery } from "../ScreenshotGallery";
 import { PlatformBadge } from "../PlatformBadge";
 import { GamePriorityPicker } from "../GamePriorityBadge";
 import { PersonalScreenshots } from "./PersonalScreenshots";
+import { dlcSpend } from "../../lib/dlc";
 
 export function DetailStat({ label, value }: { label: string; value: string }) {
   return (
@@ -246,8 +247,13 @@ function OwnershipRollup({ members, hideSpend }: { members: Game[]; hideSpend: b
         .map((m) => m.compilationName?.trim() || "a compilation"),
     ),
   ];
-  const showSpend = !hideSpend && hasAnyCost(ownedCopies);
-  const spend = totalCost(ownedCopies);
+  // Your DLC records count in what the game cost (owner, 2026-10-18); only
+  // your own load, so a visited library lists none.
+  const gameDlc = useStore((s) => s.gameDlc);
+  const ownedIds = new Set(ownedGames.map((m) => m.id));
+  const dlcRows = gameDlc.filter((d) => d.gameId != null && ownedIds.has(d.gameId) && (d.cost ?? 0) > 0);
+  const showSpend = !hideSpend && (hasAnyCost(ownedCopies) || dlcRows.length > 0);
+  const spend = totalCost(ownedCopies) + dlcSpend(dlcRows);
   const playedHours = ownedGames.reduce((sum, m) => sum + (m.playedHours ?? 0), 0);
   const value = viewing ? null : valueStatusOf(spend, playedHours, target);
   if (owned.length === 0 && wanted.length === 0 && !showSpend) return null;
@@ -334,6 +340,19 @@ function OwnershipRollup({ members, hideSpend }: { members: Game[]; hideSpend: b
               ))}
             </div>
           ))}
+          {dlcRows.length > 0 && (
+            <div>
+              <div className="mt-1 flex items-center gap-1 text-accent">
+                <Package size={11} /> DLC
+              </div>
+              {dlcRows.map((d) => (
+                <div key={d.id} className="flex justify-between gap-2 pl-4">
+                  <span className="truncate">{d.name}</span>
+                  <span className="shrink-0">{formatUsd(d.cost!)}</span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>
