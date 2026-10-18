@@ -1,7 +1,7 @@
 // DLC on a game (owner, 2026-10-17; public since 2026-10-18). Three kinds:
 //
 //   expansion  a story expansion with an ending (Ghost of Yotei's DLC). It's
-//              played as an expansion RUN through the Replay lane: it costs
+//              played as an expansion RUN in the DLC lane: it costs
 //              coins to start and pays a bounty on a clear, both from the
 //              expansion formulas on its own length, cost and date.
 //   update     new content for a game you keep playing (a Hearthstone card
