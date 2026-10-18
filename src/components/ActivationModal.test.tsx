@@ -67,7 +67,7 @@ describe("ActivationModal", () => {
   it("shows a coin event's start discount and pays the discounted fee", () => {
     act(() =>
       useStore.setState({
-        bonusPerks: { g1: { discount: { event: "Cheap Starts", pct: 50, capLeft: null }, saved: 0 } },
+        bonusPerks: { g1: { discount: { event: "Cheap Starts", pct: 50, capLeft: null } } },
       }),
     );
     render(<ActivationModal game={game()} onClose={() => {}} />);
@@ -85,7 +85,7 @@ describe("ActivationModal", () => {
   it("names the discounted starts left after this one", () => {
     act(() =>
       useStore.setState({
-        bonusPerks: { g1: { discount: { event: "Half Off", pct: 50, capLeft: null, startsLeft: 2 }, saved: 0 } },
+        bonusPerks: { g1: { discount: { event: "Half Off", pct: 50, capLeft: null, startsLeft: 2 } } },
       }),
     );
     render(<ActivationModal game={game()} onClose={() => {}} />);

@@ -97,6 +97,36 @@ describe("finish bonuses — offline finishGame", () => {
   });
 });
 
+describe("finish bonuses and boosts need a verified clear (owner, 2026-10-17)", () => {
+  it("pays no feature bonus on a finish with too little time logged", async () => {
+    // 1 hour of a 40-hour game is under the logged-time gate.
+    const thin = game({ startedStoryLocked: true, hours: 40, playedHours: 1, copies: [{ id: "c", platform: "PC", cost: 30 }] });
+    useStore.setState({ bountyGatePct: 25, games: [prequel, thin] });
+    await store().finishGame("s");
+    const kinds = store().ledger.map((e) => e.kind);
+    expect(kinds).not.toContain("story_order_bonus");
+    expect(kinds).not.toContain("collectors_record_bonus");
+  });
+
+  it("is enforced server-side: no coin-event boost on an unverified finish", () => {
+    const schema = readFileSync(resolve(process.cwd(), "supabase/schema.sql"), "utf8");
+    const start = schema.indexOf("create or replace function public.apply_finish(");
+    const fn = schema.slice(start, schema.indexOf("\n$$;", start));
+    expect(fn).toMatch(/if not v_unverified then\s+v_event_bonus := public\.bonus_event_pay\(/);
+    // Unverified is settled before the boost and the bonuses read it.
+    expect(fn.indexOf("v_unverified :=")).toBeLessThan(fn.indexOf("public.bonus_event_pay("));
+    // The pay-now refund is what the start cost, without a discount added back.
+    expect(fn).not.toContain("kind = 'discount'");
+    expect(fn).toContain("greatest(least(coalesce(v_price_paid, 0), v_net),");
+  });
+
+  it("doesn't count refunds as coins earned for the Tycoon medals", () => {
+    const schema = readFileSync(resolve(process.cwd(), "supabase/schema.sql"), "utf8");
+    const start = schema.indexOf("select 'coins_earned'");
+    expect(schema.slice(start, schema.indexOf("union all", start))).toContain("e.kind not like '%refund'");
+  });
+});
+
 describe("the story-locked start stamp — offline buyGame", () => {
   it("stamps a run started behind a finished prerequisite, and only that", async () => {
     useStore.setState({
@@ -164,7 +194,7 @@ describe("feature bonuses — the server-side anti-farm rules", () => {
   it("apply_finish pays Story Order off the start stamp, only on a paying first clear", () => {
     const fn = body("apply_finish");
     expect(fn).toContain("coalesce(started_story_locked, false)");
-    expect(fn).toContain("if v_econ and not v_free_start and not v_replay then");
+    expect(fn).toContain("if v_econ and not v_free_start and not v_replay and not v_unverified then");
     // The undo snapshot rolls the bonuses back with the bounty.
     expect(fn).toContain("v_net - v_held + v_streak_bonus + v_story_bonus + v_collector_bonus");
   });

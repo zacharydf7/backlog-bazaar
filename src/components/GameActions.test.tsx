@@ -526,7 +526,7 @@ describe("GameActions coin event perks", () => {
     act(() =>
       useStore.setState({
         coins: full - 1,
-        bonusPerks: { a: { discount: { event: EVENT, pct: 50, capLeft: null }, saved: 0 } },
+        bonusPerks: { a: { discount: { event: EVENT, pct: 50, capLeft: null } } },
       }),
     );
     render(<GameActions game={solo} />);
@@ -543,7 +543,7 @@ describe("GameActions coin event perks", () => {
     act(() =>
       useStore.setState({
         games: [g],
-        bonusPerks: { p: { bounty: { event: EVENT, factor: 2, capLeft: null }, saved: 0 } },
+        bonusPerks: { p: { bounty: { event: EVENT, factor: 2, capLeft: null } } },
       }),
     );
     render(<GameActions game={g} />);
@@ -555,29 +555,37 @@ describe("GameActions coin event perks", () => {
     expect(line).toContain(`+ ${reward} on finish`);
   });
 
-  it("boosts only what's paid now, counting a discounted start at its full price", () => {
-    // 0 of ~40h logged: the finish pays back the activation now and holds the rest.
-    const g = game({ id: "p", status: "playing", hours: 40, pricePaid: 10, playedHours: 0, startedAt: 1 });
-    const perk = (saved: number) => ({ p: { bounty: { event: EVENT, factor: 2, capLeft: null }, saved } });
-    act(() => useStore.setState({ games: [g], bonusPerks: perk(0) }));
-    const { unmount } = render(<GameActions game={g} />);
-    expect(screen.getByText(new RegExp(`${EVENT}:`)).textContent).toMatch(/\+\s*10 on finish/);
-    unmount();
-    // Started at half price (15 saved): it counts as 25 paid.
-    act(() => useStore.setState({ bonusPerks: perk(15) }));
-    render(<GameActions game={g} />);
-    expect(screen.getByText(new RegExp(`${EVENT}:`)).textContent).toMatch(/\+\s*25 on finish/);
-  });
-
-  it("says the finish check's pay-now includes the event's boost", () => {
+  it("says a boost needs a verified finish, and names what finishing early gives up", () => {
+    // 0 of ~40h logged: only a verified finish earns the event's boost.
     const g = game({ id: "p", status: "playing", hours: 40, pricePaid: 10, playedHours: 0, startedAt: 1 });
     act(() =>
-      useStore.setState({ games: [g], bonusPerks: { p: { bounty: { event: EVENT, factor: 2, capLeft: null }, saved: 0 } } }),
+      useStore.setState({ games: [g], bonusPerks: { p: { bounty: { event: EVENT, factor: 2, capLeft: null } } } }),
     );
     render(<GameActions game={g} />);
+    expect(screen.getByText(new RegExp(`${EVENT}:`)).textContent).toMatch(/on a verified finish$/);
     fireEvent.click(screen.getByRole("button", { name: /Mark Finished/i }));
     const dialog = screen.getByRole("dialog", { name: /Finish Alwa's Awakening/ });
-    expect(dialog.textContent).toMatch(new RegExp(`${EVENT} adds\\s*10 to what's paid now`));
+    expect(dialog.textContent).toMatch(new RegExp(`Finishing now gives up ${EVENT} \\+\\d+`));
+  });
+
+  it("checks before an early finish that holds nothing but would give up a bonus", () => {
+    // Paid more than the bounty, so nothing is held, but Collector's Record needs a verified finish.
+    const g = game({
+      id: "p",
+      status: "playing",
+      hours: 40,
+      pricePaid: 100_000,
+      playedHours: 0,
+      startedAt: 1,
+      copies: [{ id: "c", platform: "PC", cost: 30 }],
+    });
+    act(() => useStore.setState({ games: [g], bonusPerks: {} }));
+    render(<GameActions game={g} />);
+    expect(screen.getByText(/Bonus on a verified finish: Collector's Record \+10/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /Mark Finished/i }));
+    expect(screen.getByRole("dialog", { name: /Finish Alwa's Awakening/ }).textContent).toMatch(
+      /Finishing now gives up Collector's Record \+10/,
+    );
   });
 
   it("tells a Bazaar card its bounty is boosted if it's finished in time", () => {
@@ -586,7 +594,7 @@ describe("GameActions coin event perks", () => {
       useStore.setState({
         games: [solo],
         coins: 100_000,
-        bonusPerks: { a: { bounty: { event: EVENT, factor: 2, capLeft: null }, saved: 0 } },
+        bonusPerks: { a: { bounty: { event: EVENT, factor: 2, capLeft: null } } },
       }),
     );
     render(<GameActions game={solo} />);
@@ -598,7 +606,7 @@ describe("GameActions coin event perks", () => {
     act(() =>
       useStore.setState({
         games: [g],
-        bonusPerks: { p: { session: { event: EVENT, factor: 2, capLeft: null }, saved: 0 } },
+        bonusPerks: { p: { session: { event: EVENT, factor: 2, capLeft: null } } },
       }),
     );
     render(<GameActions game={g} />);

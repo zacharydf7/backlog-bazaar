@@ -339,8 +339,6 @@ export interface BonusEventPerk {
   bounty?: { event: string; factor: number; capLeft: number | null };
   /** Daily Session coins, on a Now Playing game. */
   session?: { event: string; factor: number; capLeft: number | null };
-  /** Coins the start discount saved on this run (counted as paid at finish). */
-  saved: number;
 }
 
 export function coerceBonusPerks(raw: unknown): Record<string, BonusEventPerk> {
@@ -369,7 +367,6 @@ export function coerceBonusPerks(raw: unknown): Record<string, BonusEventPerk> {
       ...(se && typeof se.event === "string" && num(se.factor) > 1
         ? { session: { event: se.event, factor: num(se.factor), capLeft: maybeNum(se.cap_left) } }
         : {}),
-      saved: num(r.saved),
     };
   }
   return out;

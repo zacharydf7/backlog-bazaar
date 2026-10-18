@@ -1,6 +1,6 @@
 import { trackEvent } from "../lib/appEvents";
 import { useState } from "react";
-import { Check, Clock, History, PartyPopper } from "lucide-react";
+import { Check, Clock, History, Sparkles } from "lucide-react";
 import type { Game } from "../types";
 import { useStore } from "../store";
 import { formatPlaytime, parsePlaytime } from "../lib/playtime";
@@ -8,18 +8,19 @@ import { useScrollLock } from "../lib/useScrollLock";
 import { useHistoryDismiss } from "../lib/useHistoryDismiss";
 import { CoinIcon } from "./CoinIcon";
 
-/** The check before a finish that would hold part of its bounty (coin
- *  outliers, 2026-10-17): with little of the game logged, offer to log the
- *  time first; or, for a game beaten before joining, file it under Finished
- *  without a bounty (the activation coins come back); or finish anyway, with
- *  the rest unlocking as time is logged. */
+/** The check before a finish with too little of the game logged (coin
+ *  outliers, 2026-10-17): it would hold part of its bounty, or give up the
+ *  coin-event boost and feature bonuses only a verified finish earns. Offer to
+ *  log the time first; or, for a game beaten before joining, file it under
+ *  Finished without a bounty (the activation coins come back); or finish
+ *  anyway, with the held coins unlocking as time is logged. */
 export function FinishCheckModal({
   game,
   length,
   gateHours,
   payNow,
   held,
-  eventBonus,
+  forfeits,
   onFinish,
   onClose,
 }: {
@@ -31,9 +32,9 @@ export function FinishCheckModal({
   /** Coins the finish pays now, and the coins it would hold. */
   payNow: number;
   held: number;
-  /** A running coin event's boost on what's paid now (coins released later
-   *  aren't boosted). */
-  eventBonus?: { event: string; amount: number };
+  /** What only a verified finish earns, given up by finishing now (e.g.
+   *  "Story Order +20 · Double Weekend +250"). */
+  forfeits?: string;
   /** Finishes the game (the caller's usual path, stopwatch handling included). */
   onFinish: () => void;
   onClose: () => void;
@@ -72,17 +73,21 @@ export function FinishCheckModal({
         <h2 className="font-display text-lg text-ink">Log your time first?</h2>
         <p className="mt-1 text-sm text-muted">
           You&apos;ve logged {formatPlaytime(played)} of about {formatPlaytime(length)} on{" "}
-          <span className="font-medium text-ink">{game.title}</span>. Finishing now pays{" "}
-          <CoinIcon size={12} /> {payNow}; the other <CoinIcon size={12} /> {held} unlock as you
-          log your time, all of it at {formatPlaytime(gateHours)}. A clear with that much logged
-          also counts toward your Clear Streak.
+          <span className="font-medium text-ink">{game.title}</span>.{" "}
+          {held > 0 && (
+            <>
+              Finishing now pays <CoinIcon size={12} /> {payNow}; the other <CoinIcon size={12} /> {held}{" "}
+              unlock as you log your time, all of it at {formatPlaytime(gateHours)}.{" "}
+            </>
+          )}
+          A clear with {formatPlaytime(gateHours)} logged also counts toward your Clear Streak.
         </p>
-        {eventBonus && (
-          <p className="mt-2 inline-flex items-start gap-1.5 text-sm font-semibold text-success">
-            <PartyPopper size={15} className="mt-0.5 shrink-0" />
+        {forfeits && (
+          <p className="mt-2 inline-flex items-start gap-1.5 text-sm font-semibold text-accent">
+            <Sparkles size={15} className="mt-0.5 shrink-0" />
             <span>
-              {eventBonus.event} adds <CoinIcon size={12} /> {eventBonus.amount} to what&apos;s paid now.
-              Logging your time first grows it; coins that unlock later aren&apos;t boosted.
+              Finishing now gives up {forfeits}. Only a finish with {formatPlaytime(gateHours)} logged
+              earns them, and logging time later doesn&apos;t bring them back.
             </span>
           </p>
         )}
@@ -151,7 +156,15 @@ export function FinishCheckModal({
             <span>
               <span className="block text-sm font-medium text-ink">Finish anyway</span>
               <span className="block text-xs text-muted">
-                Get <CoinIcon size={11} /> {payNow} now and the rest as you log your time.
+                {held > 0 ? (
+                  <>
+                    Get <CoinIcon size={11} /> {payNow} now and the rest as you log your time.
+                  </>
+                ) : (
+                  <>
+                    Get <CoinIcon size={11} /> {payNow} now.
+                  </>
+                )}
               </span>
             </span>
           </button>

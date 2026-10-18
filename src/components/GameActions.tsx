@@ -83,7 +83,7 @@ import {
   type FactorKey,
 } from "../lib/economy";
 import { beatenFinishLength, effectiveLength, finishBountyOffset } from "../lib/personalLength";
-import { bountyGateHours, heldAtFinish } from "../lib/bountyHold";
+import { bountyGateHours, heldAtFinish, isVerifiedClear } from "../lib/bountyHold";
 import { eventFinishBonus, eventStartPrice, times } from "../lib/bonusEvents";
 import { FinishCheckModal } from "./FinishCheckModal";
 import { useScrollLock } from "../lib/useScrollLock";
@@ -481,18 +481,28 @@ export function GameActions({
   const finishHeld = showEconomy
     ? heldAtFinish({
         net: finishNet,
-        pricePaid: Math.max(0, (game.pricePaid ?? 0) + (perk?.saved ?? 0) - settleRefund),
+        pricePaid: Math.max(0, (game.pricePaid ?? 0) - settleRefund),
         played: game.playedHours ?? 0,
         gateHours: finishGateHours,
       })
     : 0;
-  // A running coin event's boost on what the finish pays now.
-  const eventBonus = showEconomy && game.status === "playing" ? eventFinishBonus(finishNet - finishHeld, perk) : 0;
+  // Too little logged for a verified finish, which alone earns a coin event's
+  // boost and the feature bonuses (mirrors apply_finish): the card still shows
+  // them, as needing a verified finish, and the finish check names them.
+  const finishUnverified = game.status === "playing" && isVerifiedClear(finishAs, bountyGatePct) === false;
+  // A running coin event's boost on a verified finish.
+  const eventBonus = showEconomy && game.status === "playing" ? eventFinishBonus(finishNet, perk) : 0;
   // Feature bonuses this game is set up to earn on its first clear (Story Order /
   // Collector's Record) — previewed the moment the setup is in place.
   const bonusSummary = finishBonusSummary(
     finishBonuses(games, game, { firstClear: !willReplay, paying: showEconomy }, featureBonuses),
   );
+  // What finishing before the gate gives up.
+  const finishForfeits = finishUnverified
+    ? [bonusSummary, eventBonus > 0 && perk?.bounty ? `${perk.bounty.event} +${eventBonus}` : ""]
+        .filter(Boolean)
+        .join(" · ")
+    : "";
   const shelveRefund = showEconomy ? computeShelveRefund(game.pricePaid ?? price) : 0;
   const canAfford = !economyEnabled || coins >= startPrice;
   const hasVoucher = economyEnabled && canRedeemVoucher(vouchers, game.status);
@@ -993,9 +1003,7 @@ export function GameActions({
             gateHours={finishGateHours}
             payNow={finishNet - finishHeld + settleRefund}
             held={finishHeld}
-            eventBonus={
-              eventBonus > 0 && perk?.bounty ? { event: perk.bounty.event, amount: eventBonus } : undefined
-            }
+            forfeits={finishForfeits || undefined}
             onFinish={() => withSessionStopped(() => finishGame(game.id))}
             onClose={() => setCheckingFinish(false)}
           />,
@@ -1409,7 +1417,7 @@ export function GameActions({
           )}
           <button
             onClick={() =>
-              finishHeld > 0
+              finishHeld > 0 || finishForfeits
                 ? setCheckingFinish(true)
                 : withSessionStopped(() => finishGame(game.id))
             }
@@ -1430,12 +1438,13 @@ export function GameActions({
           {eventBonus > 0 && (
             <p className="-mt-1 inline-flex items-center justify-center gap-1 text-center text-xs font-semibold text-success">
               <PartyPopper size={13} className="shrink-0" /> {perk?.bounty?.event}: +
-              <CoinIcon size={12} /> {eventBonus} on finish
+              <CoinIcon size={12} /> {eventBonus} on {finishUnverified ? "a verified finish" : "finish"}
             </p>
           )}
           {bonusSummary && (
             <p className="-mt-1 inline-flex items-center justify-center gap-1 text-center text-[11px] text-subtle">
-              <Sparkles size={12} className="shrink-0 text-accent" /> Bonus on finish: {bonusSummary}
+              <Sparkles size={12} className="shrink-0 text-accent" /> Bonus on{" "}
+              {finishUnverified ? "a verified finish" : "finish"}: {bonusSummary}
             </p>
           )}
           {lane === "replay" ? (

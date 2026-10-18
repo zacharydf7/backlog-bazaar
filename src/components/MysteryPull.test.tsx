@@ -66,7 +66,7 @@ describe("MysteryPull", () => {
   it("shows a coin event's discount on the pulled game's price", () => {
     act(() =>
       useStore.setState({
-        bonusPerks: { [game().id]: { discount: { event: "Half Off", pct: 50, capLeft: null }, saved: 0 } },
+        bonusPerks: { [game().id]: { discount: { event: "Half Off", pct: 50, capLeft: null } } },
       }),
     );
     render(<MysteryPull />);

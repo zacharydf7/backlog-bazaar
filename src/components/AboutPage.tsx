@@ -218,8 +218,9 @@ export function AboutPage() {
               <strong className="text-ink">Collector&apos;s Record</strong> bonus. And a review of{" "}
               {featureBonuses.reviewMinChars}+ characters on a game you cleared for a bounty earns a
               one-time <Coin n={featureBonuses.reviewer} />{" "}
-              <strong className="text-ink">Reviewer</strong> bonus. Your cards show which bonuses a
-              game is lined up for, and replays never earn them twice.
+              <strong className="text-ink">Reviewer</strong> bonus. Story Order and Collector&apos;s
+              Record pay on a Verified finish, so log your time before you mark it finished. Your
+              cards show which bonuses a game is lined up for, and replays never earn them twice.
             </p>
             <p>
               <strong className="text-ink">Achievements</strong> pay too. Every medal you earn
@@ -250,9 +251,8 @@ export function AboutPage() {
               events too, and some are for certain games only, like RPGs or games off the platform
               you play most. The <strong className="text-ink">Calendar</strong> shows what&apos;s
               on and what&apos;s coming, with tips to get ready, alongside goal resets and your own
-              pre-orders and renewals. A start discount is pure savings: finishing still pays the
-              full bounty. A bounty boost counts the part paid when you finish, and an event may
-              cap how much extra each player can earn.
+              pre-orders and renewals. A start discount is savings on the start. A bounty boost
+              pays on a Verified finish, and an event may cap how much extra each player can earn.
             </p>
             <p>
               A game&apos;s length comes from a shared estimate, but you can set{" "}

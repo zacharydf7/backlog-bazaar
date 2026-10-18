@@ -364,7 +364,7 @@ describe("my_bonus_event_perks", () => {
     expect(await perks()).toEqual({});
   });
 
-  it("gives Bazaar games the discount (and the bounty to come), Now Playing games the boosts and saving", async () => {
+  it("gives Bazaar games the discount (and the bounty to come), Now Playing games the boosts", async () => {
     await db.exec(`update public.games set status = 'playing', started_at = now() - interval '1 hour' where id = '${SW}'`);
     const id = await event({
       start_discount_pct: "50",
@@ -372,7 +372,6 @@ describe("my_bonus_event_perks", () => {
       session_mult: "3",
       genres: "'{RPG,Platformer}'",
     });
-    // A discount saved on this run counts; one from before it started doesn't.
     await db.query(
       `insert into public.bonus_event_payouts (event_id, event_name, user_id, game_id, kind, amount, created_at)
        values ($1, 'x', $2, $3, 'discount', 20, now() - interval '30 minutes'),
@@ -388,18 +387,8 @@ describe("my_bonus_event_perks", () => {
       [SW]: {
         bounty: { event: "Double Bounty", factor: 2 },
         session: { event: "Double Bounty", factor: 3 },
-        saved: 20,
       },
     });
-  });
-
-  it("keeps a run's discount saving after the event is over", async () => {
-    await db.exec(`update public.games set status = 'playing', started_at = now() - interval '2 hours' where id = '${SW}'`);
-    await db.query(
-      "insert into public.bonus_event_payouts (event_name, user_id, game_id, kind, amount, created_at) values ('Old', $1, $2, 'discount', 30, now() - interval '1 hour')",
-      [U, SW],
-    );
-    expect(await perks()).toEqual({ [SW]: { saved: 30 } });
   });
 
   it("drops the discount once the player's discounted starts are used", async () => {

@@ -69,7 +69,7 @@ describe("CoOpPactBanner", () => {
       useStore.setState({
         games: [g],
         economyEnabled: true,
-        bonusPerks: { [g.id]: { discount: { event: "Half Off", pct: 50, capLeft: null }, saved: 0 } },
+        bonusPerks: { [g.id]: { discount: { event: "Half Off", pct: 50, capLeft: null } } },
         coOpPacts: [
           pact({ status: "pending", iAmInviter: false, myGameId: null, myCandidateGameId: g.id }),
         ],

@@ -7759,14 +7759,12 @@ declare
   v_gate_pct     integer;
   v_gate         real;     -- logged hours that release the whole bounty
   v_held         integer := 0;
-  v_unverified   boolean := false; -- too little logged to extend the Clear Streak
+  v_unverified   boolean := false; -- too little logged for a verified clear
   -- Shadow economy (admin-only; see shadow_economy_config).
   v_shadow_pct   integer := 0;
   v_shadow_src   text;
   v_shadow_base  integer := 0;
-  -- Coin events: the start discount this run got, and the boost paid on this
-  -- finish.
-  v_discount     integer := 0;
+  -- Coin events: the boost paid on this finish.
   v_event_bonus  integer := 0;
 begin
   -- Snapshot the pre-action reversible state (slot/lane flags + tag) so undo_action
@@ -7841,25 +7839,24 @@ begin
   end if;
   v_net := v_award - v_offset;
 
+  -- Unverified: less than the gate share of the game's length logged. Such a
+  -- finish holds part of its bounty (below), earns no coin-event boost or
+  -- feature bonus (owner, 2026-10-17: buying and finishing at once paid
+  -- them on top of the refunded price), and doesn't extend the Clear Streak.
+  select bounty_gate_pct into v_gate_pct from public.app_config where id = 1;
+  v_unverified := coalesce(v_length, 0) > 0 and coalesce(v_gate_pct, 25) > 0
+                  and v_played < coalesce(v_gate_pct, 25) / 100.0 * v_length;
+
   -- Logged-time gate (coin outliers, 2026-10-17): with less than the gate share
   -- of the game's length logged, pay the activation refund — or the logged
   -- share of the bounty, if that's more — and hold the rest for logged time
   -- (games_release_bounty pays it out as hours come in). Nothing is ever taken:
-  -- the finish still returns at least what activating it cost.
-  if v_net > 0 and coalesce(v_length, 0) > 0 then
-    select bounty_gate_pct into v_gate_pct from public.app_config where id = 1;
+  -- the finish still returns at least what activating it cost — what it
+  -- actually cost, so a discounted start finished at once nets nothing.
+  if v_net > 0 and v_unverified then
     v_gate := coalesce(v_gate_pct, 25) / 100.0 * v_length;
-    if v_gate > 0 and v_played < v_gate then
-      -- The refund-now share uses the full price: a coin event's start
-      -- discount on this run (recorded when it started) is added back, so it
-      -- doesn't shrink what the finish pays.
-      select coalesce(sum(b.amount), 0) into v_discount
-        from public.bonus_event_payouts b
-       where b.game_id = p_game and b.user_id = auth.uid() and b.kind = 'discount'
-         and b.created_at >= v_started_at;
-      v_held := v_net - greatest(least(coalesce(v_price_paid, 0) + v_discount, v_net),
-                                 round(v_net * v_played / v_gate)::integer);
-    end if;
+    v_held := v_net - greatest(least(coalesce(v_price_paid, 0), v_net),
+                               round(v_net * v_played / v_gate)::integer);
   end if;
 
   -- Finish tag for the Finished board: a completion run earns 'completed'; any other
@@ -7926,9 +7923,10 @@ begin
         jsonb_build_object('gate_hours', v_gate, 'played_hours', v_played)
       );
     end if;
-    -- A running coin event boosts the part paid at finish (the held part,
-    -- released later as logged time comes in, isn't boosted).
-    v_event_bonus := public.bonus_event_pay(auth.uid(), p_game, 'bounty', v_net - v_held);
+    -- A running coin event boosts the part paid at a verified finish.
+    if not v_unverified then
+      v_event_bonus := public.bonus_event_pay(auth.uid(), p_game, 'bounty', v_net - v_held);
+    end if;
     if v_event_bonus > 0 then
       select coins into v_coins from public.profiles where id = auth.uid();
     end if;
@@ -7957,9 +7955,6 @@ begin
   select coalesce(clear_streak, 0), coalesce(clear_streak_best, 0)
     into v_streak_prev, v_streak_best
     from public.profiles where id = auth.uid();
-  select bounty_gate_pct into v_gate_pct from public.app_config where id = 1;
-  v_unverified := coalesce(v_length, 0) > 0 and coalesce(v_gate_pct, 25) > 0
-                  and v_played < coalesce(v_gate_pct, 25) / 100.0 * v_length;
   v_streak := v_streak_prev;
   if not coalesce(v_resumed, false) and not v_stealth and not v_unverified then
     v_streak := v_streak_prev + 1;
@@ -7997,10 +7992,10 @@ begin
   -- Feature bonuses: a paying FIRST clear rewards the optional setup put into the
   -- game — Story Order for a run started story-locked (the start stamp, never the
   -- live link, so locking mid-run can't mint it) and Collector's Record for copies
-  -- that note their cost or service. Replays / resumed re-clears and economy-off or
-  -- free-started runs pay neither, exactly like the bounty. Each is its own ledger
-  -- row so it's independently auditable.
-  if v_econ and not v_free_start and not v_replay then
+  -- that note their cost or service. Replays / resumed re-clears, unverified
+  -- finishes and economy-off or free-started runs pay neither. Each is its own
+  -- ledger row so it's independently auditable.
+  if v_econ and not v_free_start and not v_replay and not v_unverified then
     select case when v_story_locked then greatest(0, coalesce(story_order_bonus, 20)) else 0 end,
            case when public.copies_have_collectors_record(v_copies)
                 then greatest(0, coalesce(collectors_record_bonus, 10)) else 0 end
@@ -19266,6 +19261,9 @@ as $$
   select 'coins_earned', coalesce(sum(e.coin_delta), 0)::numeric
     from public.coin_events e
    where e.user_id = p_user and e.kind <> 'opening'
+     -- A refund (shelve, salvage, length, expand, backing returned) gives
+     -- back coins already spent, so it isn't earned (owner, 2026-10-17).
+     and e.kind not like '%refund'
      and (case when e.kind like 'undo%' or e.kind in ('bounty_held', 'length_debt')
                then e.coin_delta < 0 else e.coin_delta > 0 end)
   union all
@@ -21053,12 +21051,11 @@ grant execute on function public.mark_weekly_recap_seen(uuid) to authenticated;
 -- platforms, or "off your main platform" (any platform but the one the player
 -- plays most, so a one-platform player simply isn't offered it). Boosts are
 -- multipliers (a discount is a percentage) applied server-side; each event can
--- cap the extra coins a player gets from it (discount savings count). A start
--- discount is extra value, not a smaller game: the finish still pays as if the
--- full price was paid (the logged-time gate's refund-now share adds back the
--- discount recorded for the run). A bounty boost applies to the part paid at finish; held
--- coins released later aren't boosted. Every boost paid is recorded in
--- bonus_event_payouts (append-only) and the ledger ('event_bonus').
+-- cap the extra coins a player gets from it (discount savings count). A bounty
+-- boost applies to a verified finish only (owner, 2026-10-17), so an unverified
+-- one, whose pay-now is just the start price back, earns none. Every boost
+-- paid is recorded in bonus_event_payouts (append-only) and the ledger
+-- ('event_bonus').
 -- ---------------------------------------------------------------------------
 create table if not exists public.bonus_events (
   id                 uuid primary key default gen_random_uuid(),
@@ -21614,13 +21611,7 @@ begin
                        from live l
                       where public.bonus_event_usable(l.ev, 'session', l.cap_left, l.discounts_used)
                         and public.bonus_event_applies(l.ev, v_me, g.id)
-                      order by (l.ev).session_mult desc, l.occ_end limit 1) end,
-                 -- A discount saved on this run counts as paid at finish
-                 -- (apply_finish), so it shows even once its event is over.
-                 'saved', case when g.status = 'playing' then
-                            nullif((select coalesce(sum(p.amount), 0) from public.bonus_event_payouts p
-                                     where p.game_id = g.id and p.user_id = v_me and p.kind = 'discount'
-                                       and p.created_at >= g.started_at), 0) end
+                      order by (l.ev).session_mult desc, l.occ_end limit 1) end
                )) as perk
           from public.games g
          where g.user_id = v_me and g.status in ('backlog', 'playing')

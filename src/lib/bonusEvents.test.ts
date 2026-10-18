@@ -163,25 +163,24 @@ describe("perks", () => {
     expect(
       coerceBonusPerks({
         a: { discount: { event: "Half Off", pct: 50, cap_left: "40" } },
-        b: { bounty: { event: "Double", factor: "2" }, session: { event: "Double", factor: 2 }, saved: 25 },
+        b: { bounty: { event: "Double", factor: "2" }, session: { event: "Double", factor: 2 } },
         c: { bounty: { event: "Flat", factor: 1 } },
         d: "nope",
       }),
     ).toEqual({
-      a: { discount: { event: "Half Off", pct: 50, capLeft: 40, startsLeft: null }, saved: 0 },
+      a: { discount: { event: "Half Off", pct: 50, capLeft: 40, startsLeft: null } },
       b: {
         bounty: { event: "Double", factor: 2, capLeft: null },
         session: { event: "Double", factor: 2, capLeft: null },
-        saved: 25,
       },
-      c: { saved: 0 },
+      c: {},
     });
     expect(coerceBonusPerks(null)).toEqual({});
     expect(coerceBonusPerks([1])).toEqual({});
   });
 
   it("prices a start like bonus_event_discount: floored saving, stopped at the cap", () => {
-    const perk = (pct: number, capLeft: number | null = null) => ({ discount: { event: "E", pct, capLeft }, saved: 0 });
+    const perk = (pct: number, capLeft: number | null = null) => ({ discount: { event: "E", pct, capLeft } });
     expect(eventStartPrice(125, perk(50))).toEqual({ price: 63, saving: 62, event: "E", pct: 50 });
     expect(eventStartPrice(100, perk(50, 30))).toMatchObject({ price: 70, saving: 30 });
     expect(eventStartPrice(100, perk(50, 0))).toBeNull();
@@ -190,7 +189,7 @@ describe("perks", () => {
   });
 
   it("boosts what's paid at finish like bonus_event_pay: floored, stopped at the cap", () => {
-    const perk = (factor: number, capLeft: number | null = null) => ({ bounty: { event: "E", factor, capLeft }, saved: 0 });
+    const perk = (factor: number, capLeft: number | null = null) => ({ bounty: { event: "E", factor, capLeft } });
     expect(eventFinishBonus(330, perk(2))).toBe(330);
     expect(eventFinishBonus(101, perk(1.5))).toBe(50);
     expect(eventFinishBonus(330, perk(2, 100))).toBe(100);

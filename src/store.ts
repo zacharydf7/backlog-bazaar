@@ -9784,7 +9784,8 @@ export const useStore = create<BazaarState>((set, get) => ({
       held > 0
         ? { bountyHeld: held, bountyHeldTotal: total, bountyGateHours: gateHours ?? undefined }
         : { bountyHeld: 0, bountyHeldTotal: undefined, bountyGateHours: undefined };
-    // Too little logged to count toward the Clear Streak (mirrors apply_finish).
+    // Too little logged for a verified clear: no Clear Streak step, coin-event
+    // boost or feature bonus (mirrors apply_finish).
     const unverifiedFinish = isVerifiedClear(game, get().bountyGatePct) === false;
     const heldToast = (held: number) => {
       if (held > 0) toast(`${held} more coins unlock as you log your time on ${game.title}`, Clock);
@@ -9794,7 +9795,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     const localBonuses = finishBonuses(
       games,
       game,
-      { firstClear: !replay, paying: economyOn && !freeStart },
+      { firstClear: !replay, paying: economyOn && !freeStart && !unverifiedFinish },
       get().featureBonuses,
     );
 
