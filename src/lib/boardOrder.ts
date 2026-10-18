@@ -14,6 +14,7 @@
 import type { Game } from "../types";
 import type { CollapsedCompilation } from "./compilationGrouping";
 import type { UnifiedFamily } from "./familyGrouping";
+import { expansionSortValue, type BazaarExpansion } from "./bazaarExpansions";
 import { sortMetric, type EconomyViewContext, type SortKey } from "./bazaarView";
 import { DEFAULT_ECONOMY, type EconomyConfig } from "./economy";
 
@@ -21,7 +22,8 @@ import { DEFAULT_ECONOMY, type EconomyConfig } from "./economy";
 export type BoardCard =
   | { kind: "game"; game: Game }
   | { kind: "compilation"; collapsed: CollapsedCompilation }
-  | { kind: "family"; family: UnifiedFamily };
+  | { kind: "family"; family: UnifiedFamily }
+  | { kind: "expansion"; expansion: BazaarExpansion };
 
 /** The title the card displays — what A–Z sorts by and ties break on. */
 export function cardTitle(card: BoardCard): string {
@@ -32,6 +34,8 @@ export function cardTitle(card: BoardCard): string {
       return card.collapsed.compilation.title;
     case "family":
       return card.family.name;
+    case "expansion":
+      return card.expansion.dlc.name;
   }
 }
 
@@ -42,14 +46,18 @@ export function cardTitle(card: BoardCard): string {
 interface BoardUnit {
   cards: BoardCard[];
   members: Game[];
+  /** A Bazaar expansion card, placed by its own values (it stands in for no
+   *  games). */
+  expansion?: BazaarExpansion;
   /** The title the unit sorts and ties break on under A–Z. For a split-bundle
    *  block it's the alphabetically-first member, so the block slots among its
    *  siblings while still displaying in the owner's order. */
   sortTitle: string;
 }
 
-/** Merge a board's plain games, collapsed compilations, and family cards into
- *  the one list its grid renders, ordered by the active sort. Same economy
+/** Merge a board's plain games, collapsed compilations, family cards and (on
+ *  the Bazaar) expansion cards into the one list its grid renders, ordered by
+ *  the active sort. Same economy
  *  context contract as sortGames (coin-value sorts price the way the buy
  *  button will). Returns a new array; the inputs are not mutated.
  *
@@ -64,6 +72,7 @@ export function orderBoardCards(
   key: SortKey,
   economy: EconomyConfig = DEFAULT_ECONOMY,
   ctx: EconomyViewContext = {},
+  expansions: BazaarExpansion[] = [],
 ): BoardCard[] {
   const units: BoardUnit[] = [];
   // Loose children of one bundle collect into a single block; every other game
@@ -102,18 +111,28 @@ export function orderBoardCards(
       sortTitle: family.name,
     });
   }
+  for (const expansion of expansions) {
+    units.push({
+      cards: [{ kind: "expansion", expansion }],
+      members: [],
+      expansion,
+      sortTitle: expansion.dlc.name,
+    });
+  }
 
   const byTitle = (a: BoardUnit, b: BoardUnit) => a.sortTitle.localeCompare(b.sortTitle);
   const metric = sortMetric(key, economy, ctx);
   if (!metric) return units.sort(byTitle).flatMap((u) => u.cards);
 
   // Best-placed member: min of the members' values ascending, max descending.
-  // A unit with no members (can't normally happen — empty bundles are skipped
-  // upstream) sinks to the end rather than throwing.
+  // An expansion places by its own value. A unit with no value (an expansion
+  // under a priority sort; an empty bundle can't normally happen, they're
+  // skipped upstream) sinks to the end rather than throwing.
   const values = new Map<BoardUnit, number>(
     units.map((unit) => {
-      const v =
-        unit.members.length === 0
+      const v = unit.expansion
+        ? (expansionSortValue(unit.expansion, key) ?? metric.dir * Infinity)
+        : unit.members.length === 0
           ? metric.dir * Infinity
           : metric.dir === 1
             ? Math.min(...unit.members.map(metric.value))

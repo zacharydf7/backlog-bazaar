@@ -1,9 +1,10 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { act, render, screen, fireEvent } from "@testing-library/react";
-import { ExpansionRunActions, ExpansionStartActions } from "./ExpansionControls";
+import { ExpansionBazaarCard, ExpansionRunActions } from "./ExpansionControls";
 import { useStore } from "../store";
 import { DEFAULT_ECONOMY } from "../lib/economy";
 import type { GameDlc } from "../lib/dlc";
+import type { BazaarExpansion } from "../lib/bazaarExpansions";
 import type { Game } from "../types";
 
 const GAME = { id: "g1", title: "Ghost of Yotei", status: "finished", genres: [], copies: [], addedAt: 1, playedHours: 41 } as Game;
@@ -32,10 +33,13 @@ const startExpansion = vi.fn(async () => {});
 const finishExpansion = vi.fn(async () => {});
 const cancelExpansion = vi.fn(async () => {});
 
-function setup(list: GameDlc[]) {
+function setup(list: GameDlc[], extra: Record<string, unknown> = {}) {
   act(() =>
     useStore.setState({
       isAdmin: false,
+      coins: 1000,
+      economyEnabled: true,
+      ...extra,
       gameDlc: list,
       economy: DEFAULT_ECONOMY,
       bountyGatePct: 50,
@@ -48,16 +52,57 @@ function setup(list: GameDlc[]) {
 
 beforeEach(() => vi.clearAllMocks());
 
-describe("ExpansionStartActions", () => {
-  it("offers each unplayed story expansion and confirms its price and bounty", () => {
-    setup([LEGENDS, { ...LEGENDS, id: "d2", name: "Played", runStatus: "cleared" }]);
-    render(<ExpansionStartActions game={GAME} showEconomy />);
-    expect(screen.queryByText(/Play Played/)).toBeNull();
-    fireEvent.click(screen.getByText("Play Legends"));
-    // Default formulas: 40 + 3 x 8 + 120 fresh; a flat 40 bounty after 4h.
+describe("ExpansionBazaarCard", () => {
+  // Default formulas: 40 + 3 x 8 + 120 fresh to start; a flat 40 bounty after 4h.
+  const card = (over: Partial<BazaarExpansion> = {}): BazaarExpansion => ({
+    dlc: LEGENDS,
+    game: GAME,
+    quote: { price: 184, bounty: 40, gateHours: 4, paying: true },
+    lockedReason: null,
+    ...over,
+  });
+
+  it("leads with the expansion, then buys and starts it after confirming its price and bounty", () => {
+    setup([LEGENDS]);
+    render(<ExpansionBazaarCard expansion={card()} />);
+    expect(screen.getByRole("heading", { name: "Legends" })).toBeTruthy();
+    expect(screen.getByText("Ghost of Yotei expansion")).toBeTruthy();
+    expect(screen.getByText(/Clear bounty/).textContent).toMatch(/40/);
+    fireEvent.click(screen.getByRole("button", { name: /Buy & Start/ }));
     expect(screen.getByText(/Starting costs/).textContent).toMatch(/Starting costs\s+184\. Clearing it pays\s+40 once you've logged 4h/);
+  });
+
+  it("confirms the same price and bounty the card shows", () => {
+    setup([LEGENDS]);
+    render(<ExpansionBazaarCard expansion={card({ quote: { price: 99, bounty: 300, gateHours: 2, paying: true } })} />);
+    fireEvent.click(screen.getByRole("button", { name: /Buy & Start/ }));
+    expect(screen.getByText(/Starting costs/).textContent).toMatch(/Starting costs\s+99\. Clearing it pays\s+300 once you've logged 2h/);
     fireEvent.click(screen.getByText("Play expansion"));
     expect(startExpansion).toHaveBeenCalledWith("d1");
+  });
+
+  it("stays locked, with why, until its game can take it", () => {
+    setup([LEGENDS]);
+    render(<ExpansionBazaarCard expansion={card({ lockedReason: "Finish Ghost of Yotei first" })} />);
+    const locked = screen.getByRole("button", { name: /Story-locked/ }) as HTMLButtonElement;
+    expect(locked.disabled).toBe(true);
+    expect(screen.getByText(/Finish Ghost of Yotei first/)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Buy & Start/ })).toBeNull();
+  });
+
+  it("says how many coins are missing instead of starting", () => {
+    setup([LEGENDS], { coins: 100 });
+    render(<ExpansionBazaarCard expansion={card()} />);
+    const short = screen.getByRole("button", { name: /Need/ }) as HTMLButtonElement;
+    expect(short.disabled).toBe(true);
+    expect(short.textContent).toMatch(/84 more/);
+  });
+
+  it("starts for free with the economy off", () => {
+    setup([LEGENDS], { economyEnabled: false });
+    render(<ExpansionBazaarCard expansion={card()} />);
+    expect(screen.getByRole("button", { name: /Start playing/ })).toBeTruthy();
+    expect(screen.queryByText(/Clear bounty/)).toBeNull();
   });
 });
 

@@ -34,7 +34,7 @@ import { ownedPlatformSummary, ownedVersions, totalCost, formatUsd, versionLabel
 import { formatPlaytime } from "../lib/playtime";
 import { isLocalCover } from "../lib/covers";
 import { clampScore } from "../lib/reviews";
-import { compilationHash, gameHash } from "../lib/route";
+import { HOME, compilationHash, gameHash, routeToHash } from "../lib/route";
 import { ReportModal } from "./ReportModal";
 import { LikeButton } from "./LikeButton";
 import { CoOpBadge, CoOpInviteModal, useActivePact } from "./CoOpPact";
@@ -85,6 +85,12 @@ export function GameCard({
 }) {
   // The story expansion this game is playing, if any (your own DLC only).
   const expansion = useActiveExpansion(game.id);
+  // Story expansions of this finished game waiting in your Bazaar.
+  const expansionsInBazaar = useStore((s) =>
+    game.status === "finished"
+      ? s.gameDlc.filter((d) => d.gameId === game.id && d.kind === "expansion" && d.runStatus === "owned").length
+      : 0,
+  );
   const { bazaarToWishlist, bazaarToFinished, importFromWishlist, removeGame, compilations, setCompilationChildStatus, expandGameToCompilation, parentTemplates, setGamePrivate, severFamily } =
     useStore();
   const { readOnly } = useViewing();
@@ -894,6 +900,19 @@ export function GameCard({
               {game.finishTag && <FinishTagBadge tag={game.finishTag} />}
               {clampScore(game.reviewScore ?? null) != null && <ScoreChip score={game.reviewScore!} />}
               <ClearLogChip game={game} />
+              {!readOnly && expansionsInBazaar > 0 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    window.location.hash = routeToHash(HOME);
+                  }}
+                  title="Its story expansions wait in your Bazaar"
+                  className="inline-flex items-center gap-1 rounded-full border border-accent/40 bg-accent/10 px-1.5 py-0.5 text-[10px] font-medium text-accent transition hover:bg-accent/15"
+                >
+                  <Package size={10} />{" "}
+                  {expansionsInBazaar === 1 ? "Expansion" : `${expansionsInBazaar} expansions`} in your Bazaar
+                </button>
+              )}
             </div>
           )}
 

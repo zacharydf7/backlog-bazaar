@@ -48,9 +48,9 @@ export const RELEASES: Release[] = [
     tag: "feature",
     items: [
       "Add DLC from a game's Library tab: expansions, updates or items.",
-      "Story expansions play in their own DLC lane and pay a bounty when cleared.",
-      "What you spent on DLC counts toward the game's total.",
-      "Old DLC copies move over with one tap.",
+      "Each story expansion gets its own Bazaar card, then plays in a DLC lane.",
+      "DLC spending counts toward the game's total, and old DLC copies move over.",
+      "Search finds a game by the names of its DLC.",
     ],
   },
   {

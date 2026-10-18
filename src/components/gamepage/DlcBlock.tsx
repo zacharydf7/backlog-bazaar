@@ -31,7 +31,7 @@ function runLabel(d: GameDlc): string | null {
   if (d.kind !== "expansion") return null;
   if (d.runStatus === "playing") return "Playing now";
   if (d.runStatus === "cleared") return d.runReward ? `Cleared · +${d.runReward}` : "Cleared";
-  return null;
+  return "In your Bazaar";
 }
 
 /** An old 'dlc' copy on one of the hub's games, waiting to become a record. */

@@ -1,17 +1,18 @@
-// Expansion runs on a game card (DLC preview, src/lib/dlc.ts): "Play" buttons
-// on a finished game for each story expansion not yet played, and the clear /
-// stop controls while one runs. The server prices and pays every run; the
-// amounts here are its preview.
+// Expansion runs (src/lib/dlc.ts): an unplayed story expansion's own Bazaar
+// card with its Buy & Start, and the clear / stop controls on the game's card
+// while it runs. The server prices and pays every run; the amounts here are
+// its preview.
 import { useState } from "react";
 import { createPortal } from "react-dom";
-import { BookOpen, Check, Undo2 } from "lucide-react";
+import { BookOpen, Check, Clock, Gamepad2, Lock, Package, Undo2 } from "lucide-react";
 import type { Game } from "../types";
 import { useStore } from "../store";
+import type { BazaarExpansion } from "../lib/bazaarExpansions";
+import { gameHash } from "../lib/route";
+import { useCoverOf } from "../lib/useCoverOf";
 import {
-  expansionFormulas,
   expansionLoggedHours,
   expansionPayout,
-  expansionQuote,
   type ExpansionQuote,
   type GameDlc,
 } from "../lib/dlc";
@@ -25,52 +26,121 @@ export function useActiveExpansion(gameId: string): GameDlc | undefined {
   return useStore((s) => s.gameDlc.find((d) => d.gameId === gameId && d.runStatus === "playing"));
 }
 
-function useExpansionQuote(dlc: GameDlc): ExpansionQuote {
-  const economy = useStore((s) => s.economy);
-  const cfg = useStore((s) => s.expansionConfig);
-  const gatePct = useStore((s) => s.bountyGatePct);
-  return expansionQuote(dlc, expansionFormulas(economy, cfg), cfg.minHours, gatePct);
-}
-
-/** "Play <expansion>" on a finished game, one per story expansion not yet
- *  played, each confirming what it costs and pays. */
-export function ExpansionStartActions({ game, showEconomy }: { game: Game; showEconomy: boolean }) {
-  const all = useStore((s) => s.gameDlc);
-  const [picked, setPicked] = useState<GameDlc | null>(null);
-  const ready = all.filter((d) => d.gameId === game.id && d.kind === "expansion" && d.runStatus === "owned");
+/** An unplayed expansion's own Bazaar card (owner, 2026-10-18): its name, its
+ *  game, the game's cover, and Buy & Start into the DLC lane, or locked until
+ *  the game is finished. The cover opens the game's page, where its DLC lives. */
+export function ExpansionBazaarCard({ expansion }: { expansion: BazaarExpansion }) {
+  const { dlc, game, quote, lockedReason } = expansion;
+  const coins = useStore((s) => s.coins);
+  const showEconomy = useStore((s) => s.economyEnabled);
+  const cover = useCoverOf()(game);
+  const [starting, setStarting] = useState(false);
+  const charges = showEconomy && quote.paying;
+  const short = charges && coins < quote.price;
+  const open = () => {
+    window.location.hash = gameHash(game.id);
+  };
   return (
-    <>
-      {ready.map((d) => (
-        <button
-          key={d.id}
-          onClick={() => setPicked(d)}
-          title={`Play the ${d.name} expansion in your DLC lane`}
-          className="inline-flex items-center gap-1.5 text-xs text-subtle transition hover:text-ink"
-        >
-          <BookOpen size={13} /> Play {d.name}
+    <div className="group flex h-full min-h-[22rem] flex-col rounded-xl border-[1.5px] border-edge bg-surface shadow-stamp transition duration-200 hover:-translate-y-0.5 hover:shadow-[4px_5px_0_0_var(--shadow-ink)]">
+      <div className="relative h-36 rounded-t-[10.5px] border-b-[1.5px] border-edge bg-panel">
+        <button type="button" onClick={open} title={`Open ${game.title}`} className="h-full w-full">
+          {cover ? (
+            <img src={cover} alt={game.title} className="h-full w-full rounded-t-[10.5px] object-cover" />
+          ) : (
+            <div className="flex h-full items-center justify-center text-4xl opacity-60">🎮</div>
+          )}
         </button>
-      ))}
-      {picked && (
-        <StartDialog dlc={picked} title={game.title} showEconomy={showEconomy} onClose={() => setPicked(null)} />
+        <span className="pointer-events-none absolute left-2 top-2 inline-flex items-center gap-1 rounded-full bg-black/55 px-2 py-0.5 text-[10px] font-medium text-white">
+          <Package size={10} /> Expansion
+        </span>
+      </div>
+      <div className="flex flex-1 flex-col gap-3 p-4">
+        <div>
+          <h3 className="font-display text-lg font-semibold leading-tight text-ink">{dlc.name}</h3>
+          <p className="text-xs text-muted">{game.title} expansion</p>
+        </div>
+        {dlc.hours != null && (
+          <p className="inline-flex items-center gap-1 text-xs text-muted">
+            <Clock size={12} /> {formatPlaytime(dlc.hours)}
+          </p>
+        )}
+        <div className="mt-auto flex flex-col gap-2">
+          {lockedReason ? (
+            <>
+              <button
+                type="button"
+                disabled
+                title={lockedReason}
+                className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-accent/40 bg-accent/10 px-3 py-2 text-sm font-semibold text-accent"
+              >
+                <Lock size={14} /> Story-locked
+              </button>
+              <p className="text-center text-[11px] text-subtle">{lockedReason}</p>
+            </>
+          ) : (
+            <>
+              <button
+                type="button"
+                onClick={() => setStarting(true)}
+                disabled={short}
+                className={
+                  "inline-flex items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold transition " +
+                  (short
+                    ? "cursor-not-allowed bg-panel text-subtle"
+                    : "bg-brand text-brand-fg shadow-stamp-sm hover:brightness-105 active:translate-x-px active:translate-y-px active:shadow-none")
+                }
+              >
+                {short ? (
+                  <>
+                    Need <CoinIcon size={14} /> {quote.price - coins} more
+                  </>
+                ) : charges ? (
+                  <>
+                    Buy &amp; Start · <CoinIcon size={14} /> {quote.price}
+                  </>
+                ) : (
+                  <>
+                    <Gamepad2 size={14} /> Start playing
+                  </>
+                )}
+              </button>
+              {charges && (
+                <p className="inline-flex items-center justify-center gap-1 text-center text-[11px] text-subtle">
+                  Clear bounty <CoinIcon size={12} /> {quote.bounty}
+                </p>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+      {starting && (
+        <StartDialog
+          dlc={dlc}
+          quote={quote}
+          title={game.title}
+          showEconomy={showEconomy}
+          onClose={() => setStarting(false)}
+        />
       )}
-    </>
+    </div>
   );
 }
 
 function StartDialog({
   dlc,
+  quote,
   title,
   showEconomy,
   onClose,
 }: {
   dlc: GameDlc;
+  quote: ExpansionQuote;
   title: string;
   showEconomy: boolean;
   onClose: () => void;
 }) {
   const startExpansion = useStore((s) => s.startExpansion);
   const minHours = useStore((s) => s.expansionConfig.minHours);
-  const quote = useExpansionQuote(dlc);
   return createPortal(
     <ConfirmDialog
       title={`Play ${dlc.name}?`}

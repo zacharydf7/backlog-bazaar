@@ -3,6 +3,8 @@ import type { Compilation, Game } from "../types";
 import { compilationRollup, type CollapsedCompilation } from "./compilationGrouping";
 import type { UnifiedFamily } from "./familyGrouping";
 import { orderBoardCards, cardTitle, type BoardCard } from "./boardOrder";
+import type { BazaarExpansion } from "./bazaarExpansions";
+import type { GameDlc } from "./dlc";
 
 function game(over: Partial<Game> = {}): Game {
   return {
@@ -40,6 +42,15 @@ function family(name: string, members: Game[]): UnifiedFamily {
 }
 
 const titles = (cards: BoardCard[]) => cards.map(cardTitle);
+
+function expansion(name: string, price: number, acquiredOn: string): BazaarExpansion {
+  return {
+    dlc: { id: `dlc-${name}`, gameId: "base", kind: "expansion", name, acquiredOn, hours: 8, createdAt: 0 } as GameDlc,
+    game: game({ id: "base", title: "Base Game", status: "finished" }),
+    quote: { price, bounty: 0, gateHours: 0, paying: true },
+    lockedReason: null,
+  };
+}
 
 describe("orderBoardCards", () => {
   it("interleaves a bundle alphabetically by its displayed title (the reported bug)", () => {
@@ -128,6 +139,19 @@ describe("orderBoardCards", () => {
       "added-desc",
     );
     expect(titles(cards)).toEqual(["Alpha Bundle", "Beta"]);
+  });
+
+  it("places an expansion card by its own name, price or date", () => {
+    const games = [game({ id: "m", title: "Middle", addedAt: Date.parse("2026-06-01") })];
+    const x = expansion("Echoes", 0, "2026-09-01");
+    // Default formulas price a fresh 8h game well above a free expansion.
+    expect(titles(orderBoardCards(games, [], [], "alpha", undefined, undefined, [x]))).toEqual(["Echoes", "Middle"]);
+    expect(titles(orderBoardCards(games, [], [], "cost-asc", undefined, undefined, [x]))).toEqual(["Echoes", "Middle"]);
+    expect(titles(orderBoardCards(games, [], [], "added-asc", undefined, undefined, [x]))).toEqual(["Middle", "Echoes"]);
+    // No priority tier: it sinks below a prioritized game in both directions.
+    const ranked = [game({ id: "r", title: "Ranked", priority: "low" })];
+    expect(titles(orderBoardCards(ranked, [], [], "priority-desc", undefined, undefined, [x]))).toEqual(["Ranked", "Echoes"]);
+    expect(titles(orderBoardCards(ranked, [], [], "priority-asc", undefined, undefined, [x]))).toEqual(["Ranked", "Echoes"]);
   });
 
   it("does not mutate its inputs", () => {

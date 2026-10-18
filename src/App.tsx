@@ -119,6 +119,9 @@ import { FastScrollRail } from "./components/FastScrollRail";
 import { JumpToTopButton } from "./components/JumpToTopButton";
 import { GlobalSearchModal } from "./components/GlobalSearchModal";
 import { filterByQuery } from "./lib/librarySearch";
+import { bazaarExpansions, expansionMatchesFilters, expansionMatchesQuery } from "./lib/bazaarExpansions";
+import { dlcNamesByGame, expansionFormulas, expansionQuote } from "./lib/dlc";
+import { ExpansionBazaarCard } from "./components/ExpansionControls";
 import {
   applyView,
   collectFacets,
@@ -187,6 +190,8 @@ export default function App() {
     economy,
     replayBonusPct,
     bountyGatePct,
+    gameDlc,
+    expansionConfig,
     viewing,
     openUserBazaar,
     closeUserBazaar,
@@ -427,15 +432,29 @@ export default function App() {
   // member simply passes through.
   const famGrouping = useMemo(() => groupCollapsedFamilies(grouping.boardGames), [grouping]);
 
+  // Your unplayed story expansions, each with its own Bazaar card (owner,
+  // 2026-10-18), priced as the server will charge. Your own only: a visited
+  // library's DLC isn't loaded. Search also finds a game by its DLC's names.
+  const ownExpansions = useMemo(() => {
+    if (viewing) return [];
+    const formulas = expansionFormulas(economy, expansionConfig);
+    return bazaarExpansions(games, gameDlc, (d) =>
+      expansionQuote(d, formulas, expansionConfig.minHours, bountyGatePct),
+    );
+  }, [viewing, games, gameDlc, economy, expansionConfig, bountyGatePct]);
+  const dlcNames = useMemo(() => (viewing ? undefined : dlcNamesByGame(gameDlc)), [viewing, gameDlc]);
+
   // Counts reflect individual games, except a bundle card or a focused family,
-  // each of which counts once on the board it sits on.
+  // each of which counts once on the board it sits on. Each expansion card
+  // counts on the Bazaar.
   const counts = useMemo(() => {
     const c: Record<GameStatus, number> = { backlog: 0, playing: 0, finished: 0, wishlist: 0 };
     for (const g of famGrouping.boardGames) c[boardOf(g)]++;
     for (const col of grouping.collapsed) c[col.board]++;
     for (const fam of famGrouping.families) c[fam.board]++;
+    c.backlog += ownExpansions.length;
     return c;
-  }, [grouping, famGrouping]);
+  }, [grouping, famGrouping, ownExpansions]);
 
   // Games on the current board, before slicing/sorting — drives the facet lists
   // and the "X of Y" count in the toolbar.
@@ -483,11 +502,11 @@ export default function App() {
       grouping.collapsed.filter(
         (c) =>
           c.board === view &&
-          compilationMatchesQuery(c, searchQuery) &&
+          compilationMatchesQuery(c, searchQuery, dlcNames) &&
           compilationMatchesFilters(c, boardFilters) &&
           !(hidingRetired && c.boardChildren.every(isRetired)),
       ),
-    [grouping, view, searchQuery, boardFilters, hidingRetired],
+    [grouping, view, searchQuery, boardFilters, hidingRetired, dlcNames],
   );
 
   // Focused family cards for the current board. A family matches the search or
@@ -498,12 +517,24 @@ export default function App() {
       famGrouping.families.filter(
         (f) =>
           f.board === view &&
-          familyMatchesQuery(f, searchQuery) &&
+          familyMatchesQuery(f, searchQuery, dlcNames) &&
           familyMatchesFilters(f, boardFilters) &&
           !(hidingRetired && isRetired(f.primary)),
       ),
-    [famGrouping, view, searchQuery, boardFilters, hidingRetired],
+    [famGrouping, view, searchQuery, boardFilters, hidingRetired, dlcNames],
   );
+
+  // Expansion cards on the Bazaar, under the live search (their own name or
+  // their game's) and the slicers (an expansion goes where its game would).
+  const expansionsForView = useMemo(
+    () =>
+      view === "backlog"
+        ? ownExpansions.filter((x) => expansionMatchesQuery(x, searchQuery) && expansionMatchesFilters(x, boardFilters))
+        : [],
+    [view, ownExpansions, searchQuery, boardFilters],
+  );
+  // Whether the board holds any expansion cards before the search and slicers.
+  const boardHasExpansions = view === "backlog" && ownExpansions.length > 0;
   const facets = useMemo(() => collectFacets(boardGamesForView), [boardGamesForView]);
   // The slicers/sort, then the live header search query, narrow the board so the
   // requested game jumps to the front as you type.
@@ -520,8 +551,9 @@ export default function App() {
           viewing ? {} : { allGames: boardGames, replayBonusPct },
         ),
         searchQuery,
+        dlcNames,
       ),
-    [boardGamesForView, sortKey, boardFilters, economy, searchQuery, viewing, boardGames, replayBonusPct, hidingRetired],
+    [boardGamesForView, sortKey, boardFilters, economy, searchQuery, viewing, boardGames, replayBonusPct, hidingRetired, dlcNames],
   );
 
   // The ONE ordered list the grid renders: plain cards, collapsed bundles, and
@@ -536,8 +568,9 @@ export default function App() {
         sortKey,
         economy,
         viewing ? {} : { allGames: boardGames, replayBonusPct },
+        expansionsForView,
       ),
-    [visibleGames, collapsedForView, familiesForView, sortKey, economy, viewing, boardGames, replayBonusPct],
+    [visibleGames, collapsedForView, familiesForView, sortKey, economy, viewing, boardGames, replayBonusPct, expansionsForView],
   );
 
   // "Stack by game": an optional grid view folding per-platform instances of
@@ -596,8 +629,9 @@ export default function App() {
         viewing ? [] : compilations,
         compilationGames,
         searchQuery,
+        dlcNames,
       ),
-    [boardGames, compilations, compilationGames, viewing, searchQuery],
+    [boardGames, compilations, compilationGames, viewing, searchQuery, dlcNames],
   );
 
   // The browse sequence for Prev/Next on a game's page (issue 7ad49282): the
@@ -1376,7 +1410,7 @@ export default function App() {
               />
             )}
 
-            {boardGamesForView.length > 0 && (
+            {(boardGamesForView.length > 0 || boardHasExpansions) && (
               <BazaarToolbar
                 sortKey={sortKey}
                 onSortChange={changeSort}
@@ -1385,8 +1419,8 @@ export default function App() {
                 open={filtersOpen}
                 onOpenChange={setFiltersOpen}
                 facets={facets}
-                total={boardGamesForView.length}
-                shown={visibleGames.length}
+                total={boardGamesForView.length + (view === "backlog" ? ownExpansions.length : 0)}
+                shown={visibleGames.length + expansionsForView.length}
                 // Mystery Pull lives on your own boards only (the pool and the
                 // start flows are yours): the Bazaar draws a game to buy & play,
                 // the Finished shelf draws a beaten game for a free 100% run.
@@ -1413,7 +1447,8 @@ export default function App() {
 
             {boardGamesForView.length === 0 &&
             collapsedForView.length === 0 &&
-            familiesForView.length === 0 ? (
+            familiesForView.length === 0 &&
+            !boardHasExpansions ? (
               viewing ? (
                 <div className="rounded-2xl border border-dashed border-line px-6 py-16 text-center text-sm text-muted">
                   {viewing.displayName} has nothing here yet.
@@ -1427,7 +1462,8 @@ export default function App() {
               )
             ) : visibleGames.length === 0 &&
               collapsedForView.length === 0 &&
-              familiesForView.length === 0 ? (
+              familiesForView.length === 0 &&
+              expansionsForView.length === 0 ? (
               searchQuery.trim() ? (
                 <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-line px-6 py-16 text-center">
                   <p className="font-display text-xl text-ink">
@@ -2306,6 +2342,9 @@ function GameGrid({
     return () => io.disconnect();
   }, [hasMore, showMore, gridKey]);
   const visible = cards.slice(0, count);
+  // Anchor ids already placed: two cards opening the same page (a game's two
+  // Bazaar expansions) anchor only the first, as the reveal finds it.
+  const anchored = new Set<string>();
   return (
     <>
     <div
@@ -2322,16 +2361,20 @@ function GameGrid({
                 ? `fam-${card.family.familyId}`
                 : card.kind === "stack"
                   ? `stack-${card.stackKey}`
-                  : card.game.id;
+                  : card.kind === "expansion"
+                    ? `dlc-${card.expansion.dlc.id}`
+                    : card.game.id;
           // Every card that opens a page carries that page's anchor id so
           // scroll-restore can land on it — including Family and collapsed-bundle
           // cards, which previously had none and dropped you at the top on return
           // (issue b7646740). A stack deck opens no page, so it stays anchorless.
           const anchorId = boardCardAnchorId(card);
+          const ownsAnchor = anchorId != null && !anchored.has(anchorId);
+          if (ownsAnchor) anchored.add(anchorId);
           return (
             <motion.div
               key={key}
-              id={anchorId ? boardGameAnchor(anchorId) : undefined}
+              id={ownsAnchor ? boardGameAnchor(anchorId) : undefined}
               data-rail-index={cardIndex}
               layout
               className="h-full scroll-mt-24 rounded-2xl"
@@ -2342,6 +2385,8 @@ function GameGrid({
             >
               {card.kind === "compilation" ? (
                 <CompilationParentCard collapsed={card.collapsed} />
+              ) : card.kind === "expansion" ? (
+                <ExpansionBazaarCard expansion={card.expansion} />
               ) : card.kind === "family" ? (
                 <GameCard game={card.family.primary} family={card.family} />
               ) : card.kind === "stack" ? (

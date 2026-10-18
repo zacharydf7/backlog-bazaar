@@ -527,8 +527,10 @@ export function AboutPage() {
             Record DLC on a game&apos;s <strong className="text-ink">Library</strong> tab: a story{" "}
             <strong className="text-ink">expansion</strong> you can finish, an{" "}
             <strong className="text-ink">update</strong> or season for a game you keep playing, or
-            an <strong className="text-ink">item</strong> like a cosmetic or in-game currency. A
-            story expansion is played for its own coins, in its own{" "}
+            an <strong className="text-ink">item</strong> like a cosmetic or in-game currency. Each
+            story expansion you haven&apos;t played gets its own card in your{" "}
+            <strong className="text-ink">Bazaar</strong>, locked until you finish its game, while
+            the game stays on Finished. Buy &amp; Start it there and it plays in its own{" "}
             <strong className="text-ink">DLC</strong> lane on Now Playing: it costs coins to start
             and pays a bounty when you clear it, both from its own length, cost and date, and it
             never changes what the base game cost or paid. What you spent on DLC counts in the

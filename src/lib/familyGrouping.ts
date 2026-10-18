@@ -10,7 +10,7 @@
 import type { Game, GameStatus } from "../types";
 import { familyName, familyPrimary } from "./families";
 import { gameMatches, type Filters } from "./bazaarView";
-import { gameMatchesQuery } from "./librarySearch";
+import { gameMatchesQuery, type DlcNames } from "./librarySearch";
 import { isDemo } from "./demos";
 
 /** A folded family, ready to render as one unified card. */
@@ -72,10 +72,10 @@ export function groupCollapsedFamilies(games: Game[]): {
 /** A family card matches the board search when ANY member matches (plus the
  *  family's own display name), so searching for a hidden edition still surfaces
  *  the card that stands in for it. */
-export function familyMatchesQuery(fam: UnifiedFamily, query: string): boolean {
+export function familyMatchesQuery(fam: UnifiedFamily, query: string, dlcNames?: DlcNames): boolean {
   if (!query.trim()) return true;
   if (fam.name.toLowerCase().includes(query.trim().toLowerCase())) return true;
-  return fam.members.some((m) => gameMatchesQuery(m, query));
+  return fam.members.some((m) => gameMatchesQuery(m, query, dlcNames));
 }
 
 /** A family card passes the board slicers when ANY member passes (mirrors

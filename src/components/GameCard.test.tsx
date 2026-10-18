@@ -37,6 +37,22 @@ describe("GameCard during an expansion run", () => {
     expect(screen.getByText("Ghost of Yotei expansion")).toBeTruthy();
     act(() => useStore.setState({ gameDlc: [] }));
   });
+
+  it("points a finished game to its expansions waiting in the Bazaar", () => {
+    act(() =>
+      useStore.setState({
+        gameDlc: [
+          { id: "d1", gameId: "g1", kind: "expansion", name: "Echoes", runStatus: "owned" } as never,
+          { id: "d2", gameId: "g1", kind: "expansion", name: "Legends", runStatus: "cleared" } as never,
+        ],
+      }),
+    );
+    window.location.hash = "#finished";
+    render(<GameCard game={game({ title: "Ghost of Yotei", status: "finished" })} />);
+    fireEvent.click(screen.getByRole("button", { name: /Expansion in your Bazaar/ }));
+    expect(window.location.hash).toBe("");
+    act(() => useStore.setState({ gameDlc: [] }));
+  });
 });
 
 describe("GameCard focused layout", () => {

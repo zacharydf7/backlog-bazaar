@@ -207,6 +207,46 @@ describe("App", () => {
     expect(screen.queryByText(/Shared playthroughs with a friend/i)).toBeNull();
   });
 
+  it("gives an owned expansion its own Bazaar card, and search finds its game by the DLC's name", async () => {
+    render(<App />);
+    await screen.findAllByRole("heading", { name: /Backlog Bazaar/i });
+    act(() =>
+      useStore.setState({
+        viewing: null,
+        games: [libGame({ id: "gy", title: "Ghost of Yotei", status: "finished" })],
+        gameDlc: [{ id: "d1", gameId: "gy", kind: "expansion", name: "Echoes", hours: 8, runStatus: "owned", createdAt: 0 } as never],
+      }),
+    );
+    // The Bazaar holds the expansion's card (and counts it); its game stays on Finished.
+    const bazaarHeading = await screen.findByRole("heading", { level: 2, name: "Bazaar" });
+    expect(bazaarHeading.nextElementSibling?.textContent).toBe("1");
+    expect(await screen.findByRole("heading", { name: "Echoes" })).toBeTruthy();
+    expect(screen.getByText("Ghost of Yotei expansion")).toBeTruthy();
+    // Searching the expansion's name finds its game on Finished.
+    fireEvent.click(screen.getAllByRole("button", { name: /^Finished$/i })[0]);
+    fireEvent.change(screen.getAllByPlaceholderText("Search your games…")[0], { target: { value: "echoes" } });
+    expect(await screen.findByRole("heading", { name: "Ghost of Yotei" })).toBeTruthy();
+    act(() => useStore.setState({ gameDlc: [] }));
+  });
+
+  it("keeps the toolbar on a Bazaar of only expansion cards when a slicer hides them all", async () => {
+    render(<App />);
+    await screen.findAllByRole("heading", { name: /Backlog Bazaar/i });
+    act(() =>
+      useStore.setState({
+        viewing: null,
+        games: [libGame({ id: "gy", title: "Ghost of Yotei", status: "finished" })],
+        gameDlc: [{ id: "d1", gameId: "gy", kind: "expansion", name: "Echoes", hours: 8, runStatus: "owned", createdAt: 0 } as never],
+      }),
+    );
+    expect(await screen.findByRole("heading", { name: "Echoes" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /Liked/ }));
+    // The card steps aside, but the board isn't empty: the toolbar stays to undo it.
+    expect(await screen.findByText("No games match your filters")).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Liked/ })).toBeTruthy();
+    act(() => useStore.setState({ gameDlc: [] }));
+  });
+
   it("shows an empty lane during a drag only when it can take the dragged game", async () => {
     render(<App />);
     await screen.findAllByRole("heading", { name: /Backlog Bazaar/i });

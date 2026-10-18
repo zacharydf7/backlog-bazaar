@@ -35,6 +35,9 @@ export function boardCardAnchorId(card: StackedBoardCard): string | null {
       return card.family.primary.id;
     case "compilation":
       return card.collapsed.compilation.id;
+    // A Bazaar expansion card opens its game's page.
+    case "expansion":
+      return card.expansion.game.id;
     default:
       return null;
   }

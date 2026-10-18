@@ -4,6 +4,7 @@ import {
   defaultDlcKind,
   dlcSpend,
   dlcSpendByGame,
+  dlcNamesByGame,
   expansionAcquiredAt,
   expansionFormulas,
   expansionLoggedHours,
@@ -100,6 +101,15 @@ describe("helpers", () => {
       { gameId: null, cost: 9 },
     ]);
     expect([...byGame]).toEqual([["a", 15.5]]);
+  });
+
+  it("lists each game's DLC names for search, skipping unlinked records", () => {
+    const byGame = dlcNamesByGame([
+      { gameId: "a", name: "Legends" },
+      { gameId: "a", name: "Season Pass" },
+      { gameId: null, name: "Orphan" },
+    ]);
+    expect([...byGame]).toEqual([["a", ["Legends", "Season Pass"]]]);
   });
 
   it("coerces rows, dropping malformed ones, with a run's frozen quote", () => {

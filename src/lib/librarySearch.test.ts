@@ -41,6 +41,13 @@ describe("gameMatchesQuery", () => {
     expect(gameMatchesQuery(halo, "doom")).toBe(false);
   });
 
+  it("matches a game by its DLC's names when given them", () => {
+    const dlcNames = new Map([["halo", ["Heroes of Reach"]]]);
+    expect(gameMatchesQuery(halo, "reach", dlcNames)).toBe(true);
+    expect(gameMatchesQuery(halo, "reach")).toBe(false);
+    expect(filterByQuery([halo, doom], "heroes", dlcNames)).toEqual([halo]);
+  });
+
   it("matches on owned platform, genre, developer, and family name", () => {
     expect(gameMatchesQuery(halo, "xbox")).toBe(true);
     expect(gameMatchesQuery(halo, "shooter")).toBe(true);

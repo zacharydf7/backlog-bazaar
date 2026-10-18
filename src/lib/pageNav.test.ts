@@ -114,6 +114,10 @@ describe("boardCardAnchorId (issue b7646740)", () => {
     ).toBe("c1");
   });
 
+  it("resolves a Bazaar expansion card to its game (the page it opens)", () => {
+    expect(boardCardAnchorId(card({ kind: "expansion", expansion: { game: { id: "base" } } }))).toBe("base");
+  });
+
   it("gives a collapsed stack deck no anchor — it opens no page of its own", () => {
     expect(
       boardCardAnchorId(card({ kind: "stack", stackKey: "s", games: [{ id: "x" }, { id: "y" }] })),

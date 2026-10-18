@@ -232,3 +232,16 @@ export function dlcSpendByGame(list: Pick<GameDlc, "gameId" | "cost">[]): Map<st
   }
   return byGame;
 }
+
+/** The names of each game's DLC, by game id, so library search finds a game
+ *  by its expansions and add-ons. */
+export function dlcNamesByGame(dlc: Pick<GameDlc, "gameId" | "name">[]): Map<string, string[]> {
+  const byGame = new Map<string, string[]>();
+  for (const d of dlc) {
+    if (d.gameId == null) continue;
+    const names = byGame.get(d.gameId);
+    if (names) names.push(d.name);
+    else byGame.set(d.gameId, [d.name]);
+  }
+  return byGame;
+}

@@ -10,7 +10,7 @@
 import type { Compilation, Game, GameStatus } from "../types";
 import type { ParentTemplate } from "./compilationTemplates";
 import { gameMatches, type Filters } from "./bazaarView";
-import { gameMatchesQuery, textMatchesQuery } from "./librarySearch";
+import { gameMatchesQuery, textMatchesQuery, type DlcNames } from "./librarySearch";
 import { sortByRelevance } from "./gameSearch";
 import { compilationCopiesOf } from "./compilations";
 import { gamePriorityRank } from "./gamePriority";
@@ -282,10 +282,10 @@ export function compilationMatchesFilters(c: CollapsedCompilation, filters: Filt
 /** The live search surfaces the card by the bundle's own title or any of its
  *  children on that board (searching "Pikmin 2" finds the Pikmin 1+2 bundle on
  *  whichever board Pikmin 2 sits). */
-export function compilationMatchesQuery(c: CollapsedCompilation, query: string): boolean {
+export function compilationMatchesQuery(c: CollapsedCompilation, query: string, dlcNames?: DlcNames): boolean {
   if (!query.trim()) return true;
   if (c.compilation.title.toLowerCase().includes(query.trim().toLowerCase())) return true;
-  return c.boardChildren.some((g) => gameMatchesQuery(g, query));
+  return c.boardChildren.some((g) => gameMatchesQuery(g, query, dlcNames));
 }
 
 /** One result of the library search overlay: a game of its own, or a whole
@@ -314,6 +314,7 @@ export function searchLibraryEntries(
   compilations: Compilation[],
   compilationGames: Game[],
   query: string,
+  dlcNames?: DlcNames,
 ): LibrarySearchEntry[] {
   if (!query.trim()) return [];
   const byId = new Map(compilations.map((c) => [c.id, c]));
@@ -324,7 +325,7 @@ export function searchLibraryEntries(
       const list = childrenByComp.get(g.compilationId);
       if (list) list.push(g);
       else childrenByComp.set(g.compilationId, [g]);
-    } else if (gameMatchesQuery(g, query)) {
+    } else if (gameMatchesQuery(g, query, dlcNames)) {
       found.push({ title: g.title, entry: { kind: "game", game: g } });
     }
   }
@@ -337,7 +338,7 @@ export function searchLibraryEntries(
     // it's the child's own title and platforms that earn an "includes" line.
     const includes = ownMatch
       ? []
-      : children.filter((g) => gameMatchesQuery({ ...g, compilationName: undefined }, query));
+      : children.filter((g) => gameMatchesQuery({ ...g, compilationName: undefined }, query, dlcNames));
     if (!ownMatch && includes.length === 0) continue;
     found.push({
       title: compilation.title,

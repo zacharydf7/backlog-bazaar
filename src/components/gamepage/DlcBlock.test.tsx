@@ -109,10 +109,15 @@ describe("DlcBlock", () => {
     expect(saveGameDlc).not.toHaveBeenCalled();
   });
 
-  it("lists the game's DLC with what was spent and a cleared expansion's payout", () => {
-    setup([dlc(), dlc({ id: "d2", kind: "expansion", name: "Legends", cost: 20, hours: 8, runStatus: "cleared", runReward: 250 })]);
-    expect(screen.getByText("2 recorded · $70 spent")).toBeTruthy();
+  it("lists the game's DLC with what was spent, a cleared expansion's payout, and where an unplayed one waits", () => {
+    setup([
+      dlc(),
+      dlc({ id: "d2", kind: "expansion", name: "Legends", cost: 20, hours: 8, runStatus: "cleared", runReward: 250 }),
+      dlc({ id: "d3", kind: "expansion", name: "Echoes", cost: null, hours: 6, runStatus: "owned" }),
+    ]);
+    expect(screen.getByText("3 recorded · $70 spent")).toBeTruthy();
     expect(screen.getByText("Cleared · +250")).toBeTruthy();
+    expect(screen.getByText("In your Bazaar")).toBeTruthy();
   });
 
   it("starts a finished game's form on a story expansion, previews its coins, and saves it", async () => {

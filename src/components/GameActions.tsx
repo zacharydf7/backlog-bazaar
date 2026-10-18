@@ -94,7 +94,7 @@ import { boostedReward, eventFinishBonus, eventStartPrice, times } from "../lib/
 import { FinishCheckModal } from "./FinishCheckModal";
 import { useScrollLock } from "../lib/useScrollLock";
 import { CoinIcon } from "./CoinIcon";
-import { ExpansionRunActions, ExpansionStartActions, useActiveExpansion } from "./ExpansionControls";
+import { ExpansionRunActions, useActiveExpansion } from "./ExpansionControls";
 import { StackVersionPicker, useStackVersions } from "./StackVersionPicker";
 
 // Icon + label per Now Playing lane, for the lane badge on a playing card
@@ -1664,7 +1664,6 @@ export function GameActions({
                     <InfinityIcon size={13} /> Convert to Endless
                   </button>
                 )}
-                <ExpansionStartActions game={game} showEconomy={showEconomy} />
               </>
             )}
           </div>

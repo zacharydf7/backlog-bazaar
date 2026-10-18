@@ -11,6 +11,7 @@ import { sortMetric, type EconomyViewContext, type SortKey } from "./bazaarView"
 import { DEFAULT_ECONOMY, type EconomyConfig } from "./economy";
 import { formatPlaytime } from "./playtime";
 import { cardTitle } from "./boardOrder";
+import { expansionSortValue } from "./bazaarExpansions";
 
 /** The displayed title of ANY board card, including the stacking view's
  *  synthetic cards (a deck reads as its first instance's title). */
@@ -38,6 +39,9 @@ export function cardGames(card: StackedBoardCard): Game[] {
       return card.family.members;
     case "compilation":
       return card.collapsed.children;
+    // An expansion card stands in for no games; it places by its own values.
+    case "expansion":
+      return [];
   }
 }
 
@@ -112,9 +116,11 @@ export function scrubLabel(
   if (sort === "alpha") return letterOf(stackedCardTitle(card));
   const metric = sortMetric(sort, economy, ctx);
   if (!metric) return letterOf(stackedCardTitle(card));
-  const games = cardGames(card);
-  if (games.length === 0) return "—";
-  const values = games.map(metric.value);
+  const values =
+    card.kind === "expansion"
+      ? [expansionSortValue(card.expansion, sort)].filter((n): n is number => n != null)
+      : cardGames(card).map(metric.value);
+  if (values.length === 0) return "—";
   const v = metric.dir === 1 ? Math.min(...values) : Math.max(...values);
   switch (sort) {
     case "added-asc":
