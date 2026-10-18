@@ -6409,6 +6409,60 @@ create policy "games_modify_own" on public.games
   for all to authenticated
   using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
+-- The coin-sensitive columns of a game change only through the server (the
+-- security-definer RPCs and triggers run as their owner, not the player). A
+-- player's own direct write (games_modify_own) can't set what a run paid, move
+-- a game into or out of play, set a reward, change its run or lane flags, length
+-- debt or credit or Endless flag, or change its length outside
+-- set_personal_length; filling in a missing catalog length off the boards is
+-- fine. Before this (owner, 2026-10-17), writing price_paid and then shelving
+-- minted coins, and setting status 'playing' skipped the start price. The app
+-- makes all of these changes through RPCs. Named aa to see the player's own
+-- changes before other BEFORE triggers adjust the row.
+create or replace function public.games_guard_server_columns()
+returns trigger
+language plpgsql
+set search_path = public
+as $$
+begin
+  if current_user not in ('authenticated', 'anon') then
+    return new;
+  end if;
+  if tg_op = 'INSERT' then
+    if new.status = 'playing' or new.price_paid is not null or new.reward is not null
+       or new.started_at is not null or new.resumed or new.completionist or new.in_rotation
+       or new.slot_id is not null or new.co_op or new.personal_hours is not null
+       or new.length_premium_owed <> 0 or new.length_fee_credit <> 0 then
+      raise exception 'SERVER_COLUMNS: start a game through the Bazaar';
+    end if;
+    return new;
+  end if;
+  if (new.status is distinct from old.status and 'playing' in (old.status, new.status))
+     or new.price_paid is distinct from old.price_paid
+     or (new.reward is distinct from old.reward and new.reward is not null)
+     or new.started_at is distinct from old.started_at
+     or new.resumed is distinct from old.resumed
+     or new.completionist is distinct from old.completionist
+     or new.in_rotation is distinct from old.in_rotation
+     or new.slot_id is distinct from old.slot_id
+     or new.co_op is distinct from old.co_op
+     or new.ongoing is distinct from old.ongoing
+     or new.personal_hours is distinct from old.personal_hours
+     or (new.hours is distinct from old.hours and (old.hours is not null or old.status = 'playing'))
+     or new.length_premium_owed is distinct from old.length_premium_owed
+     or new.length_fee_credit is distinct from old.length_fee_credit
+     or new.length_fee_credit_run is distinct from old.length_fee_credit_run then
+    raise exception 'SERVER_COLUMNS: that change goes through the server';
+  end if;
+  return new;
+end;
+$$;
+drop trigger if exists games_aa_guard_server_columns on public.games;
+create trigger games_aa_guard_server_columns
+  before insert or update on public.games
+  for each row execute function public.games_guard_server_columns();
+revoke execute on function public.games_guard_server_columns() from public, anon, authenticated;
+
 -- Feature requests: public board. Anyone signed in may READ all and INSERT their
 -- own. Only admins may UPDATE (status moves happen via direct update). A request
 -- may be DELETEd by its owner (withdraw) or any admin (remove).
