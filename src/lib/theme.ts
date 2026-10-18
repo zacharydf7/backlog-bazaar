@@ -36,6 +36,16 @@ export function getThemeId(): string {
  *  isn't clobbered. Restore with applyThemeId(yourOwnTheme) on leave. */
 export function applyThemeId(id: string): void {
   document.documentElement.dataset.theme = id || "midnight";
+  syncThemeColor();
+}
+
+/** Point the browser's own bars at the active theme's canvas (meta
+ *  theme-color), so Chrome on Android paints the phone's back/home bar to
+ *  match instead of white (issue fae311ea). */
+export function syncThemeColor(): void {
+  const meta = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]');
+  const canvas = getComputedStyle(document.documentElement).getPropertyValue("--canvas").trim();
+  if (meta && canvas) meta.content = canvas;
 }
 
 /** Apply a theme to <html> and persist the choice. */
