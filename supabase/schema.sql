@@ -710,9 +710,16 @@ alter table public.games add column if not exists developers   jsonb not null de
 alter table public.games add column if not exists esrb         text;
 alter table public.games add column if not exists played_hours real not null default 0;
 -- Game length was originally a whole-number `integer`; widen it to `real` so a
--- length can be entered to the minute (e.g. 1.5h), matching played_hours. Safe
--- to re-run (a real column stays real).
-alter table public.games alter column hours type real;
+-- length can be entered to the minute (e.g. 1.5h), matching played_hours. Only
+-- while it isn't real yet: a column a trigger's column list names (the length
+-- history's) can't be re-typed, even to the same type.
+do $hours_real$
+begin
+  if (select data_type from information_schema.columns
+       where table_schema = 'public' and table_name = 'games' and column_name = 'hours') <> 'real' then
+    alter table public.games alter column hours type real;
+  end if;
+end $hours_real$;
 -- copies: which platforms you own a game on + what each cost (see GameCopy in
 -- src/types.ts). [{ id, platform, cost?, note?, acquiredAt? }]. Owner-only via the
 -- existing games RLS, so no extra grants are needed.
