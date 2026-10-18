@@ -54,6 +54,7 @@ import {
   effectiveLength,
   lengthChangeSettlement,
   finishBountyOffset,
+  runLengthCredit,
 } from "./lib/personalLength";
 import {
   DEFAULT_BOUNTY_GATE_PCT,
@@ -7942,6 +7943,8 @@ export const useStore = create<BazaarState>((set, get) => ({
       newEffective: next ?? game.hours,
       coins,
       owed: game.lengthPremiumOwed ?? 0,
+      paid: game.pricePaid,
+      credit: runLengthCredit(game),
       settles,
     });
 
@@ -7955,6 +7958,8 @@ export const useStore = create<BazaarState>((set, get) => ({
               ...g,
               personalHours: next,
               lengthPremiumOwed: s.newOwed,
+              lengthFeeCredit: s.newCredit,
+              lengthFeeCreditRun: g.startedAt,
               pricePaid: g.pricePaid == null ? g.pricePaid : Math.max(0, g.pricePaid - s.settled),
             }
           : g,
@@ -7992,6 +7997,9 @@ export const useStore = create<BazaarState>((set, get) => ({
               ...g,
               personalHours: next,
               lengthPremiumOwed: premium_owed,
+              // The server keeps the run's credit; this local copy mirrors it.
+              lengthFeeCredit: s.newCredit,
+              lengthFeeCreditRun: g.startedAt,
               pricePaid: g.pricePaid == null ? g.pricePaid : Math.max(0, g.pricePaid - settled),
             }
           : g,

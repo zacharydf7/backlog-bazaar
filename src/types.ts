@@ -99,6 +99,11 @@ export interface Game extends GameMeta {
   bountyHeldTotal?: number; // the clear's whole net bounty while part of it is held
   bountyGateHours?: number; // logged hours that release the whole held bounty
   lengthPremiumOwed?: number; // coins of a length-driven activation top-up you couldn't afford when lengthening this game while playing — deferred and docked from the finish bounty. Reset on each activation, consumed at finish. Server-maintained. See src/lib/personalLength.ts
+  // The run's length fee credit: an unrefunded shortening a later lengthening uses
+  // first (see src/lib/personalLength.ts runLengthCredit). lengthFeeCreditRun is the
+  // startedAt of the run it belongs to. Server-maintained.
+  lengthFeeCredit?: number;
+  lengthFeeCreditRun?: number;
   progressNote?: string; // a single editable "where I left off" note (one per game)
   review?: string; // long-form player review (distinct from the progress note)
   reviewScore?: number; // star score in half-star units, 1–10 = 0.5–5 stars (see lib/reviews.ts)

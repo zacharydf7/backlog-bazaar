@@ -855,6 +855,14 @@ alter table public.games add constraint games_personal_hours_nonneg
 -- length you didn't pay to activate). Reset to 0 on every fresh activation and
 -- consumed at finish. Server-maintained only (set_personal_length / apply_finish).
 alter table public.games add column if not exists length_premium_owed integer not null default 0;
+-- length_fee_credit: the part of a shortening's fee drop that wasn't refunded
+-- because the run hadn't paid that much (a replay pays nothing), so that
+-- lengthening it again on the same run uses it up before charging, and a
+-- round trip costs nothing. length_fee_credit_run is the started_at of the run
+-- it belongs to: a credit from an earlier run counts as 0. Server-maintained
+-- only (set_personal_length).
+alter table public.games add column if not exists length_fee_credit integer not null default 0;
+alter table public.games add column if not exists length_fee_credit_run timestamptz;
 
 -- private: hide this game from visitors to your Bazaar. Owner-only state — it
 -- never affects the economy, your own boards, or your stats; it only filters the
@@ -8176,11 +8184,18 @@ revoke execute on function public.games_guard_bounty_hold() from public, anon, a
 -- ignored (it would only ever shrink the fee, so ignoring it errs toward the
 -- house, never the player).
 --
---   • Raising the length: collect the extra fee, charging as much as the balance
---     allows now and deferring any shortfall to length_premium_owed — so the
---     change never blocks for want of coins, and the deferred part is reclaimed
---     from the finish bounty (see apply_finish).
---   • Lowering it: cancel any outstanding deferred fee first, then refund the rest.
+--   • Raising the length: first use up the run's length_fee_credit (what an
+--     earlier shortening on this run didn't refund), then collect the rest of the
+--     extra fee, charging as much as the balance allows now and deferring any
+--     shortfall to length_premium_owed — so the change never blocks for want of
+--     coins, and the deferred part is reclaimed from the finish bounty (see
+--     apply_finish).
+--   • Lowering it: cancel any outstanding deferred fee first, then refund the
+--     rest, up to what this run has paid (price_paid; unknown counts as 0, as
+--     in the shelve and finish refunds): a replay or expansion
+--     run paid nothing, so shortening it mid-run refunds nothing — otherwise
+--     replay, shorten, cancel would refund a fee never paid, over and over.
+--     What isn't refunded becomes the run's length_fee_credit.
 --
 -- Returns the new coin balance, the resulting owed, and the net coins moved
 -- (negative = charged, positive = refunded).
@@ -8197,6 +8212,10 @@ declare
   v_ongoing    boolean;
   v_title      text;
   v_owed       integer;
+  v_paid       integer;
+  v_started    timestamptz;
+  v_credit     integer;
+  v_use_credit integer := 0;
   v_coins      integer;
   v_catalog    real;
   v_old_pers   real;
@@ -8218,12 +8237,28 @@ begin
   end if;
 
   select status, coalesce(started_economy_off, false), coalesce(ongoing, false),
-         title, coalesce(length_premium_owed, 0), hours, personal_hours
-    into v_status, v_free_start, v_ongoing, v_title, v_owed, v_catalog, v_old_pers
+         title, coalesce(length_premium_owed, 0), price_paid, hours, personal_hours, started_at,
+         case when length_fee_credit_run = started_at then coalesce(length_fee_credit, 0) else 0 end
+    into v_status, v_free_start, v_ongoing, v_title, v_owed, v_paid, v_catalog, v_old_pers, v_started,
+         v_credit
     from public.games
    where id = p_game and user_id = auth.uid();
   if not found then
     raise exception 'Game not found';
+  end if;
+
+  -- Effective length = personal ?? catalog ?? DEFAULT_HOURS (12, matching
+  -- src/lib/economy.ts).
+  v_old_eff := coalesce(v_old_pers, v_catalog, 12);
+  v_new_eff := coalesce(p_hours,   v_catalog, 12);
+
+  -- A paid run can't be lengthened unsettled: switching the economy off,
+  -- lengthening for free and shortening for a refund once it's back on would
+  -- mint the run's price. Shortening while it's off refunds nothing, so it's
+  -- allowed (a finish settles a long length down first).
+  if v_status = 'playing' and not v_econ and not v_free_start and not v_ongoing
+     and coalesce(v_paid, 0) > 0 and v_new_eff > v_old_eff then
+    raise exception 'Turn your coin economy back on to change the length of a game you''re playing';
   end if;
 
   -- No coin settlement unless it's a game you're actively PLAYING with the live
@@ -8239,15 +8274,12 @@ begin
   end if;
 
   -- The length-driven activation fee change, computed from the live formula's
-  -- length factor. Effective length = personal ?? catalog ?? DEFAULT_HOURS (12,
-  -- matching src/lib/economy.ts). round() on a positive product matches JS
-  -- Math.round, so the client preview/offline lands on the same integer.
+  -- length factor. round() on a positive product matches JS Math.round, so the
+  -- client preview/offline lands on the same integer.
   select (price_formula->'factors'->'length'->>'enabled')::boolean,
          (price_formula->'factors'->'length'->>'weight')::real
     into v_enabled, v_weight
     from public.app_config where id = 1;
-  v_old_eff := coalesce(v_old_pers, v_catalog, 12);
-  v_new_eff := coalesce(p_hours,   v_catalog, 12);
   if coalesce(v_enabled, false) then
     v_delta := round(coalesce(v_weight, 0) * v_new_eff)::integer
              - round(coalesce(v_weight, 0) * v_old_eff)::integer;
@@ -8258,13 +8290,18 @@ begin
   select coins into v_coins from public.profiles where id = auth.uid();
 
   if v_delta > 0 then
-    -- Collect the extra fee: as much as affordable now, the rest deferred.
-    v_charge   := least(v_delta, greatest(0, v_coins));
-    v_new_owed := v_owed + (v_delta - v_charge);
+    -- Use up the run's credit, then collect the rest: as much as affordable
+    -- now, the remainder deferred.
+    v_use_credit := least(v_credit, v_delta);
+    v_credit     := v_credit - v_use_credit;
+    v_charge     := least(v_delta - v_use_credit, greatest(0, v_coins));
+    v_new_owed   := v_owed + (v_delta - v_use_credit - v_charge);
   elsif v_delta < 0 then
-    -- Give it back: clear any deferred fee first, then refund the remainder.
+    -- Give it back: clear any deferred fee first, then refund the remainder,
+    -- up to what the run paid; the rest becomes credit.
     v_reduce   := least(v_owed, -v_delta);
-    v_refund   := (-v_delta) - v_reduce;
+    v_refund   := greatest(0, least((-v_delta) - v_reduce, coalesce(v_paid, 0)));
+    v_credit   := v_credit + (-v_delta) - v_reduce - v_refund;
     v_new_owed := v_owed - v_reduce;
   else
     v_new_owed := v_owed;
@@ -8289,7 +8326,8 @@ begin
   update public.games
      set personal_hours = p_hours, length_premium_owed = v_new_owed,
          price_paid = case when price_paid is null then null
-                           else greatest(0, price_paid - v_settled) end
+                           else greatest(0, price_paid - v_settled) end,
+         length_fee_credit = v_credit, length_fee_credit_run = v_started
    where id = p_game and user_id = auth.uid();
 
   return query select v_coins, v_new_owed, v_settled;
@@ -8977,6 +9015,12 @@ begin
     v_ok := v_status = 'playing' and coalesce(v_rotation, false);
   end if;
   if not v_ok then
+    raise exception 'Can''t undo — the game has changed since';
+  end if;
+  -- Nor once its length has changed: the run would come back into play at a
+  -- length nobody paid for.
+  if exists (select 1 from public.game_length_events l
+              where l.game_id = v_game and l.created_at >= v_created) then
     raise exception 'Can''t undo — the game has changed since';
   end if;
 
@@ -12674,11 +12718,12 @@ alter table public.playtime_events drop constraint if exists playtime_events_ses
 alter table public.playtime_events add constraint playtime_events_session_fkey
   foreign key (session_id) references public.play_sessions (id) on delete set null;
 
--- Personal-length history: an append-only record of each change to a game's
--- PERSONAL length override (set_personal_length), so "changed my estimate from
--- 12h to 90h on T" survives even though games.personal_hours only keeps the
--- current value. Captures the catalog length and the resulting deferred fee for
--- context. Trigger-written only (can't be bypassed), read-own + admins. No
+-- Length history: an append-only record of each change to a game's PERSONAL
+-- length override (set_personal_length), so "changed my estimate from 12h to 90h
+-- on T" survives even though games.personal_hours only keeps the current value,
+-- and of each change to its catalog length (catalog_hours). Captures the
+-- resulting deferred fee and credit for context; undo_action refuses an undo
+-- once a game's length has changed since. Trigger-written only (can't be bypassed), read-own + admins. No
 -- backfill — fires on new changes only. Mirrors the coin_events posture.
 create table if not exists public.game_length_events (
   id            uuid primary key default gen_random_uuid(),
@@ -12691,6 +12736,10 @@ create table if not exists public.game_length_events (
   premium_owed  integer, -- length_premium_owed on the row right after the change
   created_at    timestamptz not null default now()
 );
+-- fee_credit: the run's length_fee_credit right after the change.
+-- from_catalog_hours: the catalog length before the change.
+alter table public.game_length_events add column if not exists fee_credit integer;
+alter table public.game_length_events add column if not exists from_catalog_hours real;
 create index if not exists game_length_events_user_idx
   on public.game_length_events (user_id, created_at desc, id desc);
 create index if not exists game_length_events_game_idx
@@ -12712,11 +12761,12 @@ language plpgsql
 security definer set search_path = public
 as $$
 begin
-  if new.personal_hours is distinct from old.personal_hours then
+  if new.personal_hours is distinct from old.personal_hours or new.hours is distinct from old.hours then
     insert into public.game_length_events
-      (user_id, game_id, game_title, from_hours, to_hours, catalog_hours, premium_owed)
+      (user_id, game_id, game_title, from_hours, to_hours, catalog_hours, premium_owed, fee_credit,
+       from_catalog_hours)
     values (new.user_id, new.id, new.title, old.personal_hours, new.personal_hours,
-            new.hours, coalesce(new.length_premium_owed, 0));
+            new.hours, coalesce(new.length_premium_owed, 0), new.length_fee_credit, old.hours);
   end if;
   return new;
 end;
@@ -12725,7 +12775,7 @@ revoke execute on function public.log_game_length_event() from public, anon, aut
 
 drop trigger if exists games_log_length on public.games;
 create trigger games_log_length
-  after update of personal_hours on public.games
+  after update of personal_hours, hours on public.games
   for each row execute function public.log_game_length_event();
 
 -- Profile customization history: an append-only record of each change to a user's

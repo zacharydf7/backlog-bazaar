@@ -6,7 +6,7 @@ import { useStore } from "../../store";
 import { fetchHltbTimes, type HltbTimes } from "../../lib/gamedata";
 import { parsePlaytime, formatPlaytime, formatLength } from "../../lib/playtime";
 import { lengthActivationFee } from "../../lib/economy";
-import { effectiveLength, hasPersonalLength, lengthChangeSettlement } from "../../lib/personalLength";
+import { effectiveLength, hasPersonalLength, lengthChangeSettlement, runLengthCredit } from "../../lib/personalLength";
 import { useScrollLock } from "../../lib/useScrollLock";
 import { useHistoryDismiss } from "../../lib/useHistoryDismiss";
 import { CoinIcon } from "../CoinIcon";
@@ -73,6 +73,8 @@ export function PersonalLengthModal({ game, onClose }: { game: Game; onClose: ()
       newEffective: parsed ?? game.hours,
       coins,
       owed: game.lengthPremiumOwed ?? 0,
+      paid: game.pricePaid,
+      credit: runLengthCredit(game),
       settles,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps

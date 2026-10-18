@@ -71,6 +71,8 @@ export interface LengthSettlement {
   refund: number;
   /** The game's resulting length_premium_owed. */
   newOwed: number;
+  /** The run's resulting length fee credit (an unrefunded drop a raise uses first). */
+  newCredit: number;
   /** Signed net coin movement: refund − chargeNow. */
   settled: number;
 }
@@ -83,28 +85,56 @@ export interface LengthSettlement {
  *                     raise is positive, a shorten negative)
  *  @param coins       the player's current coin balance
  *  @param owed        the game's current length_premium_owed
+ *  @param paid        what this run has paid to activate (price_paid), which
+ *                     caps a refund: a replay or expansion run paid nothing, so
+ *                     shortening it refunds nothing. Unknown counts as 0.
+ *  @param credit      the run's length fee credit (see runLengthCredit)
  *
- *  Raising: charge as much as the balance allows, defer the shortfall — so a
- *  change never blocks for want of coins. Shortening: cancel outstanding debt
- *  first, then refund the remainder. */
-export function settleLengthChange(priceDelta: number, coins: number, owed: number): LengthSettlement {
+ *  Raising: use up the credit, then charge as much as the balance allows and
+ *  defer the shortfall — so a change never blocks for want of coins.
+ *  Shortening: cancel outstanding debt first, then refund the remainder, up to
+ *  what the run paid; what isn't refunded becomes credit, so a round trip costs
+ *  nothing. */
+export function settleLengthChange(
+  priceDelta: number,
+  coins: number,
+  owed: number,
+  paid?: number,
+  credit = 0,
+): LengthSettlement {
   const delta = Math.round(priceDelta);
   const have = Math.max(0, Math.round(coins));
   const debt = Math.max(0, Math.round(owed));
+  const banked = Math.max(0, Math.round(credit));
 
   if (delta > 0) {
-    const chargeNow = Math.min(delta, have);
-    const deferred = delta - chargeNow;
+    const fromCredit = Math.min(banked, delta);
+    const chargeNow = Math.min(delta - fromCredit, have);
+    const deferred = delta - fromCredit - chargeNow;
     // Normalise the sign so a zero charge is +0, never −0 (keeps equality clean).
-    return { chargeNow, deferred, refund: 0, newOwed: debt + deferred, settled: chargeNow > 0 ? -chargeNow : 0 };
+    return {
+      chargeNow,
+      deferred,
+      refund: 0,
+      newOwed: debt + deferred,
+      newCredit: banked - fromCredit,
+      settled: chargeNow > 0 ? -chargeNow : 0,
+    };
   }
   if (delta < 0) {
     const giveBack = -delta;
     const cancelled = Math.min(debt, giveBack); // clear deferred debt first
-    const refund = giveBack - cancelled;
-    return { chargeNow: 0, deferred: 0, refund, newOwed: debt - cancelled, settled: refund };
+    const refund = Math.min(giveBack - cancelled, Math.max(0, Math.round(paid ?? 0)));
+    return {
+      chargeNow: 0,
+      deferred: 0,
+      refund,
+      newOwed: debt - cancelled,
+      newCredit: banked + giveBack - cancelled - refund,
+      settled: refund,
+    };
   }
-  return { chargeNow: 0, deferred: 0, refund: 0, newOwed: debt, settled: 0 };
+  return { chargeNow: 0, deferred: 0, refund: 0, newOwed: debt, newCredit: banked, settled: 0 };
 }
 
 /** A settlement plus the fee change that produced it — what set_personal_length
@@ -129,6 +159,8 @@ export interface LengthChangeSettlement extends LengthSettlement {
  *                          personal length, or the catalog length when clearing)
  *  @param coins            current balance
  *  @param owed             current length_premium_owed
+ *  @param paid             what the run has paid to activate (caps a refund)
+ *  @param credit           the run's length fee credit (runLengthCredit)
  *  @param settles          whether this game re-settles (playing, economy on,
  *                          not free-started, not ongoing) — else it's free */
 export function lengthChangeSettlement(opts: {
@@ -137,10 +169,18 @@ export function lengthChangeSettlement(opts: {
   newEffective: number | undefined;
   coins: number;
   owed: number;
+  paid?: number;
+  credit?: number;
   settles: boolean;
 }): LengthChangeSettlement {
   const priceDelta = opts.settles ? opts.priceAt(opts.newEffective) - opts.priceAt(opts.currentEffective) : 0;
-  return { priceDelta, ...settleLengthChange(priceDelta, opts.coins, opts.owed) };
+  return { priceDelta, ...settleLengthChange(priceDelta, opts.coins, opts.owed, opts.paid, opts.credit) };
+}
+
+/** A game's length fee credit for its current run (set_personal_length): 0
+ *  when the credit belongs to an earlier run. */
+export function runLengthCredit(game: Pick<Game, "lengthFeeCredit" | "lengthFeeCreditRun" | "startedAt">): number {
+  return game.lengthFeeCreditRun != null && game.lengthFeeCreditRun === game.startedAt ? (game.lengthFeeCredit ?? 0) : 0;
 }
 
 /** The coins docked from a finish bounty to reclaim a game's deferred length

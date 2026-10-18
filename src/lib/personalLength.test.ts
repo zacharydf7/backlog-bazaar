@@ -7,6 +7,7 @@ import {
   finishBountyOffset,
   beatenFinishLength,
   coerceLengthTiers,
+  runLengthCredit,
 } from "./personalLength";
 
 describe("effectiveLength", () => {
@@ -34,6 +35,41 @@ describe("hasPersonalLength", () => {
   });
 });
 
+describe("settleLengthChange — refunds stop at what the run paid", () => {
+  it("refunds a shortened replay nothing, since the replay paid nothing", () => {
+    expect(settleLengthChange(-180, 50, 0, 0)).toEqual({
+      chargeNow: 0,
+      deferred: 0,
+      refund: 0,
+      newOwed: 0,
+      newCredit: 180,
+      settled: 0,
+    });
+  });
+
+  it("uses that credit before charging, so a round trip costs nothing", () => {
+    const down = settleLengthChange(-180, 50, 0, 0);
+    const up = settleLengthChange(180, 50, down.newOwed, 0, down.newCredit);
+    expect(up).toMatchObject({ chargeNow: 0, deferred: 0, newCredit: 0, settled: 0 });
+    // Only the part past the credit is charged.
+    expect(settleLengthChange(240, 500, 0, 0, 180)).toMatchObject({ chargeNow: 60, newCredit: 0 });
+  });
+
+  it("refunds up to the price paid, and nothing when the price is unknown", () => {
+    expect(settleLengthChange(-180, 50, 0, 120).refund).toBe(120);
+    expect(settleLengthChange(-180, 50, 0, 500).refund).toBe(180);
+    expect(settleLengthChange(-180, 50, 0).refund).toBe(0);
+  });
+});
+
+describe("runLengthCredit", () => {
+  it("counts a credit only for the run it was banked on", () => {
+    expect(runLengthCredit({ lengthFeeCredit: 90, lengthFeeCreditRun: 5, startedAt: 5 })).toBe(90);
+    expect(runLengthCredit({ lengthFeeCredit: 90, lengthFeeCreditRun: 5, startedAt: 9 })).toBe(0);
+    expect(runLengthCredit({ lengthFeeCredit: 90, lengthFeeCreditRun: undefined, startedAt: undefined })).toBe(0);
+  });
+});
+
 describe("settleLengthChange — raising the length", () => {
   it("charges the whole extra fee when the player can afford it", () => {
     // +234 fee, 500 coins on hand, no prior debt.
@@ -42,6 +78,7 @@ describe("settleLengthChange — raising the length", () => {
       deferred: 0,
       refund: 0,
       newOwed: 0,
+      newCredit: 0,
       settled: -234,
     });
   });
@@ -53,6 +90,7 @@ describe("settleLengthChange — raising the length", () => {
       deferred: 134,
       refund: 0,
       newOwed: 134,
+      newCredit: 0,
       settled: -100,
     });
   });
@@ -63,6 +101,7 @@ describe("settleLengthChange — raising the length", () => {
       deferred: 234,
       refund: 0,
       newOwed: 234,
+      newCredit: 0,
       settled: 0,
     });
   });
@@ -74,6 +113,7 @@ describe("settleLengthChange — raising the length", () => {
       deferred: 80,
       refund: 0,
       newOwed: 130,
+      newCredit: 0,
       settled: 0,
     });
   });
@@ -81,22 +121,24 @@ describe("settleLengthChange — raising the length", () => {
 
 describe("settleLengthChange — shortening the length", () => {
   it("refunds the fee when there is no debt to cancel", () => {
-    expect(settleLengthChange(-150, 20, 0)).toEqual({
+    expect(settleLengthChange(-150, 20, 0, 1000)).toEqual({
       chargeNow: 0,
       deferred: 0,
       refund: 150,
       newOwed: 0,
+      newCredit: 0,
       settled: 150,
     });
   });
 
   it("cancels outstanding debt before refunding anything", () => {
     // Owe 134, shorten by 150-worth: wipe the 134 debt, refund 16.
-    expect(settleLengthChange(-150, 20, 134)).toEqual({
+    expect(settleLengthChange(-150, 20, 134, 1000)).toEqual({
       chargeNow: 0,
       deferred: 0,
       refund: 16,
       newOwed: 0,
+      newCredit: 0,
       settled: 16,
     });
   });
@@ -107,6 +149,7 @@ describe("settleLengthChange — shortening the length", () => {
       deferred: 0,
       refund: 0,
       newOwed: 84,
+      newCredit: 0,
       settled: 0,
     });
   });
@@ -119,6 +162,7 @@ describe("settleLengthChange — no net change", () => {
       deferred: 0,
       refund: 0,
       newOwed: 40,
+      newCredit: 0,
       settled: 0,
     });
   });

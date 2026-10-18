@@ -89,6 +89,8 @@ export interface GameRow {
   played_hours: number | null;
   personal_hours: number | null;
   length_premium_owed: number | null;
+  length_fee_credit?: number | null;
+  length_fee_credit_run?: string | null;
   copies: unknown;
   progress_note: string | null;
   review: string | null;
@@ -183,6 +185,8 @@ export function rowToGame(r: GameRow): Game {
     playedHours: r.played_hours ?? 0,
     personalHours: r.personal_hours ?? undefined,
     lengthPremiumOwed: r.length_premium_owed ?? 0,
+    lengthFeeCredit: r.length_fee_credit ?? 0,
+    lengthFeeCreditRun: r.length_fee_credit_run ? Date.parse(r.length_fee_credit_run) : undefined,
     bountyHeld: r.bounty_held ?? 0,
     bountyHeldTotal: r.bounty_held_total ?? undefined,
     bountyGateHours: r.bounty_gate_hours ?? undefined,

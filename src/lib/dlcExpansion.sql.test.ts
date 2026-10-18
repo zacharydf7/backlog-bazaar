@@ -49,6 +49,7 @@ beforeAll(async () => {
       finish_tag text, length_premium_owed integer, stealth boolean not null default false,
       bounty_held integer not null default 0, bounty_held_total integer, bounty_gate_hours numeric);
     create table public.activity_events (actor uuid, game_id uuid, kind text, created_at timestamptz not null default now());
+    create table public.game_length_events (game_id uuid, created_at timestamptz not null default now());
     create table public.shadow_economy_adjustments (user_id uuid, game_id uuid, game_title text,
       kind text not null default 'applied', source text, pct integer, base integer, adjusted integer,
       delta integer, undo_id uuid);
@@ -112,7 +113,8 @@ const BOUNTY = { base: 40, recencyDecayYears: 1, factors: { length: { enabled: t
 beforeEach(async () => {
   await db.exec(`
     delete from public.game_dlc_events; delete from public.game_dlc; delete from public.coin_events;
-    delete from public.action_undos; delete from public.game_milestones; delete from public.games;
+    delete from public.action_undos; delete from public.game_milestones; delete from public.game_length_events;
+    delete from public.games;
     delete from public.profiles; delete from public.app_config;
     insert into public.app_config (id, price_formula, bounty_formula, bounty_gate_pct, clear_streak_threshold,
       clear_streak_bonus_base, clear_streak_bonus_step, clear_streak_bonus_cap)
@@ -335,6 +337,15 @@ describe("expansion runs", () => {
     expect(await one("select clear_streak from public.profiles")).toEqual({ clear_streak: 0 });
     expect(await game()).toMatchObject({ status: "playing", resumed: true });
     expect(await one("select run_status from public.game_dlc")).toEqual({ run_status: "playing" });
+  });
+
+  it("won't undo a clear once the game's length has changed since", async () => {
+    const id = await addExpansion();
+    await db.query("select public.start_expansion($1)", [id]);
+    await logHours(4);
+    const { undo_id } = await one<{ undo_id: string }>("select undo_id from public.finish_expansion($1)", [id]);
+    await db.query("insert into public.game_length_events (game_id) values ($1)", [G]);
+    await expect(db.query("select public.undo_action($1)", [undo_id])).rejects.toThrow(/changed since/);
   });
 
   it("won't undo a clear whose expansion was removed since", async () => {
