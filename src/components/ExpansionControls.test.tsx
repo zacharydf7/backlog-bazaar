@@ -39,6 +39,7 @@ function setup(list: GameDlc[], extra: Record<string, unknown> = {}) {
       isAdmin: false,
       coins: 1000,
       economyEnabled: true,
+      bonusPerks: {},
       ...extra,
       gameDlc: list,
       economy: DEFAULT_ECONOMY,
@@ -98,6 +99,12 @@ describe("ExpansionBazaarCard", () => {
     expect(short.textContent).toMatch(/84 more/);
   });
 
+  it("names a running coin event's bounty boost", () => {
+    setup([LEGENDS], { bonusPerks: { g1: { bounty: { event: "Double Coins", factor: 2, capLeft: null } } } });
+    render(<ExpansionBazaarCard expansion={card()} />);
+    expect(screen.getByText(/Double Coins: bounty/).textContent).toMatch(/×2 if you clear it while it runs/);
+  });
+
   it("starts for free with the economy off", () => {
     setup([LEGENDS], { economyEnabled: false });
     render(<ExpansionBazaarCard expansion={card()} />);
@@ -124,6 +131,21 @@ describe("ExpansionRunActions", () => {
     // 1h of the frozen 2h gate: the start price back (184), not today's 40 bounty.
     expect(screen.getByText(/1h of 2h logged/)).toBeTruthy();
     expect(screen.getByText(/Clear expansion/).textContent).toMatch(/184/);
+  });
+
+  it("adds a running coin event's boost to a full clear, and says so before the gate", () => {
+    const perks = { g1: { bounty: { event: "Double Coins", factor: 2, capLeft: null } } };
+    setup([running], { bonusPerks: perks });
+    const { unmount } = render(
+      <ExpansionRunActions game={GAME} dlc={running} showEconomy withSessionStopped={(fn) => fn()} />,
+    );
+    // 1h of 4h: the boost waits on a full clear, and is on the full 40 bounty.
+    expect(screen.getByText(/Double Coins:/).textContent).toMatch(/\+\s*40 on a full clear/);
+    unmount();
+    render(
+      <ExpansionRunActions game={{ ...GAME, playedHours: 44 }} dlc={running} showEconomy withSessionStopped={(fn) => fn()} />,
+    );
+    expect(screen.getByText(/Double Coins:/).textContent).toMatch(/\+\s*40 on clear$/);
   });
 
   it("previews no payout for a run started while the economy was off", () => {

@@ -21897,10 +21897,30 @@ revoke execute on function public.bonus_event_discount(uuid, uuid, integer, bool
 -- my_bonus_event_perks like every other surface.)
 drop function if exists public.preview_start_price(uuid, integer);
 
+-- The games a coin event can boost for their player: Bazaar and Now Playing
+-- games, and a finished game with a story expansion waiting in the Bazaar
+-- (owner, 2026-10-18: the expansion's start takes the discount, its clear the
+-- bounty boost). plpgsql so game_dlc, created further down, isn't needed yet.
+create or replace function public.bonus_event_candidate(p_game public.games)
+returns boolean
+language plpgsql
+stable
+security definer set search_path = public
+as $$
+begin
+  return p_game.status in ('backlog', 'playing')
+      or (p_game.status = 'finished'
+          and exists (select 1 from public.game_dlc d
+                       where d.game_id = p_game.id and d.kind = 'expansion'
+                         and d.run_status = 'owned' and d.removed_at is null));
+end;
+$$;
+revoke execute on function public.bonus_event_candidate(public.games) from public, anon, authenticated;
+
 -- Is a running or upcoming event something this player could use? An event
--- with no game filters is for everyone; otherwise they need a Bazaar or Now
--- Playing game it applies to (so "off your main platform" never shows to a
--- one-platform player).
+-- with no game filters is for everyone; otherwise they need a game it can
+-- boost (bonus_event_candidate) that it applies to (so "off your main
+-- platform" never shows to a one-platform player).
 create or replace function public.bonus_event_relevant(p_event public.bonus_events, p_user uuid)
 returns boolean
 language sql
@@ -21910,7 +21930,7 @@ as $$
   select (cardinality(p_event.genres) = 0 and cardinality(p_event.platforms) = 0
           and not p_event.off_main_platform and p_event.min_hours is null and p_event.max_hours is null)
       or exists (select 1 from public.games g
-                  where g.user_id = p_user and g.status in ('backlog', 'playing')
+                  where g.user_id = p_user and public.bonus_event_candidate(g)
                     and public.bonus_event_applies(p_event, p_user, g.id));
 $$;
 revoke execute on function public.bonus_event_relevant(public.bonus_events, uuid) from public, anon, authenticated;
@@ -21995,7 +22015,7 @@ begin
                       order by (l.ev).session_mult desc, l.occ_end limit 1) end
                )) as perk
           from public.games g
-         where g.user_id = v_me and g.status in ('backlog', 'playing')
+         where g.user_id = v_me and public.bonus_event_candidate(g)
       ) x
      where x.perk <> '{}'::jsonb), '{}'::jsonb);
 end;

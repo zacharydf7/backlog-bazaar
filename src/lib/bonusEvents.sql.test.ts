@@ -51,6 +51,7 @@ beforeAll(async () => {
       genres jsonb, copies jsonb, platforms jsonb, hours real, personal_hours real,
       started_at timestamptz
     );
+    create table public.game_dlc (game_id uuid, kind text, run_status text, removed_at timestamptz);
     create table public.playtime_events (user_id uuid, platform text, hours real, source text,
       created_at timestamptz not null default now());
     create table public.coin_events (user_id uuid, kind text, delta integer, label text);
@@ -87,6 +88,7 @@ beforeAll(async () => {
     "best_bonus_event",
     "bonus_event_pay",
     "bonus_event_discount",
+    "bonus_event_candidate",
     "bonus_event_relevant",
     "bonus_event_notices",
     "my_bonus_event_perks",
@@ -104,7 +106,8 @@ beforeEach(async () => {
   await db.exec(`
     delete from public.bonus_event_payouts; delete from public.bonus_event_skips; delete from public.bonus_events;
     delete from public.notifications; delete from public.seasonal_challenges;
-    delete from public.coin_events; delete from public.playtime_events; delete from public.games;
+    delete from public.coin_events; delete from public.playtime_events; delete from public.game_dlc;
+    delete from public.games;
     delete from public.profiles;
     insert into public.profiles (id, coins) values ('${U}', 1000);
     insert into public.games (id, user_id, title, genres, copies, hours) values
@@ -397,6 +400,27 @@ describe("my_bonus_event_perks", () => {
         session: { event: "Double Bounty", factor: 3 },
       },
     });
+  });
+
+  it("gives a finished game the bounty boost while a story expansion waits in the Bazaar", async () => {
+    await db.exec(`update public.games set status = 'finished'`);
+    await event({ start_discount_pct: "50", genres: "'{RPG,Platformer}'" });
+    expect(await perks()).toEqual({});
+    await db.exec(`insert into public.game_dlc values
+      ('${PS}', 'expansion', 'owned', null),
+      ('${SW}', 'expansion', 'cleared', null),
+      ('${SW}', 'item', 'owned', null)`);
+    expect(await perks()).toEqual({ [PS]: { bounty: { event: "Double Bounty", factor: 2 } } });
+    // A targeted event counts as one for this player, so its banner and
+    // refresh timer follow (bonus_event_relevant).
+    const relevant = () =>
+      db
+        .query<{ r: boolean }>("select public.bonus_event_relevant(e, $1) as r from public.bonus_events e", [U])
+        .then((r) => r.rows[0].r);
+    expect(await relevant()).toBe(true);
+    await db.exec(`update public.game_dlc set removed_at = now()`);
+    expect(await perks()).toEqual({});
+    expect(await relevant()).toBe(false);
   });
 
   it("drops the discount once the player's discounted starts are used", async () => {

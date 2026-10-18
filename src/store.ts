@@ -4528,6 +4528,9 @@ export const useStore = create<BazaarState>((set, get) => ({
     const { coins, price_paid } = data as { coins: number; price_paid: number };
     set({ coins });
     await Promise.all([refreshGameFromServer(dlc.gameId), get().fetchGameDlc()]);
+    // While an event runs, the game's perks follow the run (and a clear may
+    // use up its cap).
+    if (get().bonusEvents.length > 0) void get().fetchBonusEvents();
     toast(price_paid > 0 ? `Playing ${dlc.name} · −${price_paid}` : `Playing ${dlc.name}`, Gamepad2);
   },
 
@@ -4552,6 +4555,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     };
     set({ coins: r.coins, clearStreak: r.streak, clearStreakBest: Math.max(prevStreakBest, r.streak) });
     await Promise.all([refreshGameFromServer(game.id), get().fetchGameDlc()]);
+    if (get().bonusEvents.length > 0) void get().fetchBonusEvents();
     const total = r.reward + r.event_bonus + r.streak_bonus;
     const undo: PendingUndo = {
       id: r.undo_id,
@@ -4582,6 +4586,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     const { coins, refunded } = data as { coins: number; refunded: number };
     set({ coins });
     await Promise.all([refreshGameFromServer(dlc.gameId), get().fetchGameDlc()]);
+    if (get().bonusEvents.length > 0) void get().fetchBonusEvents();
     toast(refunded > 0 ? `Stopped ${dlc.name} · +${refunded} back` : `Stopped ${dlc.name}`, Undo2);
   },
 
@@ -10342,7 +10347,10 @@ export const useStore = create<BazaarState>((set, get) => ({
       return;
     }
     const { coins: newCoins } = data as { coins: number };
-    if (undo.action === "expansion_finish") void get().fetchGameDlc();
+    if (undo.action === "expansion_finish") {
+      void get().fetchGameDlc();
+      if (get().bonusEvents.length > 0) void get().fetchBonusEvents();
+    }
     set({
       coins: newCoins,
       games: restore(),

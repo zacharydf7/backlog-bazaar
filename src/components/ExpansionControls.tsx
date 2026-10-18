@@ -4,7 +4,7 @@
 // its preview.
 import { useState } from "react";
 import { createPortal } from "react-dom";
-import { BookOpen, Check, Clock, Gamepad2, Lock, Package, Undo2 } from "lucide-react";
+import { BookOpen, Check, Clock, Gamepad2, Lock, Package, PartyPopper, Undo2 } from "lucide-react";
 import type { Game } from "../types";
 import { useStore } from "../store";
 import type { BazaarExpansion } from "../lib/bazaarExpansions";
@@ -17,6 +17,7 @@ import {
   type GameDlc,
 } from "../lib/dlc";
 import { formatPlaytime } from "../lib/playtime";
+import { eventFinishBonus, times } from "../lib/bonusEvents";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { CoinIcon } from "./CoinIcon";
 
@@ -37,6 +38,8 @@ export function ExpansionBazaarCard({ expansion }: { expansion: BazaarExpansion 
   const [starting, setStarting] = useState(false);
   const charges = showEconomy && quote.paying;
   const short = charges && coins < quote.price;
+  // A running coin event's bounty boost on the clear (finish_expansion).
+  const boost = useStore((s) => s.bonusPerks[game.id]?.bounty);
   const open = () => {
     window.location.hash = gameHash(game.id);
   };
@@ -107,6 +110,12 @@ export function ExpansionBazaarCard({ expansion }: { expansion: BazaarExpansion 
               {charges && (
                 <p className="inline-flex items-center justify-center gap-1 text-center text-[11px] text-subtle">
                   Clear bounty <CoinIcon size={12} /> {quote.bounty}
+                </p>
+              )}
+              {charges && boost && (
+                <p className="inline-flex items-center justify-center gap-1 text-center text-[11px] font-semibold text-success">
+                  <PartyPopper size={12} className="shrink-0" /> {boost.event}: bounty {times(boost.factor)} if you
+                  clear it while it runs
                 </p>
               )}
             </>
@@ -197,6 +206,9 @@ export function ExpansionRunActions({
   const refund = showEconomy ? (dlc.runPrice ?? 0) : 0;
   const gateHours = dlc.runQuote?.gateHours ?? 0;
   const short = showEconomy && quote != null && quote.paying && logged < quote.gateHours;
+  // A running coin event boosts only a full clear, on the full bounty.
+  const perk = useStore((s) => s.bonusPerks[game.id]);
+  const eventBonus = showEconomy && quote ? eventFinishBonus(quote.bounty, perk) : 0;
 
   return (
     <>
@@ -227,6 +239,12 @@ export function ExpansionRunActions({
           </>
         )}
       </button>
+      {eventBonus > 0 && (
+        <p className="-mt-1 inline-flex items-center justify-center gap-1 text-center text-xs font-semibold text-success">
+          <PartyPopper size={13} className="shrink-0" /> {perk?.bounty?.event}: +<CoinIcon size={12} /> {eventBonus}{" "}
+          on {short ? "a full clear" : "clear"}
+        </p>
+      )}
       {short && quote && (
         <p className="-mt-1 inline-flex items-center justify-center gap-1 text-center text-[11px] text-subtle">
           Full bounty <CoinIcon size={11} /> {quote.bounty} after {formatPlaytime(quote.gateHours)} logged
