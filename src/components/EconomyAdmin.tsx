@@ -32,6 +32,7 @@ import {
   splitWeight,
   combineWeight,
   signedCoins,
+  normalizeFormula,
   FACTOR_KEYS,
   FACTOR_META,
   DEFAULT_PRICE_FORMULA,
@@ -40,6 +41,7 @@ import {
   type FactorKey,
   type EconGame,
 } from "../lib/economy";
+import { expansionQuote } from "../lib/dlc";
 
 // A representative game used to preview a formula when an admin has no games of
 // their own to sample (or just wants a stable reference point).
@@ -1074,6 +1076,109 @@ function PreordersCard() {
   );
 }
 
+/** Admin editor for story-expansion runs (DLC preview): their own price and
+ *  bounty formulas, or the game formulas as they stand; the minimum length
+ *  that pays; and whether a clear counts toward the Clear Streak. Every
+ *  number here is meant to be tuned as the feature is tried. */
+function ExpansionsCard() {
+  const { economy, expansionConfig, setExpansionConfig, bountyGatePct } = useStore();
+  const [priceOwn, setPriceOwn] = useState(expansionConfig.price != null);
+  const [bountyOwn, setBountyOwn] = useState(expansionConfig.bounty != null);
+  const [price, setPrice] = useState(() => normalizeFormula(expansionConfig.price, economy.price));
+  const [bounty, setBounty] = useState(() => normalizeFormula(expansionConfig.bounty, economy.bounty));
+  const [minHours, setMinHours] = useState(String(expansionConfig.minHours));
+  const [countsStreak, setCountsStreak] = useState(expansionConfig.countsStreak);
+  const [saving, setSaving] = useState(false);
+
+  const next = {
+    price: priceOwn ? price : null,
+    bounty: bountyOwn ? bounty : null,
+    minHours: Math.max(0, Math.min(100, num(minHours))),
+    countsStreak,
+  };
+  const dirty = JSON.stringify(next) !== JSON.stringify(expansionConfig);
+  // An 8-hour, $20 expansion bought today, priced with the settings as edited.
+  const sample = expansionQuote(
+    { name: "Sample", hours: 8, cost: 20, acquiredOn: null, createdAt: Date.now() },
+    { price: priceOwn ? price : economy.price, bounty: bountyOwn ? bounty : economy.bounty },
+    next.minHours,
+    bountyGatePct,
+  );
+
+  async function save() {
+    setSaving(true);
+    await setExpansionConfig(next);
+    setSaving(false);
+  }
+
+  function revert() {
+    setPriceOwn(expansionConfig.price != null);
+    setBountyOwn(expansionConfig.bounty != null);
+    setPrice(normalizeFormula(expansionConfig.price, economy.price));
+    setBounty(normalizeFormula(expansionConfig.bounty, economy.bounty));
+    setMinHours(String(expansionConfig.minHours));
+    setCountsStreak(expansionConfig.countsStreak);
+  }
+
+  const toggle = (label: string, on: boolean, set: (v: boolean) => void) => (
+    <label className="flex items-center gap-2 text-sm text-ink">
+      <input type="checkbox" checked={on} onChange={(e) => set(e.target.checked)} className="accent-brand" />
+      {label}
+    </label>
+  );
+
+  return (
+    <div className="rounded-2xl border border-line bg-surface p-4">
+      <div className="mb-3">
+        <h3 className="inline-flex items-center gap-2 font-display text-lg text-ink">
+          <SlidersHorizontal size={16} className="text-accent" /> Story expansions (preview)
+        </h3>
+        <p className="text-xs text-muted">
+          A story expansion is played on a finished game for its own start price and bounty, from its
+          length, cost and purchase date. Leave a formula on the game formula to follow it.
+        </p>
+      </div>
+      <div className="flex flex-col gap-3">
+        {toggle("Own start-price formula", priceOwn, setPriceOwn)}
+        {priceOwn && <FormulaEditor value={price} onChange={setPrice} />}
+        {toggle("Own bounty formula", bountyOwn, setBountyOwn)}
+        {bountyOwn && <FormulaEditor value={bounty} onChange={setBounty} />}
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <RateField
+            label="Minimum length (hours)"
+            hint="Shorter expansions are tracked without coins and never count toward the streak."
+            min={0}
+            max={100}
+            value={minHours}
+            onChange={setMinHours}
+          />
+          <div className="pt-6">{toggle("Clears count toward the Clear Streak", countsStreak, setCountsStreak)}</div>
+        </div>
+        <p className="inline-flex flex-wrap items-center gap-1 text-xs text-muted">
+          An 8-hour, $20 expansion bought today: costs <CoinIcon size={12} /> {sample.price}, pays{" "}
+          <CoinIcon size={12} /> {sample.bounty}.
+        </p>
+      </div>
+      <div className="mt-3 flex justify-end gap-2">
+        <button
+          onClick={revert}
+          disabled={!dirty || saving}
+          className="rounded-xl border border-line px-3 py-2 text-sm font-medium text-ink transition hover:bg-panel disabled:opacity-50"
+        >
+          Revert
+        </button>
+        <button
+          onClick={() => void save()}
+          disabled={!dirty || saving}
+          className="inline-flex items-center gap-1.5 rounded-xl bg-brand px-4 py-2 text-sm font-semibold text-brand-fg shadow-sm transition hover:brightness-105 disabled:opacity-50"
+        >
+          {saving ? "Saving…" : "Save"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 /** Admin editor for the logged-time gate (coin outliers, 2026-10-17): the share
  *  of a game's length a finish must have logged to pay its whole bounty at
  *  once — and to wear the Verified mark. Below it the activation refund pays
@@ -1890,6 +1995,8 @@ export function EconomyAdmin() {
       <TastemakerCard />
 
       <PreordersCard />
+
+      <ExpansionsCard />
       <BountyGateCard />
       {can("economy.shadow") && <ShadowEconomyCard />}
       <OnboardingCard />

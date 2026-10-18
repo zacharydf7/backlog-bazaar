@@ -142,7 +142,7 @@ export interface Game extends GameMeta {
 export interface PendingUndo {
   id: string | null; // action_undos row id (cloud); null in offline mode
   gameId: string;
-  action: "finish" | "retire" | "convert_endless";
+  action: "finish" | "retire" | "convert_endless" | "expansion_finish";
   label: string; // human label, e.g. "Finishing Hollow Knight" (for the undo toast)
   prevGame: Game; // pre-action game snapshot, restored on undo
   coinsDelta: number; // coins the action awarded, deducted on undo

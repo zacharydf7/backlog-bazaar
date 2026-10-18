@@ -180,6 +180,7 @@ import { coerceWeeklyRecap, type WeeklyRecap } from "./lib/weeklyRecap";
 import { browserTimeZone } from "./lib/timeZone";
 import { coerceCalendarFeed, type CalendarItem } from "./lib/calendar";
 import { DEFAULT_PREORDER_BONUS, type PreorderBonusConfig } from "./lib/preorders";
+import { DEFAULT_EXPANSION_CONFIG, coerceGameDlc, type DlcKind, type ExpansionConfig, type GameDlc } from "./lib/dlc";
 import {
   coerceAdminBonusEvents,
   coerceBonusEvents,
@@ -987,6 +988,10 @@ interface BazaarState {
   // The pre-order arrival bonus: coins, how many days ahead the pre-order must
   // be placed, and how many pay a month.
   preorderBonusConfig: PreorderBonusConfig;
+  // DLC on your games (preview: dlc.preview), and the admin's expansion
+  // settings (formulas left unset follow the game formulas).
+  gameDlc: GameDlc[];
+  expansionConfig: ExpansionConfig;
   rotationReset: RotationResetConfig; // the weekly Rotation reset schedule, admin-configurable
   rotationCheckedIn: string[]; // gameIds already checked in this weekly Rotation period
   defaultRotationSlots: number; // admin default Rotation-lane capacity for new accounts
@@ -1935,6 +1940,25 @@ interface BazaarState {
   // Admin (economy.edit): the pre-order arrival bonus, its lead time and its
   // monthly limit.
   setPreorderBonusConfig: (cfg: PreorderBonusConfig) => Promise<void>;
+  // DLC records and expansion runs (src/lib/dlc.ts). The server prices and
+  // pays every run; these reload the affected game and the DLC list after.
+  fetchGameDlc: () => Promise<void>;
+  saveGameDlc: (input: {
+    id?: string;
+    gameId: string;
+    kind: DlcKind;
+    name: string;
+    acquiredOn: string | null;
+    cost: number | null;
+    hours: number | null;
+    note: string | null;
+  }) => Promise<boolean>;
+  removeGameDlc: (id: string) => Promise<void>;
+  startExpansion: (dlcId: string) => Promise<void>;
+  finishExpansion: (dlcId: string) => Promise<void>;
+  cancelExpansion: (dlcId: string) => Promise<void>;
+  // Admin (economy.edit): the expansion formulas, minimum length and streak rule.
+  setExpansionConfig: (cfg: ExpansionConfig) => Promise<void>;
   // Admin: the logged-time gate on finish bounties (economy.edit).
   setBountyGatePct: (pct: number) => Promise<void>;
   // Re-read the player's bounty rate (cloud; stays 100 offline).
@@ -2072,6 +2096,16 @@ function configNumber(v: unknown, fallback: number): number {
   return Number.isFinite(n) ? n : fallback;
 }
 
+/** Re-read one game row after a server-side change to it (an expansion run
+ *  moves the game in and out of Now Playing and restores its finish). */
+async function refreshGameFromServer(gameId: string): Promise<void> {
+  if (!supabase) return;
+  const { data } = await supabase.from("games").select("*").eq("id", gameId).maybeSingle();
+  if (!data) return;
+  const fresh = rowToGame(data as GameRow);
+  useStore.setState({ games: useStore.getState().games.map((g) => (g.id === gameId ? fresh : g)) });
+}
+
 /** Re-read the coin balance after server-side payouts. */
 async function refreshCoinsFromServer(
   set: (p: { coins: number }) => void,
@@ -2111,6 +2145,8 @@ export const useStore = create<BazaarState>((set, get) => ({
   regularStreak: null,
   regularConfig: DEFAULT_REGULAR_CONFIG,
   preorderBonusConfig: DEFAULT_PREORDER_BONUS,
+  gameDlc: [],
+  expansionConfig: DEFAULT_EXPANSION_CONFIG,
   rotationReset: DEFAULT_ROTATION_RESET,
   rotationCheckedIn: [],
   pendingRouteId: null,
@@ -2262,7 +2298,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     const { data: cfg } = await supabase
       .from("app_config")
       .select(
-        "maintenance, message, replay_bonus_pct, completion_bonus_pct, co_op_bonus_pct, clear_streak_threshold, clear_streak_bonus_base, clear_streak_bonus_step, clear_streak_bonus_cap, submission_reward, onboarding_vouchers, default_general_slots, default_rotation_slots, default_replay_slots, default_completionist_slots, rotation_checkin_reward, rotation_milestone_hours, rotation_milestone_reward, regular_min_hours, regular_bonus_base, regular_bonus_step, regular_bonus_cap, preorder_bonus, preorder_bonus_lead_days, preorder_bonus_monthly_cap, rotation_reset_dow, rotation_reset_hour, rotation_reset_tz, default_coin, price_formula, bounty_formula, sponsor_max_stake, sponsor_monthly_pair_cap, sponsor_expiry_days, preorder_strip_days, shop_open, loan_interest_pct, rec_discount_pct, rec_bounty_pct, rec_bounty_cap, story_order_bonus, collectors_record_bonus, review_bonus, review_bonus_min_chars, session_bonus, session_bonus_min_minutes, session_bonus_daily_cap, challenge_goal_reward, challenge_set_bonus, challenge_daily_reward, challenge_weekly_reward, challenge_weekly_sweep, bounty_gate_pct",
+        "maintenance, message, replay_bonus_pct, completion_bonus_pct, co_op_bonus_pct, clear_streak_threshold, clear_streak_bonus_base, clear_streak_bonus_step, clear_streak_bonus_cap, submission_reward, onboarding_vouchers, default_general_slots, default_rotation_slots, default_replay_slots, default_completionist_slots, rotation_checkin_reward, rotation_milestone_hours, rotation_milestone_reward, regular_min_hours, regular_bonus_base, regular_bonus_step, regular_bonus_cap, preorder_bonus, preorder_bonus_lead_days, preorder_bonus_monthly_cap, expansion_price_formula, expansion_bounty_formula, expansion_min_hours, expansion_counts_streak, rotation_reset_dow, rotation_reset_hour, rotation_reset_tz, default_coin, price_formula, bounty_formula, sponsor_max_stake, sponsor_monthly_pair_cap, sponsor_expiry_days, preorder_strip_days, shop_open, loan_interest_pct, rec_discount_pct, rec_bounty_pct, rec_bounty_cap, story_order_bonus, collectors_record_bonus, review_bonus, review_bonus_min_chars, session_bonus, session_bonus_min_minutes, session_bonus_daily_cap, challenge_goal_reward, challenge_set_bonus, challenge_daily_reward, challenge_weekly_reward, challenge_weekly_sweep, bounty_gate_pct",
       )
       .eq("id", 1)
       .single();
@@ -2389,6 +2425,23 @@ export const useStore = create<BazaarState>((set, get) => ({
         base: configNumber(cfg?.regular_bonus_base, DEFAULT_REGULAR_CONFIG.base),
         step: configNumber(cfg?.regular_bonus_step, DEFAULT_REGULAR_CONFIG.step),
         cap: configNumber(cfg?.regular_bonus_cap, DEFAULT_REGULAR_CONFIG.cap),
+      },
+      expansionConfig: {
+        // Set formulas load normalized (like the game formulas), unset ones stay
+        // null and follow the game formula.
+        price:
+          cfg?.expansion_price_formula == null
+            ? null
+            : normalizeFormula(cfg.expansion_price_formula, normalizeFormula(cfg?.price_formula, DEFAULT_PRICE_FORMULA)),
+        bounty:
+          cfg?.expansion_bounty_formula == null
+            ? null
+            : normalizeFormula(cfg.expansion_bounty_formula, normalizeFormula(cfg?.bounty_formula, DEFAULT_BOUNTY_FORMULA)),
+        minHours: configNumber(cfg?.expansion_min_hours, DEFAULT_EXPANSION_CONFIG.minHours),
+        countsStreak:
+          typeof cfg?.expansion_counts_streak === "boolean"
+            ? cfg.expansion_counts_streak
+            : DEFAULT_EXPANSION_CONFIG.countsStreak,
       },
       preorderBonusConfig: {
         coins: configNumber(cfg?.preorder_bonus, DEFAULT_PREORDER_BONUS.coins),
@@ -2729,6 +2782,9 @@ export const useStore = create<BazaarState>((set, get) => ({
     void get().evaluateAchievements().then(() => get().fetchWeeklyRecap());
     void get().fetchBonusEvents();
     void get().fetchRotationProgress();
+    // Loaded for everyone: a run in progress must stay visible (and endable)
+    // even if the preview permission goes away.
+    void get().fetchGameDlc();
 
     // Save the browser's timezone so Night Owl and "days played" count this
     // player's own nights and days (awaited via then: a supabase-js call only
@@ -4376,6 +4432,137 @@ export const useStore = create<BazaarState>((set, get) => ({
     }
     set({ preorderBonusConfig: next });
     toast("Pre-order bonus saved", CalendarClock);
+  },
+
+  fetchGameDlc: async () => {
+    const uid = get().userId;
+    if (!supabase || !get().cloud || !uid) return;
+    const { data, error } = await supabase.from("game_dlc").select("*").eq("user_id", uid).is("removed_at", null);
+    if (!error) set({ gameDlc: coerceGameDlc(data) });
+  },
+
+  saveGameDlc: async (input) => {
+    if (!supabase || !get().cloud) return false;
+    const { error } = await supabase.rpc("save_game_dlc", {
+      p_id: input.id ?? null,
+      p_game: input.gameId,
+      p_kind: input.kind,
+      p_name: input.name,
+      p_acquired_on: input.acquiredOn,
+      p_cost: input.cost,
+      p_hours: input.hours,
+      p_note: input.note,
+    });
+    if (error) {
+      set({ error: error.message });
+      return false;
+    }
+    await get().fetchGameDlc();
+    toast(input.id ? `Updated ${input.name}` : `Added ${input.name}`, Package);
+    return true;
+  },
+
+  removeGameDlc: async (id) => {
+    const dlc = get().gameDlc.find((d) => d.id === id);
+    if (!supabase || !get().cloud || !dlc) return;
+    const { error } = await supabase.rpc("remove_game_dlc", { p_id: id });
+    if (error) {
+      set({ error: error.message });
+      return;
+    }
+    await get().fetchGameDlc();
+    toast(`Removed ${dlc.name}`, Trash2);
+  },
+
+  startExpansion: async (dlcId) => {
+    const dlc = get().gameDlc.find((d) => d.id === dlcId);
+    if (!supabase || !get().cloud || !dlc?.gameId) return;
+    const { data, error } = await supabase.rpc("start_expansion", { p_dlc: dlcId }).single();
+    if (error) {
+      set({ error: error.message });
+      return;
+    }
+    const { coins, price_paid } = data as { coins: number; price_paid: number };
+    set({ coins });
+    await Promise.all([refreshGameFromServer(dlc.gameId), get().fetchGameDlc()]);
+    toast(price_paid > 0 ? `Playing ${dlc.name} · −${price_paid}` : `Playing ${dlc.name}`, Gamepad2);
+  },
+
+  finishExpansion: async (dlcId) => {
+    const dlc = get().gameDlc.find((d) => d.id === dlcId);
+    const game = get().games.find((g) => g.id === dlc?.gameId);
+    if (!supabase || !get().cloud || !dlc || !game) return;
+    const prevStreak = get().clearStreak;
+    const prevStreakBest = get().clearStreakBest;
+    const { data, error } = await supabase.rpc("finish_expansion", { p_dlc: dlcId }).single();
+    if (error) {
+      set({ error: error.message });
+      return;
+    }
+    const r = data as {
+      coins: number;
+      reward: number;
+      streak: number;
+      streak_bonus: number;
+      event_bonus: number;
+      undo_id: string;
+    };
+    set({ coins: r.coins, clearStreak: r.streak, clearStreakBest: Math.max(prevStreakBest, r.streak) });
+    await Promise.all([refreshGameFromServer(game.id), get().fetchGameDlc()]);
+    const total = r.reward + r.event_bonus + r.streak_bonus;
+    const undo: PendingUndo = {
+      id: r.undo_id,
+      gameId: game.id,
+      action: "expansion_finish",
+      label: dlc.name,
+      prevGame: game,
+      coinsDelta: total,
+      prevStreak,
+      prevStreakBest,
+    };
+    toastAction(
+      total > 0 ? `Cleared ${dlc.name} · +${total}` : `Cleared ${dlc.name}`,
+      { label: "Undo", onAction: () => void get().undoAction(undo) },
+      total > 0 ? Coins : Trophy,
+    );
+    void get().evaluateAchievements();
+  },
+
+  cancelExpansion: async (dlcId) => {
+    const dlc = get().gameDlc.find((d) => d.id === dlcId);
+    if (!supabase || !get().cloud || !dlc?.gameId) return;
+    const { data, error } = await supabase.rpc("cancel_expansion", { p_dlc: dlcId }).single();
+    if (error) {
+      set({ error: error.message });
+      return;
+    }
+    const { coins, refunded } = data as { coins: number; refunded: number };
+    set({ coins });
+    await Promise.all([refreshGameFromServer(dlc.gameId), get().fetchGameDlc()]);
+    toast(refunded > 0 ? `Stopped ${dlc.name} · +${refunded} back` : `Stopped ${dlc.name}`, Undo2);
+  },
+
+  setExpansionConfig: async (cfg) => {
+    const next: ExpansionConfig = {
+      ...cfg,
+      minHours: Math.max(0, Math.min(100, cfg.minHours)),
+    };
+    if (!supabase || !get().cloud || !get().can("economy.edit")) return;
+    const { error } = await supabase
+      .from("app_config")
+      .update({
+        expansion_price_formula: next.price,
+        expansion_bounty_formula: next.bounty,
+        expansion_min_hours: next.minHours,
+        expansion_counts_streak: next.countsStreak,
+      })
+      .eq("id", 1);
+    if (error) {
+      set({ error: error.message });
+      return;
+    }
+    set({ expansionConfig: next });
+    toast("Expansion settings saved", Package);
   },
 
   setPreorderStripDays: async (days) => {
@@ -10007,13 +10194,15 @@ export const useStore = create<BazaarState>((set, get) => ({
         ? "Undid retiring"
         : undo.action === "convert_endless"
           ? "Undid converting"
-          : "Undid finishing";
+          : undo.action === "expansion_finish"
+            ? "Undid clearing"
+            : "Undid finishing";
 
     // A finish carries a pre-action Clear Streak snapshot; restore it (and clear any
     // pending celebration) so undoing a finish rewinds the streak exactly. Retire /
     // convert undos leave the counter untouched (no snapshot).
     const restoreStreak =
-      undo.action === "finish" && typeof undo.prevStreak === "number"
+      (undo.action === "finish" || undo.action === "expansion_finish") && typeof undo.prevStreak === "number"
         ? {
             clearStreak: undo.prevStreak,
             clearStreakBest: undo.prevStreakBest ?? get().clearStreakBest,
@@ -10053,6 +10242,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       return;
     }
     const { coins: newCoins } = data as { coins: number };
+    if (undo.action === "expansion_finish") void get().fetchGameDlc();
     set({
       coins: newCoins,
       games: restore(),

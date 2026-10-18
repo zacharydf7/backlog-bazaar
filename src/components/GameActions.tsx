@@ -88,6 +88,7 @@ import { eventFinishBonus, eventStartPrice, times } from "../lib/bonusEvents";
 import { FinishCheckModal } from "./FinishCheckModal";
 import { useScrollLock } from "../lib/useScrollLock";
 import { CoinIcon } from "./CoinIcon";
+import { ExpansionRunActions, ExpansionStartActions, useActiveExpansion } from "./ExpansionControls";
 import { StackVersionPicker, useStackVersions } from "./StackVersionPicker";
 
 // Icon + label per Now Playing lane, for the lane badge on a playing card
@@ -533,6 +534,8 @@ export function GameActions({
   // Whether the Replay / Completionist lanes have room for this game right now.
   // (The Rotation lane is uncapped — an ongoing game always fits.)
   const replayHasRoom = canEnterLane(game, games, "replay", replaySlots);
+  // A story expansion in progress takes over the finish controls.
+  const activeExpansion = useActiveExpansion(game.id);
   const completionistHasRoom = canEnterLane(game, games, "completionist", completionistSlots);
   const bd = formulaBreakdown(game, economy.price);
   const enabledFactors = FACTOR_KEYS.filter((k) => economy.price.factors[k].enabled);
@@ -1330,9 +1333,11 @@ export function GameActions({
                 );
               })()
             ) : (
-              // An already-completed game isn't offered the completion flow again;
-              // otherwise the button stays visible but disabled when the lane is full.
-              game.finishTag !== "completed" && (
+              // An already-completed game isn't offered the completion flow again
+              // (nor one mid-expansion); otherwise the button stays visible but
+              // disabled when the lane is full.
+              game.finishTag !== "completed" &&
+              !activeExpansion && (
                 <button
                   onClick={() => enterCompletionist(game.id)}
                   disabled={!completionistHasRoom}
@@ -1415,109 +1420,120 @@ export function GameActions({
               {times(perk.session.factor)} when you log time
             </p>
           )}
-          <button
-            onClick={() =>
-              finishHeld > 0 || finishForfeits
-                ? setCheckingFinish(true)
-                : withSessionStopped(() => finishGame(game.id))
-            }
-            title={finishHint({ reward, isCompletionist, willReplay, isResumed })}
-            className={
-              "inline-flex items-center justify-center gap-1.5 rounded-lg border-[1.5px] border-success bg-success/10 px-3 py-2 text-sm font-semibold text-success shadow-stamp-sm transition hover:bg-success/20 active:translate-x-px active:translate-y-px active:shadow-none" +
-              (coachTarget === "finish" && game.status === "playing" ? coachRing : "")
-            }
-          >
-            <Check size={15} /> {isCompletionist ? "Mark Complete" : "Mark Finished"}
-            {reward > 0 && (
-              <>
-                {" "}
-                · <CoinIcon size={15} /> {reward}
-              </>
-            )}
-          </button>
-          {eventBonus > 0 && (
-            <p className="-mt-1 inline-flex items-center justify-center gap-1 text-center text-xs font-semibold text-success">
-              <PartyPopper size={13} className="shrink-0" /> {perk?.bounty?.event}: +
-              <CoinIcon size={12} /> {eventBonus} on {finishUnverified ? "a verified finish" : "finish"}
-            </p>
-          )}
-          {bonusSummary && (
-            <p className="-mt-1 inline-flex items-center justify-center gap-1 text-center text-[11px] text-subtle">
-              <Sparkles size={12} className="shrink-0 text-accent" /> Bonus on{" "}
-              {finishUnverified ? "a verified finish" : "finish"}: {bonusSummary}
-            </p>
-          )}
-          {lane === "replay" ? (
-            // Two distinct exits for a replay: "Mark Finished" above is a re-clear that
-            // pays the Replay Bonus; this cancels the replay — back to Finished with no
-            // bonus, as if you never pulled it back.
-            <button
-              onClick={() => withSessionStopped(() => abortReplay(game.id))}
-              title={`Cancel the replay — return ${game.title} to Finished without the Replay Bonus`}
-              className="inline-flex items-center justify-center gap-1.5 text-xs text-subtle transition hover:text-ink"
-            >
-              <Undo2 size={13} /> Cancel replay
-            </button>
-          ) : isCompletionist && isResumed ? (
-            // Only a previously-finished game can be ABANDONED to Finished (it has a
-            // Finished state to return to) — tagged Beaten, no coins. A never-beaten
-            // completionist game instead Shelves back to the Bazaar (or "Stop
-            // completing" returns it to Focus), so it's never marked finished early.
-            <button
-              onClick={() => withSessionStopped(() => abandonCompletion(game.id))}
-              title={`Abandon the 100% run and move ${game.title} back to Finished`}
-              className="inline-flex items-center justify-center gap-1.5 text-xs text-subtle transition hover:text-ink"
-            >
-              <Undo2 size={13} /> Abandon Completion
-            </button>
+          {activeExpansion ? (
+            <ExpansionRunActions
+              game={game}
+              dlc={activeExpansion}
+              showEconomy={showEconomy}
+              withSessionStopped={withSessionStopped}
+            />
           ) : (
             <>
-              <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1">
-                <button
-                  onClick={() => withSessionStopped(() => setShelving(true))}
-                  title={`Shelve ${game.title} back into the Bazaar for later`}
-                  className="inline-flex items-center justify-center gap-1.5 text-xs text-subtle transition hover:text-ink"
-                >
-                  <Undo2 size={13} /> Shelve it
-                  {shelveRefund > 0 && (
-                    <span className="inline-flex items-center gap-1">
-                      · +<CoinIcon size={12} /> {shelveRefund}
-                    </span>
-                  )}
-                </button>
-                {/* Same salvage as Shelve, but terminal: straight to the Finished
-                    shelf as Retired instead of back into the backlog. */}
-                <button
-                  onClick={() => withSessionStopped(() => setRetiring(true))}
-                  title={`Done with ${game.title} for good? Retire it to the Finished shelf`}
-                  className="inline-flex items-center justify-center gap-1.5 text-xs text-subtle transition hover:text-ink"
-                >
-                  <FlagOff size={13} /> Retire it
-                </button>
-              </div>
-              {shelving && (
-                <ShelveModal
-                  title={game.title}
-                  refund={shelveRefund}
-                  onConfirm={() => {
-                    abandonGame(game.id);
-                    setShelving(false);
-                  }}
-                  onClose={() => setShelving(false)}
-                />
+            <button
+              onClick={() =>
+                finishHeld > 0 || finishForfeits
+                  ? setCheckingFinish(true)
+                  : withSessionStopped(() => finishGame(game.id))
+              }
+              title={finishHint({ reward, isCompletionist, willReplay, isResumed })}
+              className={
+                "inline-flex items-center justify-center gap-1.5 rounded-lg border-[1.5px] border-success bg-success/10 px-3 py-2 text-sm font-semibold text-success shadow-stamp-sm transition hover:bg-success/20 active:translate-x-px active:translate-y-px active:shadow-none" +
+                (coachTarget === "finish" && game.status === "playing" ? coachRing : "")
+              }
+            >
+              <Check size={15} /> {isCompletionist ? "Mark Complete" : "Mark Finished"}
+              {reward > 0 && (
+                <>
+                  {" "}
+                  · <CoinIcon size={15} /> {reward}
+                </>
               )}
-              {retiring && (
-                <RetireModal
-                  title={game.title}
-                  fromLane
-                  refund={shelveRefund}
-                  onConfirm={(note) => {
-                    void retireGame(game.id, note);
-                    setRetiring(false);
-                  }}
-                  onClose={() => setRetiring(false)}
-                />
-              )}
+            </button>
+            {eventBonus > 0 && (
+              <p className="-mt-1 inline-flex items-center justify-center gap-1 text-center text-xs font-semibold text-success">
+                <PartyPopper size={13} className="shrink-0" /> {perk?.bounty?.event}: +
+                <CoinIcon size={12} /> {eventBonus} on {finishUnverified ? "a verified finish" : "finish"}
+              </p>
+            )}
+            {bonusSummary && (
+              <p className="-mt-1 inline-flex items-center justify-center gap-1 text-center text-[11px] text-subtle">
+                <Sparkles size={12} className="shrink-0 text-accent" /> Bonus on{" "}
+                {finishUnverified ? "a verified finish" : "finish"}: {bonusSummary}
+              </p>
+            )}
+            {lane === "replay" ? (
+              // Two distinct exits for a replay: "Mark Finished" above is a re-clear that
+              // pays the Replay Bonus; this cancels the replay — back to Finished with no
+              // bonus, as if you never pulled it back.
+              <button
+                onClick={() => withSessionStopped(() => abortReplay(game.id))}
+                title={`Cancel the replay — return ${game.title} to Finished without the Replay Bonus`}
+                className="inline-flex items-center justify-center gap-1.5 text-xs text-subtle transition hover:text-ink"
+              >
+                <Undo2 size={13} /> Cancel replay
+              </button>
+            ) : isCompletionist && isResumed ? (
+              // Only a previously-finished game can be ABANDONED to Finished (it has a
+              // Finished state to return to) — tagged Beaten, no coins. A never-beaten
+              // completionist game instead Shelves back to the Bazaar (or "Stop
+              // completing" returns it to Focus), so it's never marked finished early.
+              <button
+                onClick={() => withSessionStopped(() => abandonCompletion(game.id))}
+                title={`Abandon the 100% run and move ${game.title} back to Finished`}
+                className="inline-flex items-center justify-center gap-1.5 text-xs text-subtle transition hover:text-ink"
+              >
+                <Undo2 size={13} /> Abandon Completion
+              </button>
+            ) : (
+              <>
+                <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1">
+                  <button
+                    onClick={() => withSessionStopped(() => setShelving(true))}
+                    title={`Shelve ${game.title} back into the Bazaar for later`}
+                    className="inline-flex items-center justify-center gap-1.5 text-xs text-subtle transition hover:text-ink"
+                  >
+                    <Undo2 size={13} /> Shelve it
+                    {shelveRefund > 0 && (
+                      <span className="inline-flex items-center gap-1">
+                        · +<CoinIcon size={12} /> {shelveRefund}
+                      </span>
+                    )}
+                  </button>
+                  {/* Same salvage as Shelve, but terminal: straight to the Finished
+                      shelf as Retired instead of back into the backlog. */}
+                  <button
+                    onClick={() => withSessionStopped(() => setRetiring(true))}
+                    title={`Done with ${game.title} for good? Retire it to the Finished shelf`}
+                    className="inline-flex items-center justify-center gap-1.5 text-xs text-subtle transition hover:text-ink"
+                  >
+                    <FlagOff size={13} /> Retire it
+                  </button>
+                </div>
+                {shelving && (
+                  <ShelveModal
+                    title={game.title}
+                    refund={shelveRefund}
+                    onConfirm={() => {
+                      abandonGame(game.id);
+                      setShelving(false);
+                    }}
+                    onClose={() => setShelving(false)}
+                  />
+                )}
+                {retiring && (
+                  <RetireModal
+                    title={game.title}
+                    fromLane
+                    refund={shelveRefund}
+                    onConfirm={(note) => {
+                      void retireGame(game.id, note);
+                      setRetiring(false);
+                    }}
+                    onClose={() => setRetiring(false)}
+                  />
+                )}
+              </>
+            )}
             </>
           )}
         </div>
@@ -1606,6 +1622,7 @@ export function GameActions({
                     <InfinityIcon size={13} /> Convert to Endless
                   </button>
                 )}
+                <ExpansionStartActions game={game} showEconomy={showEconomy} replayHasRoom={replayHasRoom} />
               </>
             )}
           </div>

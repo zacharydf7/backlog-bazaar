@@ -23,6 +23,7 @@ import {
 } from "../../lib/copies";
 import { AcquisitionBadge } from "../AcquisitionBadge";
 import { AddGameModal } from "../AddGameModal";
+import { DlcBlock } from "./DlcBlock";
 import { CopyRowsEditor, copyToRow, rowsToCopies, type CopyRowDraft } from "../CopyRowsEditor";
 import { gameToCatalogFields } from "../GameSubmissionForm";
 import { FamilyHub } from "../FamilyHub";
@@ -69,6 +70,7 @@ export function LibraryTab({
         <InstanceCopies game={hub[0]} screenshots={screenshots} />
       )}
       <AddPlatformBlock hub={hub} />
+      <DlcBlock hub={hub} />
       <FamilyLinkBlock hub={hub} />
     </div>
   );

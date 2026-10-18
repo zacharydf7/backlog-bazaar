@@ -275,7 +275,8 @@ as $$
     'issues.moderate',
     'reports.moderate',
     'stats.view',
-    'roles.assign'
+    'roles.assign',
+    'dlc.preview'
   ]::text[];
 $$;
 
@@ -7702,6 +7703,59 @@ revoke execute on function public.copies_have_collectors_record(jsonb) from publ
 -- The feature-bonus columns (story_bonus, collector_bonus) and the coin event
 -- bonus (event_bonus) widened the RETURNS TABLE shape; the drops above
 -- recreate it.
+-- The Clear Streak step a clear takes (issue 01cc7662), shared by apply_finish
+-- and finish_expansion. Returns the counter before it (for the undo snapshot)
+-- and, when p_extend, extends it, raises the all-time best, and pays the
+-- escalating bonus. p_pay false (economy off, a free-started run) zeroes the
+-- bonus but still advances the counter, so streaks aren't lost. Internal.
+create or replace function public.advance_clear_streak(
+  p_user uuid, p_game uuid, p_title text, p_extend boolean, p_pay boolean
+)
+returns table (prev integer, best integer, streak integer, bonus integer, new_record boolean, coins integer)
+language plpgsql
+security definer set search_path = public
+as $$
+#variable_conflict use_column
+declare
+  v_prev      integer;
+  v_best      integer;
+  v_streak    integer;
+  v_bonus     integer := 0;
+  v_record    boolean := false;
+  v_threshold integer;
+  v_base      integer;
+  v_step      integer;
+  v_cap       integer;
+  v_coins     integer;
+begin
+  select coalesce(clear_streak, 0), coalesce(clear_streak_best, 0)
+    into v_prev, v_best
+    from public.profiles where id = p_user;
+  v_streak := v_prev;
+  if p_extend then
+    v_streak := v_prev + 1;
+    v_record := v_streak > v_best;
+    select clear_streak_threshold, clear_streak_bonus_base, clear_streak_bonus_step, clear_streak_bonus_cap
+      into v_threshold, v_base, v_step, v_cap
+      from public.app_config where id = 1;
+    if v_streak >= coalesce(v_threshold, 3) and p_pay then
+      v_bonus := least(coalesce(v_cap, 250),
+                       coalesce(v_base, 100) + coalesce(v_step, 25) * (v_streak - coalesce(v_threshold, 3)));
+    end if;
+    update public.profiles
+       set clear_streak = v_streak, clear_streak_best = greatest(v_best, v_streak)
+     where id = p_user;
+    if v_bonus > 0 then
+      update public.profiles set coins = coins + v_bonus where id = p_user returning coins into v_coins;
+      perform public.log_coin_event(p_user, 'clear_streak_bonus', v_bonus, 0, v_coins, null,
+                                    p_game, p_title, null, jsonb_build_object('streak', v_streak));
+    end if;
+  end if;
+  return query select v_prev, v_best, v_streak, v_bonus, v_record, v_coins;
+end;
+$$;
+revoke execute on function public.advance_clear_streak(uuid, uuid, text, boolean, boolean) from public, anon, authenticated;
+
 create or replace function public.apply_finish(
   p_game uuid, p_full_reward integer, p_replay_reward integer,
   p_completion_reward integer default 0
@@ -7744,10 +7798,6 @@ declare
   v_streak_best  integer;  -- all-time high before this finish
   v_streak_bonus integer := 0;  -- coin bonus this finish's streak level pays
   v_new_record   boolean := false;
-  v_cs_threshold integer;
-  v_cs_base      integer;
-  v_cs_step      integer;
-  v_cs_cap       integer;
   -- Feature bonuses: Story Order + Collector's Record.
   v_story_locked    boolean;
   v_copies          jsonb;
@@ -7952,42 +8002,13 @@ begin
   -- of its length logged (bounty_gate_pct, the same bar as the Verified mark). An
   -- unverified finish neither extends nor breaks the streak; a game with no length,
   -- or the gate turned off, counts as before.
-  select coalesce(clear_streak, 0), coalesce(clear_streak_best, 0)
-    into v_streak_prev, v_streak_best
-    from public.profiles where id = auth.uid();
-  v_streak := v_streak_prev;
-  if not coalesce(v_resumed, false) and not v_stealth and not v_unverified then
-    v_streak := v_streak_prev + 1;
-    v_new_record := v_streak > v_streak_best;
-    select clear_streak_threshold, clear_streak_bonus_base,
-           clear_streak_bonus_step, clear_streak_bonus_cap
-      into v_cs_threshold, v_cs_base, v_cs_step, v_cs_cap
-      from public.app_config where id = 1;
-    if v_streak >= coalesce(v_cs_threshold, 3) then
-      v_streak_bonus := least(
-        coalesce(v_cs_cap, 250),
-        coalesce(v_cs_base, 100) + coalesce(v_cs_step, 25) * (v_streak - coalesce(v_cs_threshold, 3)));
-    end if;
-    -- Coins freeze in economy-off / free-start runs (mirrors the bounty); the
-    -- counter and all-time best still advance so streaks aren't lost.
-    if not v_econ or v_free_start then
-      v_streak_bonus := 0;
-    end if;
-    update public.profiles
-       set clear_streak = v_streak,
-           clear_streak_best = greatest(v_streak_best, v_streak)
-     where id = auth.uid();
-    if v_streak_bonus > 0 then
-      update public.profiles
-         set coins = coins + v_streak_bonus
-       where id = auth.uid()
-       returning coins into v_coins;
-      perform public.log_coin_event(
-        auth.uid(), 'clear_streak_bonus', v_streak_bonus, 0, v_coins, null,
-        p_game, v_title, null, jsonb_build_object('streak', v_streak)
-      );
-    end if;
-  end if;
+  -- Coins freeze in economy-off / free-start runs (mirrors the bounty); the
+  -- counter and all-time best still advance so streaks aren't lost.
+  select s.prev, s.best, s.streak, s.bonus, s.new_record, coalesce(s.coins, v_coins)
+    into v_streak_prev, v_streak_best, v_streak, v_streak_bonus, v_new_record, v_coins
+    from public.advance_clear_streak(auth.uid(), p_game, v_title,
+           not coalesce(v_resumed, false) and not v_stealth and not v_unverified,
+           v_econ and not v_free_start) s;
 
   -- Feature bonuses: a paying FIRST clear rewards the optional setup put into the
   -- game — Story Order for a run started story-locked (the start stamp, never the
@@ -8950,7 +8971,7 @@ begin
   if not found then
     raise exception 'Can''t undo — the game has changed since';
   end if;
-  if v_action in ('finish', 'retire') then
+  if v_action in ('finish', 'retire', 'expansion_finish') then
     v_ok := v_status = 'finished';
   else -- convert_endless
     v_ok := v_status = 'playing' and coalesce(v_rotation, false);
@@ -8980,8 +9001,24 @@ begin
          finished_at   = (v_prev->>'finished_at')::timestamptz,
          reward        = (v_prev->>'reward')::integer,
          length_premium_owed = coalesce((v_prev->>'length_premium_owed')::integer, 0),
-         bounty_held = 0, bounty_held_total = null, bounty_gate_hours = null
+         -- An expansion clear never holds bounty: the game's own hold stays.
+         bounty_held = case when v_action = 'expansion_finish' then bounty_held else 0 end,
+         bounty_held_total = case when v_action = 'expansion_finish' then bounty_held_total end,
+         bounty_gate_hours = case when v_action = 'expansion_finish' then bounty_gate_hours end
    where id = v_game and user_id = auth.uid();
+  -- An undone expansion clear puts its run back in progress (not for one
+  -- removed since: nothing could show or end its run).
+  if v_action = 'expansion_finish' then
+    update public.game_dlc
+       set run_status = 'playing', run_cleared_at = null, run_reward = null, updated_at = now()
+     where id = (v_prev->>'dlc_id')::uuid and user_id = auth.uid() and removed_at is null;
+    if not found then
+      raise exception 'Can''t undo — the expansion was removed';
+    end if;
+    insert into public.game_dlc_events (user_id, dlc_id, game_id, game_title, dlc_name, action)
+    select auth.uid(), d.id, d.game_id, d.game_title, d.name, 'undone'
+      from public.game_dlc d where d.id = (v_prev->>'dlc_id')::uuid;
+  end if;
   perform set_config('app.bounty_write', '', true);
   -- A held bounty released since the finish (time logged inside the undo
   -- window) was paid too, so it rolls back with the rest.
@@ -9038,7 +9075,7 @@ begin
   -- Likewise a coin event's boost on the undone finish (paid in the same
   -- transaction, so stamped with the undo row's time): a reversing payout row
   -- keeps per-run caps and the admin totals in step with the coins taken back.
-  if v_action = 'finish' then
+  if v_action in ('finish', 'expansion_finish') then
     insert into public.bonus_event_payouts (event_id, event_name, user_id, game_id, kind, amount)
     select b.event_id, b.event_name, b.user_id, b.game_id, b.kind, -b.amount
       from public.bonus_event_payouts b
@@ -13865,7 +13902,9 @@ declare
     'challenge_daily_reward', 'challenge_weekly_reward', 'challenge_weekly_sweep',
     'rotation_milestone_hours', 'rotation_milestone_reward', 'regular_min_hours',
     'regular_bonus_base', 'regular_bonus_step', 'regular_bonus_cap',
-    'preorder_bonus', 'preorder_bonus_lead_days', 'preorder_bonus_monthly_cap'
+    'preorder_bonus', 'preorder_bonus_lead_days', 'preorder_bonus_monthly_cap',
+    'expansion_price_formula', 'expansion_bounty_formula', 'expansion_min_hours',
+    'expansion_counts_streak'
   ];
 begin
   foreach v_key in array v_cols loop
@@ -15343,6 +15382,8 @@ begin
   delete from public.game_status_events     where user_id = v_uid;
   delete from public.game_visibility_events where user_id = v_uid;
   delete from public.copy_events            where user_id = v_uid;
+  delete from public.game_dlc_events        where user_id = v_uid;
+  delete from public.game_dlc               where user_id = v_uid;
   delete from public.like_events            where user_id = v_uid;
   delete from public.instance_split_events  where user_id = v_uid;
   delete from public.user_active_days       where user_id = v_uid;
@@ -24900,6 +24941,576 @@ drop trigger if exists subscriptions_log_event on public.subscriptions;
 create trigger subscriptions_log_event
   after insert or update or delete on public.subscriptions
   for each row execute function public.log_subscription_event();
+
+-- ---------------------------------------------------------------------------
+-- DLC on a game (owner, 2026-10-17; preview behind dlc.preview until it's
+-- tuned). Three kinds, picked when adding:
+--   expansion  a story expansion with an ending (Ghost of Yotei's DLC). It's
+--              played as an expansion RUN through the Replay lane, priced and
+--              paid by its own length, cost and date. The only kind that
+--              moves coins.
+--   update     new content for a game you keep playing (a Hearthstone card
+--              set, a season): a dated record with an optional cost.
+--   item       an item, cosmetic or currency: a purchase record.
+-- Adding DLC never pays (records are self-reported). Run amounts come from
+-- server-side config (econ_formula), never from the client. Every setting is
+-- in app_config, so the rules can change as the owner tries them.
+-- ---------------------------------------------------------------------------
+alter table public.app_config add column if not exists expansion_price_formula jsonb;
+alter table public.app_config add column if not exists expansion_bounty_formula jsonb;
+alter table public.app_config add column if not exists expansion_min_hours numeric not null default 2
+  check (expansion_min_hours between 0 and 100);
+-- Off to start: adding an expansion, unlike adding a game, doesn't break the
+-- Clear Streak, so counting its clears would let free records pump it.
+alter table public.app_config add column if not exists expansion_counts_streak boolean not null default false;
+
+-- The game formulas' defaults, mirroring DEFAULT_PRICE_FORMULA and
+-- DEFAULT_BOUNTY_FORMULA in src/lib/economy.ts (used while app_config holds none).
+create or replace function public.econ_default_formula(p_kind text)
+returns jsonb
+language sql
+immutable
+as $$
+  select case p_kind
+    when 'price' then '{"base": 40, "recencyDecayYears": 8, "factors": {
+        "length": {"enabled": true, "weight": 3}, "recency": {"enabled": true, "weight": 120},
+        "paid": {"enabled": false, "weight": 0}, "played": {"enabled": false, "weight": 0},
+        "rating": {"enabled": false, "weight": 0}}}'::jsonb
+    else '{"base": 40, "recencyDecayYears": 8, "factors": {
+        "length": {"enabled": false, "weight": 0}, "recency": {"enabled": false, "weight": 0},
+        "paid": {"enabled": false, "weight": 0}, "played": {"enabled": false, "weight": 0},
+        "rating": {"enabled": false, "weight": 0}}}'::jsonb
+  end;
+$$;
+
+-- A complete formula from a stored one, each missing or malformed setting
+-- taken from p_fallback: the SQL mirror of normalizeFormula in
+-- src/lib/economy.ts (minus modifierRecencyPct, which only prices copies).
+create or replace function public.econ_normalize(p_raw jsonb, p_fallback jsonb)
+returns jsonb
+language sql
+immutable
+as $$
+  select jsonb_build_object(
+    'base', case when jsonb_typeof(p_raw -> 'base') = 'number' then p_raw -> 'base'
+                 else coalesce(p_fallback -> 'base', '0'::jsonb) end,
+    'recencyDecayYears',
+      case when jsonb_typeof(p_raw -> 'recencyDecayYears') = 'number' then p_raw -> 'recencyDecayYears'
+           else coalesce(p_fallback -> 'recencyDecayYears', '0'::jsonb) end,
+    'factors', (
+      select jsonb_object_agg(k, jsonb_build_object(
+               'enabled', case when jsonb_typeof(p_raw #> array['factors', k, 'enabled']) = 'boolean'
+                               then p_raw #> array['factors', k, 'enabled']
+                               else coalesce(p_fallback #> array['factors', k, 'enabled'], 'false'::jsonb) end,
+               'weight', case when jsonb_typeof(p_raw #> array['factors', k, 'weight']) = 'number'
+                              then p_raw #> array['factors', k, 'weight']
+                              else coalesce(p_fallback #> array['factors', k, 'weight'], '0'::jsonb) end))
+        from unnest(array['length', 'recency', 'paid', 'played', 'rating']) k));
+$$;
+
+-- Evaluate a complete formula: the SQL mirror of computeFormula in
+-- src/lib/economy.ts. total = round(base + each enabled weight x its unit),
+-- never below 0. Units: length = hours (12 when unknown), recency = 1 when
+-- just acquired fading to 0 over recencyDecayYears, paid = dollars, played =
+-- hours, rating = stars. economyFormula.sql.test.ts runs both on the same inputs.
+create or replace function public.econ_formula(
+  p_cfg jsonb, p_hours numeric, p_paid numeric, p_acquired timestamptz,
+  p_played numeric default 0, p_rating numeric default 0, p_now timestamptz default now()
+)
+returns integer
+language sql
+stable
+as $$
+  select greatest(0, round(
+           (p_cfg ->> 'base')::numeric
+           + sum(case when (p_cfg #>> array['factors', u.k, 'enabled'])::boolean
+                      then (p_cfg #>> array['factors', u.k, 'weight'])::numeric * u.unit
+                      else 0 end)))::integer
+    from (values
+      ('length', coalesce(p_hours, 12)::numeric),
+      ('recency', case when (p_cfg ->> 'recencyDecayYears')::numeric <= 0 then 0::numeric
+                       else greatest(0::numeric, least(1::numeric,
+                              1 - greatest(0::numeric, extract(epoch from p_now - coalesce(p_acquired, p_now))::numeric)
+                                  / (365.25 * 86400) / (p_cfg ->> 'recencyDecayYears')::numeric)) end),
+      ('paid', coalesce(p_paid, 0)::numeric),
+      ('played', coalesce(p_played, 0)::numeric),
+      ('rating', coalesce(p_rating, 0)::numeric)
+    ) u(k, unit);
+$$;
+
+-- The expansion formulas: a setting the admin left unset falls back to the
+-- game formula's, then to its default (expansionFormulas in src/lib/dlc.ts).
+create or replace function public.expansion_formulas(out price jsonb, out bounty jsonb)
+language sql
+stable
+set search_path = public
+as $$
+  select public.econ_normalize(c.expansion_price_formula,
+           public.econ_normalize(c.price_formula, public.econ_default_formula('price'))),
+         public.econ_normalize(c.expansion_bounty_formula,
+           public.econ_normalize(c.bounty_formula, public.econ_default_formula('bounty')))
+    from public.app_config c where c.id = 1;
+$$;
+
+create table if not exists public.game_dlc (
+  id              uuid primary key default gen_random_uuid(),
+  user_id         uuid not null references auth.users (id) on delete cascade,
+  game_id         uuid references public.games (id) on delete set null,
+  game_title      text not null default '',
+  kind            text not null check (kind in ('expansion', 'update', 'item')),
+  name            text not null check (char_length(btrim(name)) between 1 and 120),
+  -- When it was bought or arrived (an expansion's "fresh pickup" date).
+  acquired_on     date,
+  cost            numeric check (cost is null or cost between 0 and 100000),
+  -- An expansion's length; it prices and pays the run.
+  hours           numeric check (hours is null or (hours > 0 and hours <= 500)),
+  note            text check (note is null or char_length(note) <= 500),
+  -- The expansion run, written only by the run RPCs. run_quote freezes what it
+  -- costs and pays at its start (expansion_quote), so editing the record or
+  -- retuning the formulas mid-run can't change the payout; run_prev snapshots
+  -- the finished game so the run's end restores it exactly (finish date, reward).
+  run_status      text not null default 'owned' check (run_status in ('owned', 'playing', 'cleared')),
+  run_started_at  timestamptz,
+  run_hours_start real,
+  run_price       integer,
+  run_paying      boolean,
+  run_quote       jsonb,
+  run_prev        jsonb,
+  run_cleared_at  timestamptz,
+  run_reward      integer,
+  removed_at      timestamptz,
+  created_at      timestamptz not null default now(),
+  updated_at      timestamptz not null default now()
+);
+create index if not exists game_dlc_game_idx on public.game_dlc (game_id);
+create unique index if not exists game_dlc_one_run_idx
+  on public.game_dlc (game_id) where run_status = 'playing';
+alter table public.game_dlc enable row level security;
+revoke insert, update, delete on public.game_dlc from anon, authenticated;
+drop policy if exists "game_dlc_select_own" on public.game_dlc;
+create policy "game_dlc_select_own" on public.game_dlc
+  for select to authenticated using (auth.uid() = user_id);
+
+create table if not exists public.game_dlc_events (
+  id         uuid primary key default gen_random_uuid(),
+  user_id    uuid not null references auth.users (id) on delete cascade,
+  dlc_id     uuid references public.game_dlc (id) on delete set null,
+  game_id    uuid references public.games (id) on delete set null,
+  game_title text not null default '',
+  dlc_name   text not null default '',
+  action     text not null check (action in ('added', 'edited', 'removed', 'started', 'cleared', 'cancelled', 'undone')),
+  detail     jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+create index if not exists game_dlc_events_user_idx on public.game_dlc_events (user_id, created_at);
+alter table public.game_dlc_events enable row level security;
+revoke insert, update, delete on public.game_dlc_events from anon, authenticated;
+drop policy if exists "game_dlc_events_select_own" on public.game_dlc_events;
+create policy "game_dlc_events_select_own" on public.game_dlc_events
+  for select to authenticated using (auth.uid() = user_id);
+
+-- Add (p_id null) or edit a DLC record on one of your games. An expansion
+-- that's been started keeps its kind and length (the run they quoted).
+create or replace function public.save_game_dlc(
+  p_id uuid, p_game uuid, p_kind text, p_name text, p_acquired_on date,
+  p_cost numeric, p_hours numeric, p_note text
+)
+returns uuid
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  v_uid   uuid := auth.uid();
+  v_title text;
+  v_old   public.game_dlc;
+  v_id    uuid;
+  v_name  text := btrim(coalesce(p_name, ''));
+  v_note  text := nullif(btrim(coalesce(p_note, '')), '');
+  v_hours numeric := case when p_kind = 'expansion' then p_hours end;
+begin
+  if v_uid is null then raise exception 'Not authenticated'; end if;
+  if not public.has_permission('dlc.preview') then raise exception 'Not allowed'; end if;
+  if p_kind is null or p_kind not in ('expansion', 'update', 'item') then
+    raise exception 'Pick what kind of DLC this is';
+  end if;
+  if char_length(v_name) not between 1 and 120 then raise exception 'Give it a name'; end if;
+  -- Each expansion pays once: one name per game, counting a cleared one even
+  -- after it's removed.
+  if p_kind = 'expansion' and exists (
+       select 1 from public.game_dlc d
+        where d.user_id = v_uid and d.kind = 'expansion'
+          and (d.removed_at is null or d.run_status = 'cleared')
+          and d.game_id = coalesce((select o.game_id from public.game_dlc o where o.id = p_id), p_game)
+          and lower(d.name) = lower(v_name) and d.id is distinct from p_id) then
+    raise exception 'That expansion is already on this game';
+  end if;
+
+  if p_id is null then
+    select title into v_title from public.games where id = p_game and user_id = v_uid;
+    if not found then raise exception 'Game not found'; end if;
+    insert into public.game_dlc (user_id, game_id, game_title, kind, name, acquired_on, cost, hours, note)
+    values (v_uid, p_game, coalesce(v_title, ''), p_kind, v_name, p_acquired_on, p_cost, v_hours, v_note)
+    returning id into v_id;
+    insert into public.game_dlc_events (user_id, dlc_id, game_id, game_title, dlc_name, action, detail)
+    values (v_uid, v_id, p_game, coalesce(v_title, ''), v_name, 'added',
+            jsonb_build_object('kind', p_kind, 'acquired_on', p_acquired_on, 'cost', p_cost, 'hours', v_hours));
+    return v_id;
+  end if;
+
+  select * into v_old from public.game_dlc
+   where id = p_id and user_id = v_uid and removed_at is null for update;
+  if not found then raise exception 'DLC not found'; end if;
+  if v_old.run_status <> 'owned'
+     and (p_kind is distinct from v_old.kind or v_hours is distinct from v_old.hours) then
+    raise exception 'An expansion you''ve started keeps its kind and length';
+  end if;
+  update public.game_dlc
+     set kind = p_kind, name = v_name, acquired_on = p_acquired_on, cost = p_cost,
+         hours = v_hours, note = v_note, updated_at = now()
+   where id = p_id;
+  insert into public.game_dlc_events (user_id, dlc_id, game_id, game_title, dlc_name, action, detail)
+  values (v_uid, p_id, v_old.game_id, v_old.game_title, v_name, 'edited',
+          jsonb_build_object('old', jsonb_build_object('kind', v_old.kind, 'name', v_old.name,
+                               'acquired_on', v_old.acquired_on, 'cost', v_old.cost, 'hours', v_old.hours),
+                             'new', jsonb_build_object('kind', p_kind, 'name', v_name,
+                               'acquired_on', p_acquired_on, 'cost', p_cost, 'hours', v_hours)));
+  return p_id;
+end;
+$$;
+
+-- Remove a DLC record (soft: the row and its history stay). Not while its
+-- expansion run is in progress.
+create or replace function public.remove_game_dlc(p_id uuid)
+returns void
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  v_dlc public.game_dlc;
+begin
+  if auth.uid() is null then raise exception 'Not authenticated'; end if;
+  if not public.has_permission('dlc.preview') then raise exception 'Not allowed'; end if;
+  select * into v_dlc from public.game_dlc
+   where id = p_id and user_id = auth.uid() and removed_at is null for update;
+  if not found then raise exception 'DLC not found'; end if;
+  if v_dlc.run_status = 'playing' then
+    raise exception 'Finish or cancel the expansion first';
+  end if;
+  update public.game_dlc set removed_at = now(), updated_at = now() where id = p_id;
+  insert into public.game_dlc_events (user_id, dlc_id, game_id, game_title, dlc_name, action)
+  values (auth.uid(), p_id, v_dlc.game_id, v_dlc.game_title, v_dlc.name, 'removed');
+end;
+$$;
+
+-- What an expansion run costs to start and pays on a clear, from server-side
+-- config only (expansionQuote in src/lib/dlc.ts mirrors it). Recency reads the
+-- day it was acquired (UTC midnight), else when it was added. Shorter than
+-- expansion_min_hours, or with no length, it's a record-only run: free, and it
+-- pays nothing. gate_hours: the logged hours a full payout needs.
+create or replace function public.expansion_quote(p_dlc uuid)
+returns table (price integer, bounty integer, gate_hours numeric, paying boolean)
+language sql
+stable
+security definer set search_path = public
+as $$
+  select case when q.paying then public.econ_formula(f.price, d.hours, d.cost, q.acquired) else 0 end,
+         case when q.paying then public.econ_formula(f.bounty, d.hours, d.cost, q.acquired) else 0 end,
+         case when q.paying then coalesce(c.bounty_gate_pct, 25) / 100.0 * d.hours else 0 end,
+         q.paying
+    from public.game_dlc d
+    cross join public.app_config c
+    cross join public.expansion_formulas() f
+    cross join lateral (
+      select d.hours is not null and d.hours >= coalesce(c.expansion_min_hours, 2) as paying,
+             coalesce(d.acquired_on::timestamp at time zone 'UTC', d.created_at) as acquired
+    ) q
+   where d.id = p_dlc and c.id = 1;
+$$;
+revoke execute on function public.expansion_quote(uuid) from public, anon, authenticated;
+
+-- Put a game back exactly as it was before its expansion run (the snapshot
+-- taken at the start), dropping the auto Started milestone the run's start
+-- logged. Like abort_replay, the move back to Finished logs no Beat milestone
+-- or feed card. Internal to the run RPCs.
+create or replace function public.expansion_restore_game(p_dlc public.game_dlc)
+returns void
+language plpgsql
+security definer set search_path = public
+as $$
+begin
+  perform set_config('app.undo_in_progress', '1', true);
+  perform set_config('app.expansion_write', '1', true);
+  update public.games
+     set status = 'finished', slot_id = null, resumed = false,
+         completionist = coalesce((p_dlc.run_prev ->> 'completionist')::boolean, false),
+         in_rotation = coalesce((p_dlc.run_prev ->> 'in_rotation')::boolean, false),
+         started_at = (p_dlc.run_prev ->> 'started_at')::timestamptz,
+         finished_at = (p_dlc.run_prev ->> 'finished_at')::timestamptz,
+         reward = (p_dlc.run_prev ->> 'reward')::integer,
+         price_paid = (p_dlc.run_prev ->> 'price_paid')::integer
+   where id = p_dlc.game_id and user_id = p_dlc.user_id and status = 'playing';
+  perform set_config('app.expansion_write', '', true);
+  perform set_config('app.undo_in_progress', '', true);
+  delete from public.game_milestones m
+   where m.game_id = p_dlc.game_id and m.user_id = p_dlc.user_id
+     and m.kind = 'started' and m.source = 'auto'
+     and m.created_at >= p_dlc.run_started_at;
+end;
+$$;
+revoke execute on function public.expansion_restore_game(public.game_dlc) from public, anon, authenticated;
+
+-- Start an expansion run on a finished game: it moves into the Replay lane
+-- (enter_replay checks the lane has room) and the start price is charged.
+-- The game's finished state is snapshotted for the run's end.
+create or replace function public.start_expansion(p_dlc uuid)
+returns table (coins integer, price_paid integer)
+language plpgsql
+security definer set search_path = public
+as $$
+#variable_conflict use_column
+declare
+  v_uid    uuid := auth.uid();
+  v_dlc    public.game_dlc;
+  v_game   public.games;
+  v_quote  record;
+  v_paying boolean;
+  v_price  integer := 0;
+  v_coins  integer;
+begin
+  if v_uid is null then raise exception 'Not authenticated'; end if;
+  if not public.has_permission('dlc.preview') then raise exception 'Not allowed'; end if;
+  select * into v_dlc from public.game_dlc
+   where id = p_dlc and user_id = v_uid and removed_at is null for update;
+  if not found or v_dlc.kind <> 'expansion' then raise exception 'Expansion not found'; end if;
+  if v_dlc.run_status <> 'owned' then raise exception 'You''ve already played this expansion'; end if;
+  select * into v_game from public.games
+   where id = v_dlc.game_id and user_id = v_uid and status = 'finished' for update;
+  if not found then raise exception 'Finish the game before playing its expansion'; end if;
+  if v_game.finish_tag = 'retired' then
+    raise exception 'Return a retired game to the Bazaar to play it again';
+  end if;
+
+  select * into v_quote from public.expansion_quote(p_dlc);
+  v_paying := public.economy_enabled(v_uid) and v_quote.paying;
+  if v_paying then v_price := v_quote.price; end if;
+
+  perform public.enter_replay(v_game.id);
+
+  perform 1 from public.profiles where id = v_uid for update;
+  if v_price > 0 then
+    update public.profiles set coins = coins - v_price
+     where id = v_uid and coins >= v_price
+     returning coins into v_coins;
+    if v_coins is null then raise exception 'Not enough coins'; end if;
+    perform public.log_coin_event(v_uid, 'expansion_start', -v_price, 0, v_coins, null,
+                                  v_game.id, v_game.title, v_dlc.name, jsonb_build_object('dlc_id', p_dlc));
+  else
+    select coins into v_coins from public.profiles where id = v_uid;
+  end if;
+
+  update public.game_dlc
+     set run_status = 'playing', run_started_at = now(),
+         run_hours_start = coalesce(v_game.played_hours, 0), run_price = v_price, run_paying = v_paying,
+         run_quote = jsonb_build_object('price', v_quote.price, 'bounty', v_quote.bounty,
+                       'gate_hours', v_quote.gate_hours, 'paying', v_quote.paying),
+         run_prev = jsonb_build_object('started_at', v_game.started_at, 'finished_at', v_game.finished_at,
+                      'reward', v_game.reward, 'price_paid', v_game.price_paid,
+                      'completionist', v_game.completionist, 'in_rotation', v_game.in_rotation),
+         updated_at = now()
+   where id = p_dlc;
+  insert into public.game_dlc_events (user_id, dlc_id, game_id, game_title, dlc_name, action, detail)
+  values (v_uid, p_dlc, v_game.id, v_game.title, v_dlc.name, 'started',
+          jsonb_build_object('price', v_price, 'paying', v_paying, 'hours', v_dlc.hours));
+  return query select v_coins, v_price;
+end;
+$$;
+
+-- Clear an expansion run: the game goes back to Finished as it was, and the
+-- bounty frozen at the start pays. Under the logged-time gate (bounty_gate_pct
+-- of the expansion's length, counted from the run's start) it pays the start
+-- price back or the logged share of the bounty, whichever is more, and the
+-- rest is forfeited; the start price coming back is logged as a refund, not
+-- earnings. A paying clear with the gate met extends the Clear Streak when
+-- expansion_counts_streak is on. Undoable for a short window through
+-- undo_action, like a finish. Like cancel_expansion, it isn't gated on
+-- dlc.preview: a run that started must always be able to end.
+create or replace function public.finish_expansion(p_dlc uuid)
+returns table (coins integer, reward integer, logged_hours numeric, gate_hours numeric,
+               streak integer, streak_bonus integer, new_record boolean, event_bonus integer,
+               undo_id uuid)
+language plpgsql
+security definer set search_path = public
+as $$
+#variable_conflict use_column
+declare
+  v_uid      uuid := auth.uid();
+  v_dlc      public.game_dlc;
+  v_game     public.games;
+  v_paying   boolean;
+  v_gate     numeric;
+  v_pay      boolean;
+  v_logged   numeric;
+  v_bounty   integer := 0;
+  v_reward   integer := 0;
+  v_refund   integer := 0;
+  v_event    integer := 0;
+  v_verified boolean;
+  v_counts   boolean;
+  v_streak   record;
+  v_coins    integer;
+  v_undo     uuid;
+begin
+  if v_uid is null then raise exception 'Not authenticated'; end if;
+  select * into v_dlc from public.game_dlc
+   where id = p_dlc and user_id = v_uid and run_status = 'playing' for update;
+  if not found then raise exception 'No expansion run to finish'; end if;
+  select * into v_game from public.games
+   where id = v_dlc.game_id and user_id = v_uid and status = 'playing' for update;
+  if not found then raise exception 'Game not available to finish'; end if;
+
+  v_paying := coalesce((v_dlc.run_quote ->> 'paying')::boolean, false);
+  v_gate := coalesce((v_dlc.run_quote ->> 'gate_hours')::numeric, 0);
+  v_logged := greatest(0, coalesce(v_game.played_hours, 0) - coalesce(v_dlc.run_hours_start, 0));
+  v_verified := v_gate <= 0 or v_logged >= v_gate;
+  v_pay := public.economy_enabled(v_uid) and coalesce(v_dlc.run_paying, false);
+  if v_pay then
+    v_bounty := coalesce((v_dlc.run_quote ->> 'bounty')::integer, 0);
+    v_reward := case when v_verified then v_bounty
+                     else least(v_bounty, greatest(coalesce(v_dlc.run_price, 0),
+                                                   round(v_bounty * v_logged / v_gate)::integer)) end;
+    -- Under the gate, the start price coming back is a refund, not earnings.
+    if not v_verified then v_refund := least(v_reward, coalesce(v_dlc.run_price, 0)); end if;
+  end if;
+
+  perform public.expansion_restore_game(v_dlc);
+
+  perform 1 from public.profiles where id = v_uid for update;
+  if v_refund > 0 then
+    update public.profiles set coins = coins + v_refund where id = v_uid returning coins into v_coins;
+    perform public.log_coin_event(v_uid, 'expansion_refund', v_refund, 0, v_coins, null,
+                                  v_game.id, v_game.title, v_dlc.name, jsonb_build_object('dlc_id', p_dlc));
+  end if;
+  if v_reward > v_refund then
+    update public.profiles set coins = coins + (v_reward - v_refund) where id = v_uid returning coins into v_coins;
+    perform public.log_coin_event(v_uid, 'expansion_bounty', v_reward - v_refund, 0, v_coins, null,
+                                  v_game.id, v_game.title, v_dlc.name,
+                                  jsonb_build_object('dlc_id', p_dlc, 'bounty', v_bounty,
+                                                     'logged_hours', v_logged, 'gate_hours', v_gate));
+    -- A coin event boosts only a verified clear: under the gate the payout
+    -- is mostly the start price coming back, and boosting that would pay
+    -- for starting and clearing at once.
+    if v_verified then
+      v_event := public.bonus_event_pay(v_uid, v_game.id, 'bounty', v_reward);
+    end if;
+  end if;
+
+  select c.expansion_counts_streak into v_counts from public.app_config c where c.id = 1;
+  select * into v_streak
+    from public.advance_clear_streak(v_uid, v_game.id, v_game.title,
+           v_counts and v_paying and v_verified and not coalesce(v_game.stealth, false), v_pay);
+  select coins into v_coins from public.profiles where id = v_uid;
+
+  update public.game_dlc
+     set run_status = 'cleared', run_cleared_at = now(), run_reward = v_reward, updated_at = now()
+   where id = p_dlc;
+  insert into public.game_dlc_events (user_id, dlc_id, game_id, game_title, dlc_name, action, detail)
+  values (v_uid, p_dlc, v_game.id, v_game.title, v_dlc.name, 'cleared',
+          jsonb_build_object('reward', v_reward, 'bounty', v_bounty, 'logged_hours', v_logged,
+                             'gate_hours', v_gate, 'event_bonus', v_event,
+                             'streak_bonus', v_streak.bonus));
+
+  -- The undo snapshot is the run as it stood (see undo_action's
+  -- expansion_finish branch, which also puts the run back in progress).
+  insert into public.action_undos (user_id, game_id, game_title, action, coins_delta, prev)
+  values (v_uid, v_game.id, v_game.title, 'expansion_finish', v_reward + v_event + v_streak.bonus,
+          jsonb_build_object(
+            'status', 'playing', 'slot_id', v_game.slot_id, 'resumed', true,
+            'completionist', coalesce(v_game.completionist, false),
+            'in_rotation', coalesce(v_game.in_rotation, false), 'ongoing', coalesce(v_game.ongoing, false),
+            'finish_tag', v_game.finish_tag, 'started_at', v_game.started_at,
+            'price_paid', v_game.price_paid, 'finished_at', null, 'reward', null,
+            'length_premium_owed', coalesce(v_game.length_premium_owed, 0),
+            'clear_streak', v_streak.prev, 'clear_streak_best', v_streak.best, 'dlc_id', p_dlc))
+  returning id into v_undo;
+
+  return query select v_coins, v_reward, v_logged, v_gate, v_streak.streak, v_streak.bonus,
+                      v_streak.new_record, v_event, v_undo;
+end;
+$$;
+
+-- Stop an expansion run without clearing it: the game goes back to Finished
+-- as it was and the start price is refunded (frozen while the economy is off).
+-- Not gated on dlc.preview, so a run can always end.
+create or replace function public.cancel_expansion(p_dlc uuid)
+returns table (coins integer, refunded integer)
+language plpgsql
+security definer set search_path = public
+as $$
+#variable_conflict use_column
+declare
+  v_uid    uuid := auth.uid();
+  v_dlc    public.game_dlc;
+  v_refund integer := 0;
+  v_coins  integer;
+begin
+  if v_uid is null then raise exception 'Not authenticated'; end if;
+  select * into v_dlc from public.game_dlc
+   where id = p_dlc and user_id = v_uid and run_status = 'playing' for update;
+  if not found then raise exception 'No expansion run to cancel'; end if;
+
+  perform public.expansion_restore_game(v_dlc);
+
+  perform 1 from public.profiles where id = v_uid for update;
+  if coalesce(v_dlc.run_price, 0) > 0 and public.economy_enabled(v_uid) then
+    v_refund := v_dlc.run_price;
+    update public.profiles set coins = coins + v_refund where id = v_uid returning coins into v_coins;
+    perform public.log_coin_event(v_uid, 'expansion_refund', v_refund, 0, v_coins, null,
+                                  v_dlc.game_id, v_dlc.game_title, v_dlc.name, jsonb_build_object('dlc_id', p_dlc));
+  else
+    select coins into v_coins from public.profiles where id = v_uid;
+  end if;
+
+  update public.game_dlc
+     set run_status = 'owned', run_started_at = null, run_hours_start = null, run_price = null,
+         run_paying = null, run_quote = null, run_prev = null, updated_at = now()
+   where id = p_dlc;
+  insert into public.game_dlc_events (user_id, dlc_id, game_id, game_title, dlc_name, action, detail)
+  values (v_uid, p_dlc, v_dlc.game_id, v_dlc.game_title, v_dlc.name, 'cancelled',
+          jsonb_build_object('refunded', v_refund));
+  return query select v_coins, v_refund;
+end;
+$$;
+
+-- An expansion clear is undoable like a finish (undo_action).
+alter table public.action_undos drop constraint if exists action_undos_action_check;
+alter table public.action_undos add constraint action_undos_action_check
+  check (action in ('finish', 'retire', 'convert_endless', 'expansion_finish'));
+
+-- A game with an expansion run in progress only leaves it through the run
+-- RPCs: a plain finish, shelve, retire or lane move would strand the run (and
+-- pay a replay bonus for it).
+create or replace function public.games_guard_expansion_run()
+returns trigger
+language plpgsql
+set search_path = public
+as $$
+begin
+  if coalesce(current_setting('app.expansion_write', true), '') = '1' then
+    return new;
+  end if;
+  if (new.status is distinct from old.status or new.completionist is distinct from old.completionist
+      or new.in_rotation is distinct from old.in_rotation)
+     and exists (select 1 from public.game_dlc d where d.game_id = old.id and d.run_status = 'playing') then
+    raise exception 'EXPANSION_ACTIVE: finish or cancel the expansion first';
+  end if;
+  return new;
+end;
+$$;
+drop trigger if exists games_guard_expansion_run on public.games;
+create trigger games_guard_expansion_run
+  before update of status, completionist, in_rotation on public.games
+  for each row execute function public.games_guard_expansion_run();
+revoke execute on function public.games_guard_expansion_run() from public, anon, authenticated;
 
 -- Persistent cosmetic authoring. Every save/publication is a new revision;
 -- no existing catalog, purchases, profiles, or role assignments are backfilled.

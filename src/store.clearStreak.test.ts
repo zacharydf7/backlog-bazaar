@@ -96,7 +96,11 @@ describe("Clear Streak — only Verified clears extend it (2026-10-17)", () => {
     const schema = readFileSync(resolve(process.cwd(), "supabase/schema.sql"), "utf8");
     const start = schema.indexOf("create or replace function public.apply_finish(");
     const fn = schema.slice(start, schema.indexOf("\n$$;", start));
-    expect(fn).toContain("if not coalesce(v_resumed, false) and not v_stealth and not v_unverified then");
+    // The shared streak step extends it only for this condition.
+    expect(fn).toContain("public.advance_clear_streak(auth.uid(), p_game, v_title,");
+    expect(fn).toContain("not coalesce(v_resumed, false) and not v_stealth and not v_unverified,");
+    // ...and pays its bonus only on a paying run.
+    expect(fn).toContain("v_econ and not v_free_start) s;");
   });
 });
 

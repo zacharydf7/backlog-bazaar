@@ -39,7 +39,8 @@ export type Permission =
   | "issues.moderate"
   | "reports.moderate"
   | "stats.view"
-  | "roles.assign";
+  | "roles.assign"
+  | "dlc.preview";
 
 /** UI grouping for the role editor's permission checklist. */
 export type PermissionGroup = "Submissions" | "Users" | "Economy & Site" | "Other";
@@ -243,6 +244,13 @@ export const PERMISSIONS: PermissionInfo[] = [
     label: "Assign roles",
     description:
       "Assign existing roles to users — limited to roles within your own permissions.",
+    group: "Other",
+  },
+  {
+    key: "dlc.preview",
+    label: "Try DLC tracking (preview)",
+    description:
+      "Record DLC on games and play story expansions for coins, before it opens to everyone.",
     group: "Other",
   },
 ];
