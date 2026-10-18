@@ -617,7 +617,7 @@ export interface UserStats {
   topPlatform: string | null;
 }
 
-export type IssueKind = "feature" | "bug";
+export type IssueKind = "feature" | "bug" | "question";
 
 /** Triage priority for a feature/bug report. Defaults to "medium". */
 export type IssuePriority = "low" | "medium" | "high";

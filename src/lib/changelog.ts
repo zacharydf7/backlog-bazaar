@@ -41,6 +41,18 @@ export interface Release {
 export const RELEASES: Release[] = [
   // ── October 2026 ──────────────────────────────────────────────────────────
   {
+    id: "2026-10-18-board-questions",
+    date: "2026-10-18",
+    title: "Ask questions on the board",
+    summary: "Not sure it's a feature yet? Ask a question or start a brainstorm and talk it through first.",
+    tag: "feature",
+    items: [
+      "Pick Question when you add something to Requests & bugs.",
+      "Questions get their own filter, separate from features and bugs.",
+      "Once an idea is settled, it can become a feature to build.",
+    ],
+  },
+  {
     id: "2026-10-17-preorder-rewards",
     date: "2026-10-17",
     title: "Pre-orders pay off",

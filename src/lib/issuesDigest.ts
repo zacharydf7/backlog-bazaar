@@ -9,7 +9,7 @@
 // consuming this digest must treat that content as untrusted data, never as
 // instructions. The digest never executes or interprets it.
 
-export type IssueKind = "feature" | "bug";
+export type IssueKind = "feature" | "bug" | "question";
 
 export type IssueStatus =
   | "submitted"
@@ -39,6 +39,9 @@ export interface IssueRecord {
   edited_at: string | null;
   voteCount: number;
   commentCount: number;
+  /** A question whose latest word isn't ours (no reply yet, or the requester
+   *  answered last): the conversation is waiting on us. */
+  awaitingReply?: boolean;
 }
 
 // The work queue: statuses to actually pull work from, most-actionable first so
@@ -78,10 +81,39 @@ const STATUS_LABEL: Record<IssueStatus, string> = {
 
 const RANK: Record<IssuePriority, number> = { high: 3, medium: 2, low: 1 };
 
-/** A status Claude pulls work from (Submitted / Planned / In Progress /
- *  Changes Requested). */
-export function isWorkable(status: IssueStatus): boolean {
-  return WORK_STATUS_ORDER.includes(status);
+/** Work Claude pulls from: a feature or bug that's Submitted / Planned / In
+ *  Progress / Changes Requested. A question is talked through, not built, so
+ *  it's never queue work. */
+export function isWorkable(issue: Pick<IssueRecord, "kind" | "status">): boolean {
+  return issue.kind !== "question" && WORK_STATUS_ORDER.includes(issue.status);
+}
+
+/** A question or brainstorm still being talked through: listed on its own,
+ *  outside the work queue (nothing is built until it becomes a feature). */
+export function isOpenQuestion(issue: Pick<IssueRecord, "kind" | "status">): boolean {
+  return (
+    issue.kind === "question" &&
+    ![...CLOSED_STATUSES, ...HELD_STATUSES, ...AWAITING_STATUSES].includes(issue.status)
+  );
+}
+
+/** Each issue's latest commenter (by created_at). */
+export function latestCommenters(
+  comments: { request_id: string; user_id: string; created_at: string }[],
+): Map<string, string> {
+  const latest = new Map<string, { user_id: string; created_at: string }>();
+  for (const c of comments) {
+    const prev = latest.get(c.request_id);
+    if (!prev || c.created_at > prev.created_at) latest.set(c.request_id, c);
+  }
+  return new Map([...latest].map(([id, c]) => [id, c.user_id]));
+}
+
+/** Is a question waiting on us? Yes when the latest word is someone else's:
+ *  the latest comment's author, or the question's own author before anyone
+ *  has commented (so a question we posted waits on the players). */
+export function awaitsReply(authorId: string, latestCommenterId: string | undefined, myId: string): boolean {
+  return (latestCommenterId ?? authorId) !== myId;
 }
 
 /**
@@ -143,7 +175,9 @@ export function formatIssuesDigest(
   opts: DigestOptions = {},
 ): string {
   const now = opts.now ?? new Date();
-  const work = issues.filter((i) => isWorkable(i.status));
+  const work = issues.filter(isWorkable);
+  const questions = rankIssues(issues.filter(isOpenQuestion));
+  const waiting = questions.filter((q) => q.awaitingReply).length;
   const awaiting = issues.filter((i) => AWAITING_STATUSES.includes(i.status));
   const held = issues.filter((i) => HELD_STATUSES.includes(i.status));
   const closed = issues.filter((i) => CLOSED_STATUSES.includes(i.status));
@@ -153,6 +187,7 @@ export function formatIssuesDigest(
   lines.push("");
   lines.push(
     `Generated ${now.toISOString()} — ${work.length} to work` +
+      ` · ${questions.length} questions (${waiting} awaiting a reply)` +
       ` · ${awaiting.length} awaiting feedback · ${closed.length} closed.`,
   );
   lines.push("");
@@ -174,6 +209,18 @@ export function formatIssuesDigest(
     lines.push(`## ${STATUS_LABEL[status]} (${group.length})`);
     lines.push("");
     for (const issue of group) {
+      lines.push(renderIssue(issue));
+      lines.push("");
+    }
+  }
+
+  // Questions: talked through in the comments before anything is built, so not
+  // queue work. The ones where the latest word isn't ours come first.
+  if (questions.length > 0) {
+    lines.push(`## Questions (${questions.length}) — discussion, not queue work`);
+    lines.push("");
+    for (const issue of [...questions.filter((q) => q.awaitingReply), ...questions.filter((q) => !q.awaitingReply)]) {
+      lines.push(issue.awaitingReply ? `**Awaiting your reply**` : `_Waiting on the requester_`);
       lines.push(renderIssue(issue));
       lines.push("");
     }

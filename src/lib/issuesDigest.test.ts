@@ -2,6 +2,8 @@ import { describe, it, expect } from "vitest";
 import {
   formatIssuesDigest,
   isWorkable,
+  awaitsReply,
+  latestCommenters,
   rankIssues,
   type IssueRecord,
 } from "./issuesDigest";
@@ -28,18 +30,18 @@ function issue(overrides: Partial<IssueRecord>): IssueRecord {
 
 describe("isWorkable", () => {
   it("is the pull queue: submitted, planned, in_progress, changes_requested", () => {
-    expect(isWorkable("submitted")).toBe(true);
-    expect(isWorkable("planned")).toBe(true);
-    expect(isWorkable("in_progress")).toBe(true);
+    expect(isWorkable({ kind: "feature", status: "submitted" })).toBe(true);
+    expect(isWorkable({ kind: "feature", status: "planned" })).toBe(true);
+    expect(isWorkable({ kind: "feature", status: "in_progress" })).toBe(true);
     // Sent back by the requester — the ball is back with us, so it IS queued.
-    expect(isWorkable("changes_requested")).toBe(true);
+    expect(isWorkable({ kind: "feature", status: "changes_requested" })).toBe(true);
     // Dev-complete, parked on the requester for sign-off — excluded.
-    expect(isWorkable("awaiting_feedback")).toBe(false);
+    expect(isWorkable({ kind: "feature", status: "awaiting_feedback" })).toBe(false);
     // Closed.
-    expect(isWorkable("done")).toBe(false);
-    expect(isWorkable("declined")).toBe(false);
+    expect(isWorkable({ kind: "feature", status: "done" })).toBe(false);
+    expect(isWorkable({ kind: "feature", status: "declined" })).toBe(false);
     // Parked for later — deliberately deferred, never pulled.
-    expect(isWorkable("on_hold")).toBe(false);
+    expect(isWorkable({ kind: "feature", status: "on_hold" })).toBe(false);
   });
 });
 
@@ -89,7 +91,7 @@ describe("formatIssuesDigest", () => {
       ],
       { now },
     );
-    expect(md).toContain("1 to work · 1 awaiting feedback · 1 closed");
+    expect(md).toContain("1 to work · 0 questions (0 awaiting a reply) · 1 awaiting feedback · 1 closed");
     expect(md).toContain("2026-07-04T12:00:00.000Z");
     expect(md).toMatch(/user-authored/i);
   });
@@ -109,6 +111,31 @@ describe("formatIssuesDigest", () => {
     // ...while the dev-complete item waits, out of the queue.
     expect(md).toContain("## Awaiting feedback (1) — excluded from queue");
     expect(md).not.toContain("#### [feature] Signed off soon");
+  });
+
+  it("never counts a question as queue work, and one set to Awaiting feedback once", () => {
+    expect(isWorkable({ kind: "question", status: "submitted" })).toBe(false);
+    const md = formatIssuesDigest([issue({ kind: "question", status: "awaiting_feedback", title: "Odd" })], { now });
+    expect(md).toContain("0 questions (0 awaiting a reply) · 1 awaiting feedback");
+  });
+
+  it("lists questions on their own, outside the queue, those awaiting a reply first", () => {
+    const md = formatIssuesDigest(
+      [
+        issue({ id: "q-answered", kind: "question", title: "Lanes for one-off sessions?", awaitingReply: false }),
+        issue({ id: "q-waiting", kind: "question", title: "Ideas for boss events?", awaitingReply: true }),
+        issue({ id: "q-closed", kind: "question", status: "done", title: "Settled" }),
+      ],
+      { now },
+    );
+    expect(md).toContain("_No issues in the work queue._");
+    expect(md).toContain("2 questions (1 awaiting a reply)");
+    expect(md).toContain("## Questions (2) — discussion, not queue work");
+    expect(md.indexOf("[question] Ideas for boss events?")).toBeLessThan(
+      md.indexOf("[question] Lanes for one-off sessions?"),
+    );
+    expect(md).toContain("**Awaiting your reply**\n#### [question] Ideas for boss events?");
+    expect(md).not.toContain("#### [question] Settled");
   });
 
   it("groups queue issues under their status heading and shows kind + title", () => {
@@ -153,7 +180,7 @@ describe("formatIssuesDigest", () => {
 
   it("handles an empty board", () => {
     const md = formatIssuesDigest([], { now });
-    expect(md).toContain("0 to work · 0 awaiting feedback · 0 closed");
+    expect(md).toContain("0 to work · 0 questions (0 awaiting a reply) · 0 awaiting feedback · 0 closed");
     expect(md).toContain("_No issues in the work queue._");
   });
 
@@ -166,7 +193,7 @@ describe("formatIssuesDigest", () => {
       { now },
     );
     // On-hold is not queue work…
-    expect(md).toContain("1 to work · 0 awaiting feedback · 0 closed");
+    expect(md).toContain("1 to work · 0 questions (0 awaiting a reply) · 0 awaiting feedback · 0 closed");
     expect(md).not.toContain("#### [feature] Maybe someday");
     // …it gets its own summarized section.
     expect(md).toContain("## On hold (1) — parked for later, not queued");
@@ -176,5 +203,32 @@ describe("formatIssuesDigest", () => {
       includeClosed: true,
     });
     expect(full).toContain("Maybe someday");
+  });
+});
+
+describe("awaitsReply", () => {
+  const ME = "admin";
+  it("waits on us for a player's question nobody has answered", () => {
+    expect(awaitsReply("player", undefined, ME)).toBe(true);
+  });
+  it("waits on the players for a question we posted", () => {
+    expect(awaitsReply(ME, undefined, ME)).toBe(false);
+  });
+  it("follows whoever commented last", () => {
+    expect(awaitsReply("player", "player", ME)).toBe(true);
+    expect(awaitsReply("player", ME, ME)).toBe(false);
+  });
+});
+
+describe("latestCommenters", () => {
+  it("picks each issue's newest comment author", () => {
+    const latest = latestCommenters([
+      { request_id: "q", user_id: "player", created_at: "2026-10-18T10:00:00Z" },
+      { request_id: "q", user_id: "admin", created_at: "2026-10-18T12:00:00Z" },
+      { request_id: "q", user_id: "player", created_at: "2026-10-18T11:00:00Z" },
+      { request_id: "r", user_id: "player", created_at: "2026-10-18T09:00:00Z" },
+    ]);
+    expect(latest.get("q")).toBe("admin");
+    expect(latest.get("r")).toBe("player");
   });
 });

@@ -8,7 +8,7 @@
 // set here — done/changes_requested are the requester's call via
 // respond_feature_request, and declined is a human moderation decision.
 
-import type { IssueStatus } from "./issuesDigest";
+import type { IssueKind, IssueStatus } from "./issuesDigest";
 
 export const ALL_STATUSES: IssueStatus[] = [
   "submitted",
@@ -53,11 +53,22 @@ export interface TransitionCheck {
 
 /**
  * Decide whether Claude may move an issue from `from` to `to`. Pure — no I/O.
+ * A question isn't built, so it never enters the pipeline: it's talked through
+ * in the comments, and becomes a feature (its kind changed) once there's
+ * something to build.
  */
 export function checkTransition(
   from: IssueStatus,
   to: IssueStatus,
+  kind: IssueKind,
 ): TransitionCheck {
+  if (kind === "question" && from !== to) {
+    return {
+      ok: false,
+      noop: false,
+      reason: `This is a question: change it to a feature before it moves to "${to}".`,
+    };
+  }
   if (!AGENT_SETTABLE.includes(to)) {
     return {
       ok: false,

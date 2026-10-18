@@ -138,6 +138,31 @@ describe("IssueBoard linked issues", () => {
   });
 });
 
+describe("IssueBoard questions", () => {
+  it("asks a question as its own kind", async () => {
+    store.fetchIssues = vi.fn(async () => [issue]);
+    render(<IssueBoard />);
+    await screen.findByText("Deep-linked request");
+    fireEvent.click(screen.getByRole("button", { name: /New/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^Question$/ }));
+    fireEvent.change(screen.getByPlaceholderText(/Ask a question or start a brainstorm/i), {
+      target: { value: "Which lane fits a one-off session?" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /^Ask$/ }));
+    await waitFor(() =>
+      expect(store.submitIssue).toHaveBeenCalledWith(
+        "Which lane fits a one-off session?",
+        expect.anything(),
+        "question",
+        expect.anything(),
+        expect.anything(),
+        expect.anything(),
+        expect.anything(),
+      ),
+    );
+  });
+});
+
 describe("IssueBoard admin status control in the detail", () => {
   afterEach(() => {
     store.isAdmin = false;

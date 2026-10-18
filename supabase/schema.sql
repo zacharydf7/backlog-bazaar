@@ -2218,7 +2218,7 @@ create table if not exists public.feature_requests (
   id            uuid primary key default gen_random_uuid(),
   user_id       uuid not null references auth.users (id) on delete cascade,
   kind          text not null default 'feature'
-                  check (kind in ('feature', 'bug')),
+                  check (kind in ('feature', 'bug', 'question')),
   title         text not null,
   description   text,
   status        text not null default 'submitted'
@@ -2235,11 +2235,13 @@ create index if not exists feature_requests_status_idx on public.feature_request
 
 alter table public.feature_requests add column if not exists edited_at timestamptz;
 
--- Migration for boards created before bug reports existed (safe to re-run):
+-- Migration for boards created before bug reports existed (safe to re-run).
+-- 'question' (owner, 2026-10-18): a question or brainstorm to talk through
+-- before anything is built; it becomes a feature once there's something to build.
 alter table public.feature_requests add column if not exists kind text not null default 'feature';
 alter table public.feature_requests drop constraint if exists feature_requests_kind_check;
 alter table public.feature_requests add constraint feature_requests_kind_check
-  check (kind in ('feature', 'bug'));
+  check (kind in ('feature', 'bug', 'question'));
 
 -- Migration for boards created before the 'awaiting_feedback' / 'changes_requested'
 -- statuses existed ('awaiting_feedback' = dev complete, waiting on the requester to
@@ -11775,7 +11777,7 @@ language plpgsql
 security definer set search_path = public
 as $$
 begin
-  if p_kind not in ('feature', 'bug') then
+  if p_kind not in ('feature', 'bug', 'question') then
     raise exception 'Invalid kind';
   end if;
   if p_priority not in ('low', 'medium', 'high') then
@@ -11965,7 +11967,8 @@ begin
 
   insert into public.notifications (user_id, type, title, body, link)
   select p.id, 'feature_new',
-         case when new.kind = 'bug' then 'New bug report' else 'New feature request' end,
+         case new.kind when 'bug' then 'New bug report' when 'question' then 'New question'
+                       else 'New feature request' end,
          who || ': "' || new.title || '"', 'features:' || new.id
   from public.profiles p
   where p.is_admin and p.id <> new.user_id;
@@ -13702,7 +13705,7 @@ create index if not exists feature_request_events_request_idx
 create index if not exists feature_request_events_type_idx
   on public.feature_request_events (type, created_at desc);
 
--- kind: 'feature' or 'bug', denormalized onto every event (even votes/comments/
+-- kind: 'feature', 'bug' or 'question', denormalized onto every event (even votes/comments/
 -- reactions, resolved from the parent) so "upvotes on bugs vs features" and other
 -- splits are a plain group-by with no join — and survive the request's deletion.
 alter table public.feature_request_events add column if not exists kind text;

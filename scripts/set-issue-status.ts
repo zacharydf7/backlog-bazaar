@@ -43,14 +43,14 @@ async function main() {
 
   const { data: row, error } = await supabase
     .from("feature_requests")
-    .select("id,title,status")
+    .select("id,title,status,kind")
     .eq("id", id)
     .maybeSingle();
   if (error) throw error;
   if (!row) usage(`No issue found with id ${id}.`);
 
   const from = row.status;
-  const check = checkTransition(from, target);
+  const check = checkTransition(from, target, row.kind);
   if (!check.ok) usage(check.reason ?? "Illegal transition.");
 
   if (check.noop) {

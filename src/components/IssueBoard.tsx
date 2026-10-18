@@ -86,10 +86,20 @@ const STATUS_META: Record<IssueStatus, { label: string; icon: LucideIcon; badge:
   declined: { label: "Declined", icon: XCircle, badge: "bg-line text-subtle" },
 };
 
-const KIND_META: Record<IssueKind, { label: string; icon: LucideIcon; badge: string }> = {
-  feature: { label: "Feature", icon: Lightbulb, badge: "bg-accent/15 text-accent" },
-  bug: { label: "Bug", icon: Bug, badge: "bg-danger/15 text-danger" },
+const KIND_META: Record<IssueKind, { label: string; plural: string; icon: LucideIcon; badge: string; tint: string }> = {
+  feature: { label: "Feature", plural: "Features", icon: Lightbulb, badge: "bg-accent/15 text-accent", tint: "text-accent" },
+  bug: { label: "Bug", plural: "Bugs", icon: Bug, badge: "bg-danger/15 text-danger", tint: "text-danger" },
+  // A question or brainstorm to talk through before anything is built.
+  question: {
+    label: "Question",
+    plural: "Questions",
+    icon: MessageCircleQuestion,
+    badge: "bg-success/15 text-success",
+    tint: "text-success",
+  },
 };
+
+const KINDS: IssueKind[] = ["feature", "bug", "question"];
 
 // Column order on the admin board.
 const BOARD_ORDER: IssueStatus[] = [
@@ -375,13 +385,12 @@ export function IssueBoard({
         (wide ? "max-h-80 shrink-0 overflow-y-auto" : "md:max-h-96 md:shrink-0 md:overflow-y-auto")
       }
     >
-      <div className="mb-2 flex w-fit rounded-lg border border-line bg-panel p-0.5">
-        <ViewTab active={kind === "feature"} onClick={() => setKind("feature")} icon={Lightbulb}>
-          Feature
-        </ViewTab>
-        <ViewTab active={kind === "bug"} onClick={() => setKind("bug")} icon={Bug}>
-          Bug
-        </ViewTab>
+      <div className="mb-2 flex w-fit flex-wrap rounded-lg border border-line bg-panel p-0.5">
+        {KINDS.map((k) => (
+          <ViewTab key={k} active={kind === k} onClick={() => setKind(k)} icon={KIND_META[k].icon}>
+            {KIND_META[k].label}
+          </ViewTab>
+        ))}
       </div>
       <input
         value={title}
@@ -389,9 +398,11 @@ export function IssueBoard({
         placeholder={
           kind === "bug"
             ? "Describe the bug…"
-            : isAdmin
-              ? "Add a roadmap item…"
-              : "Suggest a feature…"
+            : kind === "question"
+              ? "Ask a question or start a brainstorm…"
+              : isAdmin
+                ? "Add a roadmap item…"
+                : "Suggest a feature…"
         }
         maxLength={TITLE_MAX}
         className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-brand"
@@ -403,7 +414,9 @@ export function IssueBoard({
         placeholder={
           kind === "bug"
             ? "Steps to reproduce, what you expected (optional)"
-            : "Add detail (optional)"
+            : kind === "question"
+              ? "What you're wondering about. We'll talk it through in the comments before anything is built."
+              : "Add detail (optional)"
         }
         rows={5}
         maxLength={BODY_MAX}
@@ -544,7 +557,15 @@ export function IssueBoard({
           disabled={!title.trim() || submitting}
           className="rounded-lg bg-brand px-4 py-1.5 text-sm font-semibold text-brand-fg shadow-sm transition hover:brightness-105 disabled:opacity-50"
         >
-          {submitting ? "Submitting…" : kind === "bug" ? "Report" : isAdmin ? "Add" : "Submit"}
+          {submitting
+            ? "Submitting…"
+            : kind === "bug"
+              ? "Report"
+              : kind === "question"
+                ? "Ask"
+                : isAdmin
+                  ? "Add"
+                  : "Submit"}
         </button>
       </div>
     </div>
@@ -615,16 +636,15 @@ export function IssueBoard({
                 className="w-full rounded-lg border border-line bg-panel py-2 pl-8 pr-3 text-sm text-ink outline-none transition focus:border-brand"
               />
             </div>
-            <div className="flex rounded-lg border border-line bg-panel p-0.5">
+            <div className="flex flex-wrap rounded-lg border border-line bg-panel p-0.5">
               <ViewTab active={filter === "all"} onClick={() => setFilter("all")}>
                 All
               </ViewTab>
-              <ViewTab active={filter === "feature"} onClick={() => setFilter("feature")} icon={Lightbulb}>
-                Features
-              </ViewTab>
-              <ViewTab active={filter === "bug"} onClick={() => setFilter("bug")} icon={Bug}>
-                Bugs
-              </ViewTab>
+              {KINDS.map((k) => (
+                <ViewTab key={k} active={filter === k} onClick={() => setFilter(k)} icon={KIND_META[k].icon}>
+                  {KIND_META[k].plural}
+                </ViewTab>
+              ))}
             </div>
             {!wide && (
               <select
@@ -1609,31 +1629,25 @@ function RequestDetail({
           {/* Title + description, with inline edit for owner/admin */}
           {editingReq ? (
             <div className="rounded-xl border border-line bg-panel/50 p-3">
-              <div className="mb-2 flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => setEKind("feature")}
-                  className={
-                    "inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm transition " +
-                    (eKind === "feature"
-                      ? "border-brand bg-brand/10 text-ink"
-                      : "border-line bg-surface text-muted hover:border-brand/50")
-                  }
-                >
-                  <Lightbulb size={14} className="text-accent" /> Feature
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setEKind("bug")}
-                  className={
-                    "inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm transition " +
-                    (eKind === "bug"
-                      ? "border-brand bg-brand/10 text-ink"
-                      : "border-line bg-surface text-muted hover:border-brand/50")
-                  }
-                >
-                  <Bug size={14} className="text-danger" /> Bug
-                </button>
+              <div className="mb-2 flex flex-wrap gap-2">
+                {KINDS.map((k) => {
+                  const Icon = KIND_META[k].icon;
+                  return (
+                    <button
+                      key={k}
+                      type="button"
+                      onClick={() => setEKind(k)}
+                      className={
+                        "inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm transition " +
+                        (eKind === k
+                          ? "border-brand bg-brand/10 text-ink"
+                          : "border-line bg-surface text-muted hover:border-brand/50")
+                      }
+                    >
+                      <Icon size={14} className={KIND_META[k].tint} /> {KIND_META[k].label}
+                    </button>
+                  );
+                })}
               </div>
               <input
                 value={eTitle}

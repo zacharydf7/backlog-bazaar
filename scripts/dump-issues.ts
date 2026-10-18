@@ -15,30 +15,39 @@
  */
 import { writeFileSync } from "node:fs";
 import { adminClient } from "./adminClient";
+import { fetchAllRows } from "../src/lib/cloudPaging";
 import {
+  awaitsReply,
   formatIssuesDigest,
+  isOpenQuestion,
   isWorkable,
+  latestCommenters,
   rankIssues,
   type IssueRecord,
 } from "../src/lib/issuesDigest";
 
 async function main() {
   const supabase = await adminClient();
+  const { data: me, error: meErr } = await supabase.auth.getUser();
+  if (meErr || !me.user) throw meErr ?? new Error("Not signed in");
+  const myId = me.user.id;
   const { data: rows, error } = await supabase
     .from("feature_requests")
     .select(
-      "id,kind,title,description,status,priority,effort,tags,is_admin_item,created_at,updated_at,edited_at",
+      "id,user_id,kind,title,description,status,priority,effort,tags,is_admin_item,created_at,updated_at,edited_at",
     );
   if (error) throw error;
 
   // Tally votes and comments client-side (one lightweight row per vote/comment).
-  const [{ data: votes, error: vErr }, { data: comments, error: cErr }] =
-    await Promise.all([
-      supabase.from("feature_votes").select("request_id"),
-      supabase.from("feature_comments").select("request_id"),
-    ]);
+  // Comments page (every response stops at 1000 rows): a question's latest
+  // commenter needs all of them.
+  const [{ data: votes, error: vErr }, comments] = await Promise.all([
+    supabase.from("feature_votes").select("request_id"),
+    fetchAllRows<{ request_id: string; user_id: string; created_at: string }>((from, to) =>
+      supabase.from("feature_comments").select("request_id,user_id,created_at").order("id").range(from, to),
+    ),
+  ]);
   if (vErr) throw vErr;
-  if (cErr) throw cErr;
 
   const countBy = (arr: { request_id: string }[] | null) => {
     const m = new Map<string, number>();
@@ -47,6 +56,7 @@ async function main() {
   };
   const voteCounts = countBy(votes);
   const commentCounts = countBy(comments);
+  const latest = latestCommenters(comments);
 
   const issues: IssueRecord[] = (rows ?? []).map((r) => ({
     id: r.id,
@@ -63,15 +73,18 @@ async function main() {
     edited_at: r.edited_at,
     voteCount: voteCounts.get(r.id) ?? 0,
     commentCount: commentCounts.get(r.id) ?? 0,
+    awaitingReply: r.kind === "question" ? awaitsReply(r.user_id, latest.get(r.id), myId) : undefined,
   }));
 
   const ranked = rankIssues(issues);
   writeFileSync("issues.local.json", JSON.stringify(ranked, null, 2) + "\n");
   writeFileSync("ISSUES.local.md", formatIssuesDigest(issues));
 
-  const workable = issues.filter((i) => isWorkable(i.status));
+  const workable = issues.filter(isWorkable);
+  const waiting = issues.filter((i) => isOpenQuestion(i) && i.awaitingReply);
   console.log(
-    `Wrote ISSUES.local.md and issues.local.json — ${issues.length} issues (${workable.length} in work queue).`,
+    `Wrote ISSUES.local.md and issues.local.json — ${issues.length} issues (${workable.length} in work queue, ` +
+      `${waiting.length} questions awaiting a reply).`,
   );
 }
 
