@@ -25794,9 +25794,11 @@ create index if not exists game_dlc_events_user_idx on public.game_dlc_events (u
 alter table public.game_dlc_events enable row level security;
 revoke insert, update, delete on public.game_dlc_events from anon, authenticated;
 -- 'converted' (2026-10-18): an old DLC copy became this record.
+-- 'marked_played' / 'unmarked_played' (2026-10-18): mark_expansion_played.
 alter table public.game_dlc_events drop constraint if exists game_dlc_events_action_check;
 alter table public.game_dlc_events add constraint game_dlc_events_action_check
-  check (action in ('added', 'edited', 'removed', 'started', 'cleared', 'cancelled', 'undone', 'converted'));
+  check (action in ('added', 'edited', 'removed', 'started', 'cleared', 'cancelled', 'undone', 'converted',
+                    'marked_played', 'unmarked_played'));
 drop policy if exists "game_dlc_events_select_own" on public.game_dlc_events;
 create policy "game_dlc_events_select_own" on public.game_dlc_events
   for select to authenticated using (auth.uid() = user_id);
@@ -25851,7 +25853,8 @@ begin
   select * into v_old from public.game_dlc
    where id = p_id and user_id = v_uid and removed_at is null for update;
   if not found then raise exception 'DLC not found'; end if;
-  if v_old.run_status <> 'owned'
+  -- (One marked played, with no run, has nothing frozen to keep.)
+  if v_old.run_status <> 'owned' and v_old.run_started_at is not null
      and (p_kind is distinct from v_old.kind or v_hours is distinct from v_old.hours) then
     raise exception 'An expansion you''ve started keeps its kind and length';
   end if;
@@ -26231,6 +26234,42 @@ begin
   values (v_uid, p_dlc, v_dlc.game_id, v_dlc.game_title, v_dlc.name, 'cancelled',
           jsonb_build_object('refunded', v_refund));
   return query select v_coins, v_refund;
+end;
+$$;
+
+-- An expansion you played before tracking it here (owner, 2026-10-18): mark it
+-- played, with no coins either way, and it leaves the Bazaar as cleared. It's
+-- told apart from a played run by having no run (run_started_at is null), and
+-- only a mark undoes: p_played false puts it back in the Bazaar.
+create or replace function public.mark_expansion_played(p_dlc uuid, p_played boolean)
+returns void
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  v_uid uuid := auth.uid();
+  v_dlc public.game_dlc;
+begin
+  if v_uid is null then raise exception 'Not authenticated'; end if;
+  select * into v_dlc from public.game_dlc
+   where id = p_dlc and user_id = v_uid and kind = 'expansion' and removed_at is null for update;
+  if not found then raise exception 'Expansion not found'; end if;
+  if p_played then
+    if v_dlc.run_status <> 'owned' then raise exception 'You''ve already played this expansion'; end if;
+    update public.game_dlc
+       set run_status = 'cleared', run_cleared_at = now(), run_reward = null, updated_at = now()
+     where id = p_dlc;
+  else
+    if v_dlc.run_status <> 'cleared' or v_dlc.run_started_at is not null then
+      raise exception 'Only an expansion marked as played can be unmarked';
+    end if;
+    update public.game_dlc
+       set run_status = 'owned', run_cleared_at = null, updated_at = now()
+     where id = p_dlc;
+  end if;
+  insert into public.game_dlc_events (user_id, dlc_id, game_id, game_title, dlc_name, action)
+  values (v_uid, p_dlc, v_dlc.game_id, v_dlc.game_title, v_dlc.name,
+          case when p_played then 'marked_played' else 'unmarked_played' end);
 end;
 $$;
 

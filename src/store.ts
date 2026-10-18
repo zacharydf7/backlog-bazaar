@@ -1963,6 +1963,8 @@ interface BazaarState {
     note: string | null;
   }) => Promise<boolean>;
   removeGameDlc: (id: string) => Promise<void>;
+  /** Mark a story expansion as played before (no coins), or undo that. */
+  markExpansionPlayed: (dlcId: string, played: boolean) => Promise<void>;
   // Turn an old 'dlc' copy into a DLC record (the copy leaves the game's
   // copies in the same step), with the record's details as saveGameDlc takes.
   convertDlcCopy: (
@@ -4515,6 +4517,20 @@ export const useStore = create<BazaarState>((set, get) => ({
     }
     await get().fetchGameDlc();
     toast(`Removed ${dlc.name}`, Trash2);
+  },
+
+  markExpansionPlayed: async (dlcId, played) => {
+    const dlc = get().gameDlc.find((d) => d.id === dlcId);
+    if (!supabase || !get().cloud || !dlc) return;
+    const { error } = await supabase.rpc("mark_expansion_played", { p_dlc: dlcId, p_played: played });
+    if (error) {
+      set({ error: error.message });
+      return;
+    }
+    await get().fetchGameDlc();
+    // A waiting expansion is what gives its finished game event perks.
+    if (get().bonusEvents.length > 0) void get().fetchBonusEvents();
+    toast(played ? `Marked ${dlc.name} as played` : `${dlc.name} is back in your Bazaar`, played ? Trophy : Undo2);
   },
 
   startExpansion: async (dlcId) => {

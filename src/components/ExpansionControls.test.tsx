@@ -32,6 +32,7 @@ const LEGENDS: GameDlc = {
 const startExpansion = vi.fn(async () => {});
 const finishExpansion = vi.fn(async () => {});
 const cancelExpansion = vi.fn(async () => {});
+const markExpansionPlayed = vi.fn(async () => {});
 
 function setup(list: GameDlc[], extra: Record<string, unknown> = {}) {
   act(() =>
@@ -47,6 +48,7 @@ function setup(list: GameDlc[], extra: Record<string, unknown> = {}) {
       startExpansion,
       finishExpansion,
       cancelExpansion,
+      markExpansionPlayed,
     }),
   );
 }
@@ -80,6 +82,16 @@ describe("ExpansionBazaarCard", () => {
     expect(screen.getByText(/Starting costs/).textContent).toMatch(/Starting costs\s+99\. Clearing it pays\s+300 once you've logged 2h/);
     fireEvent.click(screen.getByText("Play expansion"));
     expect(startExpansion).toHaveBeenCalledWith("d1");
+  });
+
+  it("marks an expansion already played, with no coins, after confirming", () => {
+    setup([LEGENDS]);
+    render(<ExpansionBazaarCard expansion={card({ lockedReason: "Finish Ghost of Yotei first. It unlocks by itself." })} />);
+    fireEvent.click(screen.getByRole("button", { name: /Already played it/ }));
+    expect(screen.getByText(/No coins are spent or earned/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Mark as played" }));
+    expect(markExpansionPlayed).toHaveBeenCalledWith("d1", true);
+    expect(startExpansion).not.toHaveBeenCalled();
   });
 
   it("stays locked, with why, until its game can take it", () => {

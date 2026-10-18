@@ -530,7 +530,9 @@ export function AboutPage() {
             an <strong className="text-ink">item</strong> like a cosmetic or in-game currency. Each
             story expansion you haven&apos;t played gets its own card in your{" "}
             <strong className="text-ink">Bazaar</strong>, locked until you finish its game, while
-            the game stays on Finished. Buy &amp; Start it there and it plays in its own{" "}
+            the game stays on Finished (played it before you tracked it here? Mark it{" "}
+            <strong className="text-ink">Already played it</strong> from its card, with no coins either way).
+            Buy &amp; Start it there and it plays in its own{" "}
             <strong className="text-ink">DLC</strong> lane on Now Playing: it costs coins to start
             and pays a bounty when you clear it, both from its own length, cost and date, and it
             never changes what the base game cost or paid. What you spent on DLC counts in the

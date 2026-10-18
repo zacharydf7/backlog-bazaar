@@ -38,6 +38,7 @@ function dlc(over: Partial<GameDlc> = {}): GameDlc {
 
 const saveGameDlc = vi.fn(async () => true);
 const convertDlcCopy = vi.fn(async () => true);
+const markExpansionPlayed = vi.fn(async () => {});
 
 function setup(list: GameDlc[], game: Game = GAME) {
   act(() =>
@@ -49,6 +50,7 @@ function setup(list: GameDlc[], game: Game = GAME) {
       economyEnabled: true,
       saveGameDlc,
       convertDlcCopy,
+      markExpansionPlayed,
     }),
   );
   render(<DlcBlock hub={[game]} />);
@@ -57,6 +59,7 @@ function setup(list: GameDlc[], game: Game = GAME) {
 beforeEach(() => {
   saveGameDlc.mockClear();
   convertDlcCopy.mockClear();
+  markExpansionPlayed.mockClear();
 });
 
 describe("DlcBlock", () => {
@@ -109,10 +112,24 @@ describe("DlcBlock", () => {
     expect(saveGameDlc).not.toHaveBeenCalled();
   });
 
+  it("marks an expansion played before as such, and only that one can be unmarked", () => {
+    setup([
+      dlc({ id: "m", kind: "expansion", name: "Grubbins on Ice", runStatus: "cleared" }),
+      dlc({ id: "r", kind: "expansion", name: "Legends", runStatus: "cleared", runStartedAt: 5, runReward: 40 }),
+    ]);
+    expect(screen.getByText("Played before")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Mark Legends unplayed" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Mark Grubbins on Ice unplayed" }));
+    expect(markExpansionPlayed).toHaveBeenCalledWith("m", false);
+    // With no run behind it, its kind and length stay editable.
+    fireEvent.click(screen.getByRole("button", { name: "Edit Grubbins on Ice" }));
+    expect(screen.queryByText(/started this expansion/)).toBeNull();
+  });
+
   it("lists the game's DLC with what was spent, a cleared expansion's payout, and where an unplayed one waits", () => {
     setup([
       dlc(),
-      dlc({ id: "d2", kind: "expansion", name: "Legends", cost: 20, hours: 8, runStatus: "cleared", runReward: 250 }),
+      dlc({ id: "d2", kind: "expansion", name: "Legends", cost: 20, hours: 8, runStatus: "cleared", runStartedAt: 5, runReward: 250 }),
       dlc({ id: "d3", kind: "expansion", name: "Echoes", cost: null, hours: 6, runStatus: "owned" }),
     ]);
     expect(screen.getByText("3 recorded · $70 spent")).toBeTruthy();

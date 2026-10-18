@@ -4,7 +4,7 @@
 // its preview.
 import { useState } from "react";
 import { createPortal } from "react-dom";
-import { BookOpen, Check, Clock, Gamepad2, Lock, Package, PartyPopper, Undo2 } from "lucide-react";
+import { BookOpen, Check, CheckCheck, Clock, Gamepad2, Lock, Package, PartyPopper, Undo2 } from "lucide-react";
 import type { Game } from "../types";
 import { useStore } from "../store";
 import type { BazaarExpansion } from "../lib/bazaarExpansions";
@@ -36,6 +36,8 @@ export function ExpansionBazaarCard({ expansion }: { expansion: BazaarExpansion 
   const showEconomy = useStore((s) => s.economyEnabled);
   const cover = useCoverOf()(game);
   const [starting, setStarting] = useState(false);
+  const [markingPlayed, setMarkingPlayed] = useState(false);
+  const markExpansionPlayed = useStore((s) => s.markExpansionPlayed);
   const charges = showEconomy && quote.paying;
   // A running coin event: its start discount (start_expansion) and its bounty
   // boost on the clear (finish_expansion).
@@ -131,8 +133,38 @@ export function ExpansionBazaarCard({ expansion }: { expansion: BazaarExpansion 
               )}
             </>
           )}
+          {/* Played it before you tracked it here: off the Bazaar, no coins
+              (like a game's Move to Finished). */}
+          <button
+            type="button"
+            onClick={() => setMarkingPlayed(true)}
+            title={`Played ${dlc.name} before? Mark it played, with no coins either way`}
+            className="inline-flex items-center justify-center gap-1.5 text-xs text-subtle transition hover:text-ink"
+          >
+            <CheckCheck size={13} /> Already played it
+          </button>
         </div>
       </div>
+      {markingPlayed &&
+        createPortal(
+          <ConfirmDialog
+            title={`Mark ${dlc.name} as played?`}
+            body={
+              <>
+                It leaves your Bazaar and shows as played on{" "}
+                <span className="font-medium text-ink">{game.title}</span>&apos;s page. No coins are spent or
+                earned. Changed your mind? Mark it unplayed there.
+              </>
+            }
+            confirmLabel="Mark as played"
+            onConfirm={() => {
+              setMarkingPlayed(false);
+              void markExpansionPlayed(dlc.id, true);
+            }}
+            onCancel={() => setMarkingPlayed(false)}
+          />,
+          document.body,
+        )}
       {starting && (
         <StartDialog
           dlc={dlc}

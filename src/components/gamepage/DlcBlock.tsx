@@ -4,7 +4,7 @@
 // listed here to turn into DLC records. See src/lib/dlc.ts.
 import { useState } from "react";
 import { createPortal } from "react-dom";
-import { BookOpen, Package, Pencil, Plus, Search, Sparkles, Trash2 } from "lucide-react";
+import { BookOpen, Package, Pencil, Plus, Search, Sparkles, Trash2, Undo2 } from "lucide-react";
 import type { Game, GameCopy } from "../../types";
 import { useStore } from "../../store";
 import {
@@ -27,9 +27,16 @@ import { CoinIcon } from "../CoinIcon";
 
 const KIND_ICON: Record<DlcKind, typeof BookOpen> = { expansion: BookOpen, update: Sparkles, item: Package };
 
+/** An expansion marked as played before it was tracked here
+ *  (mark_expansion_played): cleared without ever running. */
+function markedPlayed(d: GameDlc): boolean {
+  return d.kind === "expansion" && d.runStatus === "cleared" && d.runStartedAt == null;
+}
+
 function runLabel(d: GameDlc): string | null {
   if (d.kind !== "expansion") return null;
   if (d.runStatus === "playing") return "Playing now";
+  if (d.runStatus === "cleared" && markedPlayed(d)) return "Played before";
   if (d.runStatus === "cleared") return d.runReward ? `Cleared · +${d.runReward}` : "Cleared";
   return "In your Bazaar";
 }
@@ -46,6 +53,7 @@ function convertible(copy: GameCopy): boolean {
 export function DlcBlock({ hub }: { hub: Game[] }) {
   const all = useStore((s) => s.gameDlc);
   const removeGameDlc = useStore((s) => s.removeGameDlc);
+  const markExpansionPlayed = useStore((s) => s.markExpansionPlayed);
   const [editing, setEditing] = useState<GameDlc | "new" | OldDlcCopy | null>(null);
 
   const ids = new Set(hub.map((g) => g.id));
@@ -104,6 +112,17 @@ export function DlcBlock({ hub }: { hub: Game[] }) {
                 >
                   <Pencil size={14} />
                 </button>
+                {markedPlayed(d) && (
+                  <button
+                    type="button"
+                    onClick={() => void markExpansionPlayed(d.id, false)}
+                    title={`Put ${d.name} back in your Bazaar, unplayed`}
+                    aria-label={`Mark ${d.name} unplayed`}
+                    className="rounded-md p-1.5 text-subtle transition hover:bg-panel hover:text-ink"
+                  >
+                    <Undo2 size={14} />
+                  </button>
+                )}
                 {d.runStatus !== "playing" && (
                   <button
                     type="button"
@@ -200,7 +219,7 @@ function DlcFormModal({
   const [note, setNote] = useState(dlc?.note ?? "");
   const [lookingUp, setLookingUp] = useState(false);
   const [saving, setSaving] = useState(false);
-  const locked = dlc != null && dlc.runStatus !== "owned";
+  const locked = dlc != null && dlc.runStatus !== "owned" && !markedPlayed(dlc);
 
   const costNum = cost.trim() === "" ? null : Number(cost);
   const hoursNum = hours.trim() === "" ? null : Number(hours);

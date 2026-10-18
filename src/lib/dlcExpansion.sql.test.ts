@@ -101,6 +101,7 @@ beforeAll(async () => {
     "start_expansion",
     "finish_expansion",
     "cancel_expansion",
+    "mark_expansion_played",
     "games_guard_expansion_run",
     "undo_action",
   ]) {
@@ -208,6 +209,45 @@ describe("expansion runs", () => {
     await db.query("select public.cancel_expansion($1)", [id]);
     await db.exec(backfill![0]);
     expect(await game()).toMatchObject({ status: "finished", expansion_run: false });
+  });
+
+  it("marks an expansion played before, with no coins, and only that mark can be undone", async () => {
+    const id = await addExpansion();
+    await db.query("select public.mark_expansion_played($1, true)", [id]);
+    expect(await one("select run_status, run_reward, run_started_at from public.game_dlc")).toEqual({
+      run_status: "cleared",
+      run_reward: null,
+      run_started_at: null,
+    });
+    expect(await coins()).toBe(1000);
+    expect((await db.query("select count(*)::int as n from public.coin_events")).rows).toEqual([{ n: 0 }]);
+    // No coins to start a run or clear it once it's marked.
+    await expect(db.query("select public.start_expansion($1)", [id])).rejects.toThrow(/already played/);
+    // With no run, its length can still be fixed.
+    await db.query("select public.save_game_dlc($1, $2, 'expansion', 'Legends', current_date, 20, 9, null)", [id, G]);
+    expect(await one("select hours from public.game_dlc")).toEqual({ hours: "9" });
+    await db.query("select public.mark_expansion_played($1, false)", [id]);
+    expect(await one("select run_status, run_cleared_at from public.game_dlc")).toEqual({
+      run_status: "owned",
+      run_cleared_at: null,
+    });
+    expect(
+      (await db.query("select action from public.game_dlc_events where action like '%played' order by created_at"))
+        .rows,
+    ).toEqual([{ action: "marked_played" }, { action: "unmarked_played" }]);
+    // A run that really cleared stays cleared.
+    await db.query("select public.start_expansion($1)", [id]);
+    await logHours(8);
+    await db.query("select public.finish_expansion($1)", [id]);
+    await expect(db.query("select public.mark_expansion_played($1, false)", [id])).rejects.toThrow(/marked as played/);
+  });
+
+  it("won't mark a running expansion played, or unmark one that was never marked", async () => {
+    const id = await addExpansion();
+    await expect(db.query("select public.mark_expansion_played($1, false)", [id])).rejects.toThrow(/marked as played/);
+    await db.query("select public.start_expansion($1)", [id]);
+    await expect(db.query("select public.mark_expansion_played($1, true)", [id])).rejects.toThrow(/already played/);
+    expect(await one("select run_status from public.game_dlc")).toEqual({ run_status: "playing" });
   });
 
   it("pays the full bounty once the gate is logged, and restores the game as it was", async () => {
