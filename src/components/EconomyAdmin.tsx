@@ -973,20 +973,39 @@ function LoansCard() {
 }
 
 /** Admin editor for the pre-order knobs: how close a dated pre-order must be
- *  before the Bazaar's "Coming up" strip announces it. Self-contained Save,
- *  like the Sponsorships card. */
+ *  before the Bazaar's "Coming up" strip announces it, and the arrival bonus
+ *  (coins, lead time, monthly limit). Self-contained Save, like the
+ *  Sponsorships card. */
 function PreordersCard() {
-  const { preorderStripDays, setPreorderStripDays } = useStore();
+  const { preorderStripDays, setPreorderStripDays, preorderBonusConfig, setPreorderBonusConfig } = useStore();
   const [stripDays, setStripDays] = useState(String(preorderStripDays));
+  const [bonus, setBonus] = useState(String(preorderBonusConfig.coins));
+  const [leadDays, setLeadDays] = useState(String(preorderBonusConfig.leadDays));
+  const [monthlyCap, setMonthlyCap] = useState(String(preorderBonusConfig.monthlyCap));
   const [saving, setSaving] = useState(false);
 
   const clamp = (s: string) => Math.max(0, Math.min(3650, Math.round(num(s))));
-  const dirty = clamp(stripDays) !== preorderStripDays;
+  const stripDirty = clamp(stripDays) !== preorderStripDays;
+  const bonusDirty =
+    num(bonus) !== preorderBonusConfig.coins ||
+    num(leadDays) !== preorderBonusConfig.leadDays ||
+    num(monthlyCap) !== preorderBonusConfig.monthlyCap;
+  const dirty = stripDirty || bonusDirty;
 
   async function save() {
     setSaving(true);
-    await setPreorderStripDays(clamp(stripDays));
+    if (stripDirty) await setPreorderStripDays(clamp(stripDays));
+    if (bonusDirty) {
+      await setPreorderBonusConfig({ coins: num(bonus), leadDays: num(leadDays), monthlyCap: num(monthlyCap) });
+    }
     setSaving(false);
+  }
+
+  function revert() {
+    setStripDays(String(preorderStripDays));
+    setBonus(String(preorderBonusConfig.coins));
+    setLeadDays(String(preorderBonusConfig.leadDays));
+    setMonthlyCap(String(preorderBonusConfig.monthlyCap));
   }
 
   return (
@@ -1009,9 +1028,35 @@ function PreordersCard() {
         value={stripDays}
         onChange={setStripDays}
       />
+      <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <RateField
+          label="Arrival bonus (coins)"
+          hint="Paid when a pre-order arrives. 0 turns it off."
+          min={0}
+          max={100000}
+          value={bonus}
+          onChange={setBonus}
+        />
+        <RateField
+          label="Placed at least (days ahead)"
+          hint="A pre-order marked later than this before arriving earns no bonus."
+          min={0}
+          max={365}
+          value={leadDays}
+          onChange={setLeadDays}
+        />
+        <RateField
+          label="Bonuses per month"
+          hint="Each game pays once; this caps how many pay in a month."
+          min={0}
+          max={100}
+          value={monthlyCap}
+          onChange={setMonthlyCap}
+        />
+      </div>
       <div className="mt-3 flex justify-end gap-2">
         <button
-          onClick={() => setStripDays(String(preorderStripDays))}
+          onClick={revert}
           disabled={!dirty || saving}
           className="rounded-xl border border-line px-3 py-2 text-sm font-medium text-ink transition hover:bg-panel disabled:opacity-50"
         >

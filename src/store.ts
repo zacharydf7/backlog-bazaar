@@ -179,6 +179,7 @@ import { trackEvent } from "./lib/appEvents";
 import { coerceWeeklyRecap, type WeeklyRecap } from "./lib/weeklyRecap";
 import { browserTimeZone } from "./lib/timeZone";
 import { coerceCalendarFeed, type CalendarItem } from "./lib/calendar";
+import { DEFAULT_PREORDER_BONUS, type PreorderBonusConfig } from "./lib/preorders";
 import {
   coerceAdminBonusEvents,
   coerceBonusEvents,
@@ -983,6 +984,9 @@ interface BazaarState {
   // Its admin-set rules: the weekly hours that make a Regular week, and its
   // bonus (base, plus step per week in the run, up to cap).
   regularConfig: { minHours: number; base: number; step: number; cap: number };
+  // The pre-order arrival bonus: coins, how many days ahead the pre-order must
+  // be placed, and how many pay a month.
+  preorderBonusConfig: PreorderBonusConfig;
   rotationReset: RotationResetConfig; // the weekly Rotation reset schedule, admin-configurable
   rotationCheckedIn: string[]; // gameIds already checked in this weekly Rotation period
   defaultRotationSlots: number; // admin default Rotation-lane capacity for new accounts
@@ -1928,6 +1932,9 @@ interface BazaarState {
   // Admin: how close (days) a dated pre-order must be for the "Coming up"
   // strip. 0 disables the strip.
   setPreorderStripDays: (days: number) => Promise<void>;
+  // Admin (economy.edit): the pre-order arrival bonus, its lead time and its
+  // monthly limit.
+  setPreorderBonusConfig: (cfg: PreorderBonusConfig) => Promise<void>;
   // Admin: the logged-time gate on finish bounties (economy.edit).
   setBountyGatePct: (pct: number) => Promise<void>;
   // Re-read the player's bounty rate (cloud; stays 100 offline).
@@ -2065,6 +2072,27 @@ function configNumber(v: unknown, fallback: number): number {
   return Number.isFinite(n) ? n : fallback;
 }
 
+/** Coins the pre-order arrival bonus paid on a game (0 when none), and the
+ *  balance it left (the server pays it in a trigger on the unlock). */
+async function arrivalBonus(gameId: string): Promise<number> {
+  if (!supabase) return 0;
+  const { data } = await supabase.from("preorder_bonuses").select("coins").eq("game_id", gameId).maybeSingle();
+  const coins = (data as { coins?: number } | null)?.coins ?? 0;
+  if (coins > 0) await refreshCoinsFromServer(useStore.setState, useStore.getState().userId);
+  return coins;
+}
+
+/** Re-read the coin balance after server-side payouts. */
+async function refreshCoinsFromServer(
+  set: (p: { coins: number }) => void,
+  userId: string | null,
+): Promise<void> {
+  if (!supabase || !userId) return;
+  const { data } = await supabase.from("profiles").select("coins").eq("id", userId).maybeSingle();
+  const coins = (data as { coins?: number } | null)?.coins;
+  if (typeof coins === "number") set({ coins });
+}
+
 // The pending reload at the next coin event start/end (fetchBonusEvents).
 let bonusEventTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -2092,6 +2120,7 @@ export const useStore = create<BazaarState>((set, get) => ({
   rotationProgress: {},
   regularStreak: null,
   regularConfig: DEFAULT_REGULAR_CONFIG,
+  preorderBonusConfig: DEFAULT_PREORDER_BONUS,
   rotationReset: DEFAULT_ROTATION_RESET,
   rotationCheckedIn: [],
   pendingRouteId: null,
@@ -2243,7 +2272,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     const { data: cfg } = await supabase
       .from("app_config")
       .select(
-        "maintenance, message, replay_bonus_pct, completion_bonus_pct, co_op_bonus_pct, clear_streak_threshold, clear_streak_bonus_base, clear_streak_bonus_step, clear_streak_bonus_cap, submission_reward, onboarding_vouchers, default_general_slots, default_rotation_slots, default_replay_slots, default_completionist_slots, rotation_checkin_reward, rotation_milestone_hours, rotation_milestone_reward, regular_min_hours, regular_bonus_base, regular_bonus_step, regular_bonus_cap, rotation_reset_dow, rotation_reset_hour, rotation_reset_tz, default_coin, price_formula, bounty_formula, sponsor_max_stake, sponsor_monthly_pair_cap, sponsor_expiry_days, preorder_strip_days, shop_open, loan_interest_pct, rec_discount_pct, rec_bounty_pct, rec_bounty_cap, story_order_bonus, collectors_record_bonus, review_bonus, review_bonus_min_chars, session_bonus, session_bonus_min_minutes, session_bonus_daily_cap, challenge_goal_reward, challenge_set_bonus, challenge_daily_reward, challenge_weekly_reward, challenge_weekly_sweep, bounty_gate_pct",
+        "maintenance, message, replay_bonus_pct, completion_bonus_pct, co_op_bonus_pct, clear_streak_threshold, clear_streak_bonus_base, clear_streak_bonus_step, clear_streak_bonus_cap, submission_reward, onboarding_vouchers, default_general_slots, default_rotation_slots, default_replay_slots, default_completionist_slots, rotation_checkin_reward, rotation_milestone_hours, rotation_milestone_reward, regular_min_hours, regular_bonus_base, regular_bonus_step, regular_bonus_cap, preorder_bonus, preorder_bonus_lead_days, preorder_bonus_monthly_cap, rotation_reset_dow, rotation_reset_hour, rotation_reset_tz, default_coin, price_formula, bounty_formula, sponsor_max_stake, sponsor_monthly_pair_cap, sponsor_expiry_days, preorder_strip_days, shop_open, loan_interest_pct, rec_discount_pct, rec_bounty_pct, rec_bounty_cap, story_order_bonus, collectors_record_bonus, review_bonus, review_bonus_min_chars, session_bonus, session_bonus_min_minutes, session_bonus_daily_cap, challenge_goal_reward, challenge_set_bonus, challenge_daily_reward, challenge_weekly_reward, challenge_weekly_sweep, bounty_gate_pct",
       )
       .eq("id", 1)
       .single();
@@ -2370,6 +2399,11 @@ export const useStore = create<BazaarState>((set, get) => ({
         base: configNumber(cfg?.regular_bonus_base, DEFAULT_REGULAR_CONFIG.base),
         step: configNumber(cfg?.regular_bonus_step, DEFAULT_REGULAR_CONFIG.step),
         cap: configNumber(cfg?.regular_bonus_cap, DEFAULT_REGULAR_CONFIG.cap),
+      },
+      preorderBonusConfig: {
+        coins: configNumber(cfg?.preorder_bonus, DEFAULT_PREORDER_BONUS.coins),
+        leadDays: configNumber(cfg?.preorder_bonus_lead_days, DEFAULT_PREORDER_BONUS.leadDays),
+        monthlyCap: configNumber(cfg?.preorder_bonus_monthly_cap, DEFAULT_PREORDER_BONUS.monthlyCap),
       },
       rotationMilestone: {
         hours: configNumber(cfg?.rotation_milestone_hours, DEFAULT_ROTATION_MILESTONE.hours),
@@ -2733,6 +2767,7 @@ export const useStore = create<BazaarState>((set, get) => ({
         ),
       });
       void get().fetchNotifications();
+      void refreshCoinsFromServer(set, get().userId);
       // Fulfillment redated each game's Added milestone to its release day
       // (server trigger), moving added_at with it — re-read the server truth
       // so prices and "recently added" orderings update without a reload.
@@ -4327,6 +4362,30 @@ export const useStore = create<BazaarState>((set, get) => ({
     });
     const released = (before.bountyHeld ?? 0) - held;
     if (released > 0) toast(`+${released} bounty unlocked for ${before.title}`, Coins);
+  },
+
+  setPreorderBonusConfig: async (cfg) => {
+    const whole = (n: number, max: number) => Math.max(0, Math.min(max, Math.round(n)));
+    const next = {
+      coins: whole(cfg.coins, 100000),
+      leadDays: whole(cfg.leadDays, 365),
+      monthlyCap: whole(cfg.monthlyCap, 100),
+    };
+    if (!supabase || !get().cloud || !get().can("economy.edit")) return;
+    const { error } = await supabase
+      .from("app_config")
+      .update({
+        preorder_bonus: next.coins,
+        preorder_bonus_lead_days: next.leadDays,
+        preorder_bonus_monthly_cap: next.monthlyCap,
+      })
+      .eq("id", 1);
+    if (error) {
+      set({ error: error.message });
+      return;
+    }
+    set({ preorderBonusConfig: next });
+    toast("Pre-order bonus saved", CalendarClock);
   },
 
   setPreorderStripDays: async (days) => {
@@ -6964,7 +7023,13 @@ export const useStore = create<BazaarState>((set, get) => ({
     }
     set({ games: unlock(get().games) });
     celebrate();
-    toast(`${game.title} has arrived — ready to start`, PartyPopper);
+    const bonus = await arrivalBonus(id);
+    toast(
+      bonus > 0
+        ? `${game.title} has arrived · Pre-order bonus +${bonus}`
+        : `${game.title} has arrived — ready to start`,
+      PartyPopper,
+    );
     void refreshMilestoneDatesFromServer(set, id);
   },
 

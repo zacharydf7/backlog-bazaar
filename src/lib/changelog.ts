@@ -41,6 +41,18 @@ export interface Release {
 export const RELEASES: Release[] = [
   // ── October 2026 ──────────────────────────────────────────────────────────
   {
+    id: "2026-10-17-preorder-rewards",
+    date: "2026-10-17",
+    title: "Pre-orders pay off",
+    summary: "Track your pre-orders and earn 50 coins plus new medals when they arrive.",
+    tag: "feature",
+    items: [
+      "Mark a pre-order at least 7 days before it arrives to earn the bonus.",
+      "Each game pays once, up to 5 a month.",
+      "New Pre-order medals for 1, 5 and 15 arrivals, plus a secret one.",
+    ],
+  },
+  {
     id: "2026-10-17-rotation-players",
     date: "2026-10-17",
     title: "Rotation play pays off",

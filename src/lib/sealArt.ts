@@ -71,6 +71,10 @@ const CRESTS: Record<string, string> = {
   "clean-slate":
     '<path d="M9 31l17-17 11 11-13 13h-8z"/><path d="M18 22l11 11" fill="none" stroke="currentColor" stroke-width="2"/><path d="M26 41h15" fill="none" stroke-width="2.8"/>',
   "speed-clear": '<path d="M27 5L11 27h11l-3 16 18-23H26z"/>',
+  preorder:
+    '<path d="M24 5l17 8.5v21L24 43 7 34.5v-21z"/><path d="M7 13.5L24 22l17-8.5M24 22v21" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M17 31l4.5 4.5L31 26" fill="none" stroke="currentColor" stroke-width="3"/>',
+  "early-bird":
+    '<path d="M13 6h22v4c0 7-7 10.5-7 14s7 7 7 14v4H13v-4c0-7 7-10.5 7-14s-7-7-7-14z"/><path d="M18 38c2-3 4-4.5 6-4.5s4 1.5 6 4.5z" fill="currentColor"/>',
   routine:
     '<rect x="8" y="11" width="32" height="29" rx="3"/><path d="M15 7v8M33 7v8" fill="none" stroke-width="3.2"/><path d="M8 19h32" fill="none" stroke="currentColor" stroke-width="2"/><path d="M16 29l5 5 10-10" fill="none" stroke="currentColor" stroke-width="3"/>',
 };

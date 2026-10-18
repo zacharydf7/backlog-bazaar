@@ -76,6 +76,7 @@ export function AboutPage() {
     rotationCheckinReward,
     rotationMilestone,
     regularConfig,
+    preorderBonusConfig,
     rotationReset,
     coOpBonusPct,
     sponsorMaxStake,
@@ -444,6 +445,14 @@ export function AboutPage() {
               so it joins your collection (and prices) as a fresh, day-one pickup. If the order
               falls through, cancel it and choose: remove the game, or keep it on your Wishlist as
               a plain want.
+            </p>
+            <p>
+              Tracking pre-orders pays: when one arrives you earn a{" "}
+              <strong className="text-ink">pre-order bonus</strong> of{" "}
+              <Coin n={preorderBonusConfig.coins} />, as long as you marked it at least{" "}
+              {preorderBonusConfig.leadDays} days before it arrived. Each game pays once, up to{" "}
+              {preorderBonusConfig.monthlyCap} a month, and arrivals count toward the Pre-order
+              medals.
             </p>
             <p>
               Importing a Wishlist game that isn&apos;t out yet? The import asks whether you

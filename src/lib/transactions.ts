@@ -22,6 +22,7 @@ export const LEDGER_LABELS: Record<string, string> = {
   rotation_checkin: "Rotation Check-in",
   rotation_milestone: "Rotation Milestone",
   regular_week: "Regular Week",
+  preorder_bonus: "Pre-order Bonus",
   achievement_reward: "Achievement Reward",
   monthly_goal: "Monthly Goal Reward",
   monthly_goal_bonus: "All Monthly Goals Bonus",

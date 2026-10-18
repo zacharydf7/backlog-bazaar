@@ -13849,7 +13849,8 @@ declare
     'session_bonus_daily_cap', 'bounty_gate_pct', 'challenge_goal_reward', 'challenge_set_bonus',
     'challenge_daily_reward', 'challenge_weekly_reward', 'challenge_weekly_sweep',
     'rotation_milestone_hours', 'rotation_milestone_reward', 'regular_min_hours',
-    'regular_bonus_base', 'regular_bonus_step', 'regular_bonus_cap'
+    'regular_bonus_base', 'regular_bonus_step', 'regular_bonus_cap',
+    'preorder_bonus', 'preorder_bonus_lead_days', 'preorder_bonus_monthly_cap'
   ];
 begin
   foreach v_key in array v_cols loop
@@ -19092,12 +19093,20 @@ insert into public.achievements (slug, family, tier, name, description, icon, me
   ('routine-200',  'routine', 3, 'Clockwork',   'Complete 200 daily or weekly goals', 'calendar-check', 'quick_goals_completed', 200, 22, 50)
 on conflict (slug) do nothing;
 
+-- Pre-orders (owner, 2026-10-17): pre-orders that arrived.
+insert into public.achievements (slug, family, tier, name, description, icon, metric, threshold, sort, reward) values
+  ('preorder-one',     'preorder', 1, 'Day One',       'Have a pre-order arrive',   'package-check', 'preorders_arrived', 1,  23, 10),
+  ('preorder-five',    'preorder', 2, 'First in Line', 'Have 5 pre-orders arrive',  'package-check', 'preorders_arrived', 5,  23, 25),
+  ('preorder-fifteen', 'preorder', 3, 'Launch Party',  'Have 15 pre-orders arrive', 'package-check', 'preorders_arrived', 15, 23, 50)
+on conflict (slug) do nothing;
+
 -- Hidden medals: one each, secret until earned.
 insert into public.achievements (slug, family, tier, name, description, icon, metric, threshold, sort, hidden, reward) values
   ('night-owl',   'night-owl',   1, 'Night Owl',   'Log play between midnight and 4am',           'moon',      'night_owl_logs',       1, 30, true, 25),
   ('full-set',    'full-set',    1, 'Full Set',    'Clear every game in a compilation',            'package',   'compilations_cleared', 1, 31, true, 25),
   ('clean-slate', 'clean-slate', 1, 'Clean Slate', 'Retire 5 games in a single day',               'eraser',    'retired_one_day',      5, 32, true, 25),
-  ('speed-clear', 'speed-clear', 1, 'Speed Clear', 'Earn a Verified clear within a day of starting','zap',       'speed_clears',         1, 33, true, 25)
+  ('speed-clear', 'speed-clear', 1, 'Speed Clear', 'Earn a Verified clear within a day of starting','zap',       'speed_clears',         1, 33, true, 25),
+  ('early-bird',  'early-bird',  1, 'Early Bird',  'Pre-order a game a year or more before it arrives', 'hourglass', 'early_preorders', 1, 34, true, 25)
 on conflict (slug) do nothing;
 
 -- Whether a playtime_events row counts as play at the moment it was logged,
@@ -19382,6 +19391,19 @@ as $$
      and coalesce(g.personal_hours, g.hours, 0) > 0
      and coalesce(g.played_hours, 0) >= coalesce((select bounty_gate_pct from public.app_config where id = 1), 25)
                                          / 100.0 * coalesce(g.personal_hours, g.hours)
+  union all
+  -- Pre-orders that arrived (one per game), and those placed a year or more
+  -- before they arrived (the server's 'placed' time, not the marker).
+  select 'preorders_arrived', count(distinct coalesce(f.game_id::text, f.game_title))::numeric
+    from public.preorder_events f
+   where f.user_id = p_user and f.action = 'fulfilled'
+  union all
+  select 'early_preorders', count(distinct coalesce(f.game_id::text, f.game_title))::numeric
+    from public.preorder_events f
+   where f.user_id = p_user and f.action = 'fulfilled'
+     and exists (select 1 from public.preorder_events pl
+                  where pl.user_id = p_user and pl.game_id = f.game_id and pl.action = 'placed'
+                    and pl.created_at <= f.created_at - interval '365 days')
   union all
   -- Daily and weekly goals completed (the Routine medals).
   select 'quick_goals_completed', count(*)::numeric
@@ -22372,7 +22394,11 @@ begin
     update public.games set preordered_at = null where id = r.id;
     insert into public.notifications (user_id, type, title, body, link)
     values (v_uid, 'preorder_released', r.title || ' has arrived!',
-            'Your pre-order is out — it''s unlocked in your Bazaar, priced and ready to start.',
+            'Your pre-order is out — it''s unlocked in your Bazaar, priced and ready to start.'
+              || coalesce((select ' Pre-order bonus: +' || b.coins || ' coins.'
+                             from public.preorder_bonuses b
+                            where b.user_id = v_uid and b.game_id = r.id and b.coins > 0
+                              and b.created_at = now()), ''),
             'game:' || r.id);
     v_moved := v_moved || r.id;
   end loop;
@@ -22426,6 +22452,104 @@ drop trigger if exists games_preorder_fulfilled_redate on public.games;
 create trigger games_preorder_fulfilled_redate
   after update of status, preordered_at on public.games
   for each row execute function public.redate_added_on_preorder_fulfilled();
+
+-- ---------------------------------------------------------------------------
+-- Pre-order arrival bonus (owner, 2026-10-17): a pre-order that arrives (its
+-- marker clears in place: the release-day sweep or the owner's "it's arrived"
+-- confirm) pays preorder_bonus coins, if it was placed at least
+-- preorder_bonus_lead_days earlier (the server's 'placed' event time, never
+-- the client-written marker), at most once per game (catalog identity) and at
+-- most preorder_bonus_monthly_cap times a month (site timezone), so marking
+-- Bazaar games "pre-ordered" can't farm it. Economy off records the arrival
+-- at 0 coins (no back-pay later). Append-only preorder_bonuses rows.
+-- ---------------------------------------------------------------------------
+alter table public.app_config add column if not exists preorder_bonus integer not null default 50
+  check (preorder_bonus between 0 and 100000);
+alter table public.app_config add column if not exists preorder_bonus_lead_days integer not null default 7
+  check (preorder_bonus_lead_days between 0 and 365);
+alter table public.app_config add column if not exists preorder_bonus_monthly_cap integer not null default 5
+  check (preorder_bonus_monthly_cap between 0 and 100);
+
+create table if not exists public.preorder_bonuses (
+  id         uuid primary key default gen_random_uuid(),
+  user_id    uuid not null references auth.users (id) on delete cascade,
+  game_id    uuid references public.games (id) on delete set null,
+  game_title text not null default '',
+  game_key   text not null,
+  placed_at  timestamptz not null,
+  coins      integer not null default 0,
+  created_at timestamptz not null default now(),
+  unique (user_id, game_key)
+);
+alter table public.preorder_bonuses enable row level security;
+revoke insert, update, delete on public.preorder_bonuses from anon, authenticated;
+drop policy if exists "preorder_bonuses_select_own" on public.preorder_bonuses;
+create policy "preorder_bonuses_select_own" on public.preorder_bonuses
+  for select to authenticated using (auth.uid() = user_id);
+
+create or replace function public.pay_preorder_bonus()
+returns trigger
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  v_placed  timestamptz;
+  v_bonus   integer;
+  v_lead    integer;
+  v_cap     integer;
+  v_tz      text;
+  v_month   timestamptz;
+  v_key     text;
+  v_coins   integer;
+  v_pay     integer;
+begin
+  if coalesce(current_setting('app.undo_in_progress', true), '') = '1' then
+    return null;
+  end if;
+  -- Arrival only: the marker cleared and the game stayed in the Bazaar (a
+  -- cancel moves it out, the same test the audit trigger uses).
+  if old.preordered_at is null or new.preordered_at is not null or new.status <> 'backlog' then
+    return null;
+  end if;
+  select coalesce(c.preorder_bonus, 50), coalesce(c.preorder_bonus_lead_days, 7),
+         coalesce(c.preorder_bonus_monthly_cap, 5),
+         coalesce(nullif(btrim(c.rotation_reset_tz), ''), 'UTC')
+    into v_bonus, v_lead, v_cap, v_tz from public.app_config c where c.id = 1;
+  select max(e.created_at) into v_placed
+    from public.preorder_events e
+   where e.game_id = new.id and e.user_id = new.user_id and e.action = 'placed';
+  if v_placed is null or v_placed > now() - make_interval(days => v_lead) then
+    return null;
+  end if;
+  v_key := coalesce(public.game_identity_key(new.rawg_id, new.igdb_id, new.catalog_id), 'g:' || new.id::text);
+  if exists (select 1 from public.preorder_bonuses b where b.user_id = new.user_id and b.game_key = v_key) then
+    return null;
+  end if;
+  v_month := date_trunc('month', now() at time zone v_tz) at time zone v_tz;
+  v_pay := case
+    when not public.economy_enabled(new.user_id) then 0
+    when (select count(*) from public.preorder_bonuses b
+           where b.user_id = new.user_id and b.coins > 0 and b.created_at >= v_month) >= v_cap then 0
+    else v_bonus end;
+  insert into public.preorder_bonuses (user_id, game_id, game_title, game_key, placed_at, coins)
+  values (new.user_id, new.id, coalesce(new.title, ''), v_key, v_placed, v_pay)
+  on conflict (user_id, game_key) do nothing;
+  if found and v_pay > 0 then
+    update public.profiles set coins = coins + v_pay where id = new.user_id returning coins into v_coins;
+    perform public.log_coin_event(new.user_id, 'preorder_bonus', v_pay, 0, v_coins, null, new.id, new.title,
+                                  'Pre-order arrived', jsonb_build_object('placed_at', v_placed));
+  end if;
+  return null;
+end;
+$$;
+revoke execute on function public.pay_preorder_bonus() from public, anon, authenticated;
+
+-- After the audit trigger ('fulfilled' logged) and the redate; trigger names
+-- fire alphabetically, so this one is named to come last.
+drop trigger if exists games_preorder_zz_bonus on public.games;
+create trigger games_preorder_zz_bonus
+  after update of status, preordered_at on public.games
+  for each row execute function public.pay_preorder_bonus();
 
 -- The BEFORE/AFTER trigger functions run as table triggers only — never
 -- client-callable.

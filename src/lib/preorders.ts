@@ -166,3 +166,14 @@ export function pinPreorderedCards(cards: StackedBoardCard[]): StackedBoardCard[
   pinned.sort((a, b) => (a.arrival < b.arrival ? -1 : a.arrival > b.arrival ? 1 : a.i - b.i));
   return [...pinned.map((p) => p.card), ...rest];
 }
+
+/** The pre-order arrival bonus (owner, 2026-10-17): coins when a pre-order
+ *  arrives, if it was placed at least `leadDays` ahead; at most once per game
+ *  and `monthlyCap` times a month. Paid server-side (pay_preorder_bonus). */
+export interface PreorderBonusConfig {
+  coins: number;
+  leadDays: number;
+  monthlyCap: number;
+}
+
+export const DEFAULT_PREORDER_BONUS: PreorderBonusConfig = { coins: 50, leadDays: 7, monthlyCap: 5 };
