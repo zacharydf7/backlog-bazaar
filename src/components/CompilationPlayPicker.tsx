@@ -10,6 +10,7 @@ import { useHistoryDismiss } from "../lib/useHistoryDismiss";
 import { ActivationModal } from "./ActivationModal";
 import { GamePriorityBadge } from "./GamePriorityBadge";
 import { TitleWithOrigin } from "./TitleWithOrigin";
+import { useCoverOf } from "../lib/useCoverOf";
 
 /** "Which game are you starting?" — opened by a bundle card's Play a Game
  *  (issue 86fc0b4b). Lists the bundle's Bazaar games with their priority and
@@ -29,6 +30,7 @@ export function CompilationPlayPicker({
   onClose: () => void;
 }) {
   const games = useStore((s) => s.games);
+  const coverOf = useCoverOf();
   const enterRotation = useStore((s) => s.enterRotation);
   const [activating, setActivating] = useState<Game | null>(null);
   useScrollLock(true);
@@ -94,8 +96,8 @@ export function CompilationPlayPicker({
                       className="flex w-full items-center gap-3 rounded-xl border border-line bg-panel/50 p-2 text-left transition enabled:hover:border-brand/40 disabled:cursor-not-allowed disabled:opacity-60"
                     >
                       <div className="h-12 w-9 shrink-0 overflow-hidden rounded-md border border-line bg-panel">
-                        {g.image ? (
-                          <img src={g.image} alt="" className="h-full w-full object-cover" />
+                        {coverOf(g) ? (
+                          <img src={coverOf(g)} alt="" className="h-full w-full object-cover" />
                         ) : (
                           <div className="flex h-full w-full items-center justify-center text-sm opacity-60">
                             🎮

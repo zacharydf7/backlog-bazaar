@@ -5,6 +5,7 @@ import { ViewingProvider } from "../../lib/viewContext";
 import { useScrollLock } from "../../lib/useScrollLock";
 import { useHistoryDismiss } from "../../lib/useHistoryDismiss";
 import { ReadOnlyOverview } from "./OverviewTab";
+import { useCoverOf } from "../../lib/useCoverOf";
 
 /** A read-only peek at a single game, for places the routed game page can't
  *  serve: a game shared in chat lives in the SENDER's library (no store slice
@@ -34,6 +35,7 @@ export function GamePreviewModal({
   action?: ReactNode;
   onClose: () => void;
 }) {
+  const cover = useCoverOf()(game);
   useScrollLock(true);
   useHistoryDismiss(true, onClose); // Back closes the preview, not the chat
 
@@ -58,9 +60,9 @@ export function GamePreviewModal({
             </button>
           </div>
           <div className="flex flex-col gap-3 p-4">
-            {game.image && (
+            {cover && (
               <div className="aspect-[16/9] w-full overflow-hidden rounded-xl border border-line bg-panel shadow-sm">
-                <img src={game.image} alt="" className="h-full w-full object-cover" />
+                <img src={cover} alt="" className="h-full w-full object-cover" />
               </div>
             )}
             {action && <div className="flex flex-wrap items-center gap-2">{action}</div>}

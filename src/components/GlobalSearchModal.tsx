@@ -6,6 +6,7 @@ import { StatusBadge } from "./StatusBadge";
 import { isInRotation } from "../lib/status";
 import { gameOwnedPlatforms } from "../lib/bazaarView";
 import { useScrollLock } from "../lib/useScrollLock";
+import { useCoverOf } from "../lib/useCoverOf";
 
 /** The global results overlay: every game matching the query across all boards
  *  (Wishlist, Bazaar, Now Playing, Finished). Because a match might not be on the
@@ -193,6 +194,7 @@ function ResultRow({
   showLock: boolean;
 }) {
   const platforms = gameOwnedPlatforms(game);
+  const cover = useCoverOf()(game);
   return (
     <button
       type="button"
@@ -200,8 +202,8 @@ function ResultRow({
       className="flex w-full items-center gap-3 rounded-xl px-2 py-2 text-left transition hover:bg-panel"
     >
       <div className="h-12 w-9 shrink-0 overflow-hidden rounded-md border border-line bg-panel">
-        {game.image ? (
-          <img src={game.image} alt="" className="h-full w-full object-cover" />
+        {cover ? (
+          <img src={cover} alt="" className="h-full w-full object-cover" />
         ) : (
           <div className="flex h-full items-center justify-center text-lg opacity-50">🎮</div>
         )}

@@ -13,6 +13,7 @@ import {
   type PlayNextAnswers,
 } from "../lib/playNext";
 import { CoinIcon } from "./CoinIcon";
+import { useCoverOf } from "../lib/useCoverOf";
 
 const ANSWERS_KEY = "playNext.answers";
 
@@ -86,6 +87,7 @@ export function PlayNextPicker({
   onBack: () => void;
 }) {
   const games = useStore((s) => s.games);
+  const coverOf = useCoverOf();
   const economyEnabled = useStore((s) => s.economyEnabled);
   const storyOrderBonus = useStore((s) => s.featureBonuses.storyOrder);
   const [answers, setAnswers] = useState(loadAnswers);
@@ -158,8 +160,8 @@ export function PlayNextPicker({
           picks.map(({ game, reasons }) => (
             <div key={game.id} className="flex items-center gap-3 rounded-xl border border-line bg-panel p-2.5">
               <div className="h-14 w-11 shrink-0 overflow-hidden rounded-lg bg-surface">
-                {game.image ? (
-                  <img src={game.image} alt="" className="h-full w-full object-cover" />
+                {coverOf(game) ? (
+                  <img src={coverOf(game)} alt="" className="h-full w-full object-cover" />
                 ) : (
                   <div className="grid h-full place-items-center text-lg opacity-50">🎮</div>
                 )}

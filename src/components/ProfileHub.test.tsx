@@ -294,6 +294,26 @@ describe("ProfileHub — recent activity", () => {
     await waitFor(() => expect(recentModule().getByText("Started")).toBeTruthy());
   });
 
+  it("shows a bundled game's bundle cover in its activity when it has no art of its own", async () => {
+    const fetchProfileActivity = vi.fn(async () => [
+      { id: "m1", kind: "added" as const, occurredOn: "2026-07-01", createdAt: 1, gameId: "g1", gameTitle: "Toy Story", gameImage: null, finishTag: null, acquisition: null, provider: null },
+    ]);
+    act(() =>
+      useStore.setState({
+        viewing: null,
+        cloud: true,
+        userId: "me",
+        compilations: [{ id: "comp", title: "Retro Roundup", totalCost: 0, parentImage: "bundle.jpg" } as never],
+        compilationGames: [],
+        games: [game({ id: "g1", title: "Toy Story", status: "backlog", compilationId: "comp", image: undefined })],
+        fetchProfileActivity,
+      }),
+    );
+    render(<ProfileHub onOpenTab={() => {}} />);
+    const section = () => screen.getByText("Recent Activity").closest("section") as HTMLElement;
+    await waitFor(() => expect(section().querySelector('img[src="bundle.jpg"]')).not.toBeNull());
+  });
+
   it("shows an empty note when there's no activity", () => {
     act(() => useStore.setState({ viewing: null, cloud: true, userId: null, games: [] }));
     render(<ProfileHub onOpenTab={() => {}} />);

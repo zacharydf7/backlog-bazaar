@@ -21,6 +21,7 @@ import { familyName, familyStats, familyPlatformTags } from "../lib/families";
 import { useViewing } from "../lib/viewContext";
 import { GameValueBadge } from "./ValueBadge";
 import { GamePriorityBadge } from "./GamePriorityBadge";
+import { useCoverOf } from "../lib/useCoverOf";
 
 /** A uniform, read-only summary card for the Master Ledger. Unlike the board's
  *  GameCard (which surfaces state-specific actions — Buy, time trackers, the ⋮
@@ -31,6 +32,7 @@ import { GamePriorityBadge } from "./GamePriorityBadge";
 export function LedgerCard({ game, family }: { game: Game; family?: Game[] }) {
   const { hideSpend } = useViewing();
   const viewing = useStore((s) => s.viewing);
+  const cover = useCoverOf()(game);
   const cloud = useStore((s) => s.cloud);
   const [showRecommend, setShowRecommend] = useState(false);
   // Tastemaker (issue c48e8f6d): the one action the otherwise read-only
@@ -74,8 +76,8 @@ export function LedgerCard({ game, family }: { game: Game; family?: Game[] }) {
         {/* Cover art — flush to the card edges, same fixed height on every card so
             the layout stays uniform. */}
         <div className="h-32 w-full shrink-0 bg-panel">
-          {game.image ? (
-            <img src={game.image} alt={game.title} className="h-full w-full object-cover" />
+          {cover ? (
+            <img src={cover} alt={game.title} className="h-full w-full object-cover" />
           ) : (
             <div className="flex h-full items-center justify-center text-4xl opacity-60">🎮</div>
           )}

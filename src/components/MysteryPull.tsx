@@ -16,6 +16,7 @@ import { useHistoryDismiss } from "../lib/useHistoryDismiss";
 import { ActivationModal } from "./ActivationModal";
 import { PlayNextPicker } from "./PlayNextPicker";
 import { CoinIcon } from "./CoinIcon";
+import { useCoverOf } from "../lib/useCoverOf";
 
 /** Which pull this is: "play" draws a Bazaar game to buy & start; "complete"
  *  draws a beaten Finished game to pull back for a free 100% run. */
@@ -116,6 +117,7 @@ export function MysteryPull({ kind = "play" }: { kind?: PullKind }) {
 }
 
 function MysteryPullModal({ kind, onClose }: { kind: PullKind; onClose: () => void }) {
+  const coverOf = useCoverOf();
   const games = useStore((s) => s.games);
   const coins = useStore((s) => s.coins);
   const vouchers = useStore((s) => s.vouchers);
@@ -400,8 +402,8 @@ function MysteryPullModal({ kind, onClose }: { kind: PullKind; onClose: () => vo
             className="block w-full overflow-hidden rounded-2xl border border-line bg-panel text-left transition hover:border-brand/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/50"
           >
             <div className="aspect-[16/9] w-full">
-              {current.image ? (
-                <img src={current.image} alt="" className="h-full w-full object-cover" />
+              {coverOf(current) ? (
+                <img src={coverOf(current)} alt="" className="h-full w-full object-cover" />
               ) : (
                 <div className="flex h-full items-center justify-center text-4xl opacity-50">🎮</div>
               )}

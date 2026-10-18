@@ -147,6 +147,7 @@ import {
 } from "./lib/route";
 import { isCommunityView, loadCommunitySection } from "./lib/community";
 import type { Game, GameStatus } from "./types";
+import { useCoverOf } from "./lib/useCoverOf";
 
 /** The game-library sections (everything else is a discovery/utility page). */
 function isGameStatus(v: View): v is GameStatus {
@@ -1652,6 +1653,7 @@ function SlotCard({
   onJump?: (gameId: string) => void;
   drag?: TileDrag;
 }) {
+  const coverOf = useCoverOf();
   const meta = LANE_META[slot.kind];
   const Icon = slot.overflow ? TriangleAlert : meta.icon;
   const filled = slot.occupant != null;
@@ -1719,11 +1721,11 @@ function SlotCard({
       {filled ? (
         <div className="flex items-center gap-2">
           <div className="h-9 w-7 shrink-0 overflow-hidden rounded-md border border-line bg-panel">
-            {slot.occupant!.image && (
+            {coverOf(slot.occupant!) && (
               // lazy: the Rotation carousel can hold any number of tiles, so
               // off-screen covers must not weigh down the dashboard load.
               <img
-                src={slot.occupant!.image}
+                src={coverOf(slot.occupant!)}
                 alt=""
                 loading="lazy"
                 className="h-full w-full object-cover"

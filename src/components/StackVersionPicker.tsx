@@ -5,6 +5,7 @@ import { compilationSource, ownedPlatformSummary } from "../lib/copies";
 import { useScrollLock } from "../lib/useScrollLock";
 import { useHistoryDismiss } from "../lib/useHistoryDismiss";
 import { PlatformBadge } from "./PlatformBadge";
+import { useCoverOf } from "../lib/useCoverOf";
 
 /** The members of a collapsed stack, provided by GameStackCard around its top
  *  card. GameActions reads this to intercept the cold-start CTAs (Buy & Start,
@@ -36,6 +37,7 @@ export function StackVersionPicker({
   onClose: () => void;
 }) {
   const [busy, setBusy] = useState(false);
+  const coverOf = useCoverOf();
   useScrollLock(true);
   useHistoryDismiss(true, onClose);
 
@@ -81,8 +83,8 @@ export function StackVersionPicker({
                     className="flex w-full items-center gap-3 rounded-xl border border-line bg-panel/50 p-2 text-left transition hover:border-brand/40 disabled:opacity-60"
                   >
                     <div className="h-12 w-9 shrink-0 overflow-hidden rounded-md border border-line bg-panel">
-                      {g.image ? (
-                        <img src={g.image} alt="" className="h-full w-full object-cover" />
+                      {coverOf(g) ? (
+                        <img src={coverOf(g)} alt="" className="h-full w-full object-cover" />
                       ) : (
                         <div className="flex h-full w-full items-center justify-center text-sm opacity-60">
                           🎮

@@ -33,6 +33,7 @@ import { REACTIONS } from "../lib/reactions";
 import { filesFromClipboard, mergeFiles, isImage, MAX_FILES } from "../lib/attachment";
 import { searchLibrary } from "../lib/librarySearch";
 import type { Conversation, Game, Message } from "../types";
+import { useCoverOf } from "../lib/useCoverOf";
 
 /** A game attached to a message being composed. */
 type AttachedGame = { id: string; title: string; image: string | null };
@@ -243,6 +244,7 @@ function ThreadView({ other, onBack }: { other: Other; onBack: () => void }) {
     uploadMessageImage,
     privacy,
   } = useStore();
+  const coverOf = useCoverOf();
   const [reply, setReply] = useState("");
   const [sending, setSending] = useState(false);
   const [confirmingRemove, setConfirmingRemove] = useState(false);
@@ -791,9 +793,9 @@ function ThreadView({ other, onBack }: { other: Other; onBack: () => void }) {
                     onClick={() => attachGame(g)}
                     className="flex w-full items-center gap-2.5 px-3 py-2 text-left transition hover:bg-panel"
                   >
-                    {g.image ? (
+                    {coverOf(g) ? (
                       <img
-                        src={g.image}
+                        src={coverOf(g)}
                         alt=""
                         className="h-10 w-[30px] shrink-0 rounded object-cover"
                       />

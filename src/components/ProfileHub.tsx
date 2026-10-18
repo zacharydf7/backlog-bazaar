@@ -56,6 +56,7 @@ import { validateBannerFile } from "../lib/banner";
 import { toast } from "../lib/toast";
 import { BannerCropModal } from "./BannerCropModal";
 import type { Achievement, Badge, Cosmetics, Game, GameStatus } from "../types";
+import { useCoverOf } from "../lib/useCoverOf";
 
 // The data the hub renders, sourced from either the visited snapshot or your own
 // live profile — so one component serves both the public page and your editable one.
@@ -968,6 +969,11 @@ function ActivityRow({
   onOpen: () => void;
 }) {
   const tone = activityTone(item.kind);
+  // The row carries the game's own art; a bundled game in your own
+  // library falls back to its bundle's (a visited player's games aren't here).
+  const ownGame = useStore((s) => s.games.find((g) => g.id === item.gameId));
+  const coverOf = useCoverOf();
+  const image = item.gameImage ?? (ownGame ? coverOf(ownGame) : undefined);
   const gold = tone === "gold";
   const silver = tone === "silver";
   // A live-service game's "started" step is really it entering the Rotation
@@ -991,8 +997,8 @@ function ActivityRow({
       }
     >
       <div className="h-12 w-12 shrink-0 overflow-hidden rounded-lg bg-surface">
-        {item.gameImage ? (
-          <img src={item.gameImage} alt="" className="h-full w-full object-cover" />
+        {image ? (
+          <img src={image} alt="" className="h-full w-full object-cover" />
         ) : (
           <div className="flex h-full items-center justify-center text-lg opacity-50">🎮</div>
         )}
@@ -1100,7 +1106,8 @@ function GameTile({ game, onClick }: { game: Game; onClick: () => void }) {
   // Just the cover + title: the module this sits in ("Now Playing" / "Finished")
   // already states the status, and the platform lives on the game's own page —
   // so a status chip and platform pill here were redundant noise.
-  const showCover = Boolean(game.image);
+  const cover = useCoverOf()(game);
+  const showCover = Boolean(cover);
   return (
     <button
       onClick={onClick}
@@ -1115,7 +1122,7 @@ function GameTile({ game, onClick }: { game: Game; onClick: () => void }) {
           keeps the ratio and object-cover crops the art to fit. */}
       <div className="relative aspect-[16/10] w-full overflow-hidden bg-surface">
         {showCover ? (
-          <img src={game.image} alt={game.title} className="h-full w-full object-cover" />
+          <img src={cover} alt={game.title} className="h-full w-full object-cover" />
         ) : (
           <div className="flex h-full items-center justify-center text-2xl opacity-50">🎮</div>
         )}
