@@ -111,12 +111,13 @@ describe("pay_rotation_milestones", () => {
   describe("one 24-hour budget a day across all the player's Rotation games", () => {
     const others = ["c1", "c2", "c3"].map((s) => `00000000-0000-4000-8000-0000000000${s}`);
 
-    async function logOther(game: string, hours: number) {
-      await db.query("insert into public.playtime_events (user_id, game_id, hours, in_rotation) values ($1, $2, $3, true)", [
-        U,
-        game,
-        hours,
-      ]);
+    // Logged a second after this game's logs by default (a minute before with
+    // -60), so the day's order never rests on a clock tie.
+    async function logOther(game: string, hours: number, offsetSeconds = 1) {
+      await db.query(
+        "insert into public.playtime_events (user_id, game_id, hours, in_rotation, created_at) values ($1, $2, $3, true, now() + make_interval(secs => $4))",
+        [U, game, hours, offsetSeconds],
+      );
       await db.query("select public.pay_rotation_milestones($1, $2)", [U, game]);
     }
 
@@ -135,7 +136,7 @@ describe("pay_rotation_milestones", () => {
     });
 
     it("credits a game only what's left of the day's budget", async () => {
-      for (const g of others) await logOther(g, 8);
+      for (const g of others) await logOther(g, 8, -60);
       expect(await log(20)).toBe(0);
       const h = await db.query<{ h: number }>("select public.rotation_game_hours($1, $2)::float8 as h", [U, R]);
       expect(h.rows[0].h).toBeCloseTo(0);
