@@ -755,6 +755,40 @@ describe("local-mode store", () => {
     expect(store().games[0].playedHours).toBe(6);
   });
 
+  it("logs a drop-in session on a Finished game without moving it", async () => {
+    await store().addGame(sampleMeta());
+    const id = store().games[0].id;
+    useStore.setState({ games: store().games.map((g) => ({ ...g, status: "finished" as const, playedHours: 10 })) });
+    const coins = store().coins;
+
+    await store().logPlaytime(id, 1.5, undefined, undefined, "one quick hunt");
+
+    expect(store().games[0]).toMatchObject({ status: "finished", playedHours: 11.5 });
+    expect(store().coins).toBe(coins);
+  });
+
+  it("releases a held bounty when a drop-in logs the time it was waiting on", async () => {
+    await store().addGame(sampleMeta());
+    const id = store().games[0].id;
+    useStore.setState({
+      economyEnabled: true,
+      games: store().games.map((g) => ({
+        ...g,
+        status: "finished" as const,
+        playedHours: 0,
+        bountyHeld: 100,
+        bountyHeldTotal: 100,
+        bountyGateHours: 4,
+      })),
+    });
+    const coins = store().coins;
+
+    await store().logPlaytime(id, 4);
+
+    expect(store().coins).toBe(coins + 100);
+    expect(store().games[0].bountyHeld).toBe(0);
+  });
+
   it("ignores play-time logs for games that aren't playing", async () => {
     await store().addGame(sampleMeta()); // still in backlog
     const coins = store().coins;

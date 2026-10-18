@@ -18,6 +18,10 @@ export interface PlaySession {
   format: CopyFormat | null;
   hours: number;
   createdAt: number;
+  /** A drop-in: time logged on the game after it was Finished. */
+  dropIn?: boolean;
+  /** The player's optional line about the session. */
+  note?: string | null;
 }
 
 /** One version's share of a game's logged time. */

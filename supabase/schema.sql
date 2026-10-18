@@ -9231,7 +9231,7 @@ drop function if exists public.log_playtime(uuid, real, text);
 -- The Daily Session bonus column (bonus) widened the RETURNS TABLE shape.
 drop function if exists public.log_playtime(uuid, real, text, text);
 -- (Re-dropped each apply: the Rotation milestone column, 2026-10-17, widened
--- the result.)
+-- the result, and p_note, 2026-10-18, added a parameter.)
 -- Daily Session bonus (feature bonuses): each logging of play time — the Log
 -- button, a stopwatch stop (end_play_session -> log_playtime) or time added in
 -- the Played editor (set_platform_playtime) — pays session_bonus coins, up to
@@ -9281,7 +9281,9 @@ end;
 $$;
 revoke execute on function public.pay_session_bonus(uuid, uuid, real) from public, anon, authenticated;
 
-create or replace function public.log_playtime(p_game uuid, p_hours real, p_platform text default null, p_format text default null)
+create or replace function public.log_playtime(
+  p_game uuid, p_hours real, p_platform text default null, p_format text default null, p_note text default null
+)
 returns table (coins integer, played_hours real, bonus integer, milestone integer, regular integer, checkin integer)
 language plpgsql
 security definer set search_path = public
@@ -9298,23 +9300,39 @@ declare
   v_milestone integer := 0;
   v_regular   integer := 0;
   v_checkin   integer;
+  v_status    text;
+  v_note      text := nullif(btrim(p_note), '');
 begin
   if p_hours is null or p_hours <= 0 then
     raise exception 'Hours must be positive';
   end if;
+  if char_length(v_note) > 140 then
+    raise exception 'Keep the note to 140 characters';
+  end if;
 
   -- Ownership first, so the pact checks below can never probe another player's
-  -- card ids.
-  if not exists (select 1 from public.games where id = p_game and user_id = auth.uid()) then
+  -- card ids. A Finished (or Retired) game takes time as a drop-in session
+  -- (issue f40bf121): it stays where it is, and the time counts like any play.
+  select status into v_status from public.games where id = p_game and user_id = auth.uid();
+  if v_status is null or v_status not in ('playing', 'finished') then
     raise exception 'Game not available to log time';
+  end if;
+  if v_status = 'finished' then
+    perform set_config('app.play_drop_in', '1', true);
+  end if;
+  if v_note is not null then
+    perform set_config('app.play_note', v_note, true);
   end if;
 
   -- The live shared playthrough this card is bound to, if any. Active only: a
   -- pending invite binds no partner card yet, so there is nothing to share.
-  select * into v_pact
-    from public.co_op_pacts
-   where status = 'active' and (inviter_game = p_game or invitee_game = p_game)
-   limit 1;
+  -- A drop-in is solo play after the clear, so it shares nothing.
+  if v_status = 'playing' then
+    select * into v_pact
+      from public.co_op_pacts
+     where status = 'active' and (inviter_game = p_game or invitee_game = p_game)
+     limit 1;
+  end if;
 
   if v_pact.id is not null then
     -- Player 2's entry is locked while Player 1's half is still in play —
@@ -9339,7 +9357,7 @@ begin
 
   update public.games
      set played_hours = played_hours + p_hours
-   where id = p_game and user_id = auth.uid() and status = 'playing'
+   where id = p_game and user_id = auth.uid() and status = v_status
    returning played_hours into v_played;
 
   if v_played is null then
@@ -9353,6 +9371,7 @@ begin
   if v_pact.id is not null and v_pact.inviter_game = p_game and v_pact.invitee_game is not null then
     perform set_config('app.play_platform', '', true);
     perform set_config('app.play_format', '', true);
+    perform set_config('app.play_note', '', true);
     update public.games
        set played_hours = played_hours + p_hours
      where id = v_pact.invitee_game and status = 'playing';
@@ -9364,6 +9383,18 @@ begin
   select r.milestone, r.regular, r.checkin into v_milestone, v_regular, v_checkin
     from public.rotation_play_rewards(p_game) r;
   select coins into v_coins from public.profiles where id = auth.uid();
+
+  -- A drop-in tells friends you went back to it: once a day per game, and
+  -- never for a private or stealth game.
+  if v_status = 'finished' and not exists (
+       select 1 from public.activity_events a
+        where a.actor = auth.uid() and a.game_id = p_game and a.kind = 'drop_in'
+          and a.created_at > now() - interval '1 day') then
+    insert into public.activity_events (actor, kind, game_id, game_title)
+    select auth.uid(), 'drop_in', g.id, g.title
+      from public.games g
+     where g.id = p_game and not g.private and not g.stealth;
+  end if;
 
   return query select v_coins, v_played, v_bonus, v_milestone, v_regular, v_checkin;
 end;
@@ -12166,6 +12197,15 @@ alter table public.playtime_events add column if not exists source       text no
 alter table public.playtime_events drop constraint if exists playtime_events_source_check;
 alter table public.playtime_events add constraint playtime_events_source_check
   check (source in ('live', 'backfill'));
+-- Drop-in sessions (issue f40bf121, 2026-10-18): time logged on a Finished (or
+-- Retired) game without moving it. drop_in marks those rows (log_playtime sets
+-- app.play_drop_in); note is the player's optional line about a session
+-- (app.play_note). Additive; existing rows stay false / null.
+alter table public.playtime_events add column if not exists drop_in boolean not null default false;
+alter table public.playtime_events add column if not exists note    text;
+alter table public.playtime_events drop constraint if exists playtime_events_note_check;
+alter table public.playtime_events add constraint playtime_events_note_check
+  check (note is null or char_length(note) <= 140);
 
 alter table public.game_status_events add column if not exists genres     jsonb;
 alter table public.game_status_events add column if not exists developers jsonb;
@@ -12266,10 +12306,12 @@ begin
     end;
     insert into public.playtime_events
       (user_id, game_id, game_title, hours, played_after, platform, format, genres, developers, game_hours,
-       pact_id, session_id, source, in_rotation)
+       pact_id, session_id, source, in_rotation, drop_in, note)
     values (new.user_id, new.id, new.title, new.played_hours - old.played_hours, new.played_hours,
             v_platform, v_format, new.genres, new.developers, new.hours, v_pact, v_session, v_source,
-            coalesce(new.in_rotation, false));
+            coalesce(new.in_rotation, false),
+            coalesce(current_setting('app.play_drop_in', true), '') = '1',
+            nullif(current_setting('app.play_note', true), ''));
   end if;
   return new;
 end;
@@ -12646,7 +12688,8 @@ create policy "play_sessions_select" on public.play_sessions
     or exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin)
   );
 
--- Start the stopwatch on a game you're currently playing. Open to everyone (it
+-- Start the stopwatch on a game you're playing, or a Finished one as a drop-in
+-- session (issue f40bf121). Open to everyone (it
 -- graduated from its `playtime.stopwatch` soft-launch permission on 2026-07-24).
 -- The co-op invitee lock is checked HERE (mirroring log_playtime) so the block
 -- surfaces at start, not hours later at stop.
@@ -12662,14 +12705,16 @@ declare
 begin
   select title into v_title
     from public.games
-   where id = p_game and user_id = auth.uid() and status = 'playing';
+   where id = p_game and user_id = auth.uid() and status in ('playing', 'finished');
   if v_title is null then
     raise exception 'Game not available to track';
   end if;
 
-  select * into v_pact
-    from public.co_op_pacts
-   where status = 'active' and (inviter_game = p_game or invitee_game = p_game)
+  -- A drop-in is solo play, so only a game in play is bound by a pact.
+  select p.* into v_pact
+    from public.co_op_pacts p
+    join public.games g on g.id = p_game and g.status = 'playing'
+   where p.status = 'active' and (p.inviter_game = p_game or p.invitee_game = p_game)
    limit 1;
   if v_pact.id is not null and v_pact.invitee_game = p_game and v_pact.inviter_finished_at is null then
     raise exception 'Player 1 logs the shared time while the co-op pact is on';
@@ -12702,9 +12747,9 @@ $$;
 -- discarded — started/ended stay reconstructable — rather than erroring
 -- forever.
 -- The Daily Session bonus column (bonus, passed through from log_playtime)
--- widened the RETURNS TABLE shape.
+-- widened the RETURNS TABLE shape; p_note (2026-10-18) added a parameter.
 drop function if exists public.end_play_session(uuid, real);
-create or replace function public.end_play_session(p_session uuid, p_hours real default null)
+create or replace function public.end_play_session(p_session uuid, p_hours real default null, p_note text default null)
 returns table (logged real, coins integer, played_hours real, bonus integer, milestone integer, regular integer, checkin integer)
 language plpgsql
 security definer set search_path = public
@@ -12737,9 +12782,10 @@ begin
   if v_hours > v_elapsed then v_hours := v_elapsed; end if;  -- trim only, never inflate
   v_hours := round(v_hours * 60.0) / 60.0;
 
+  -- Still loggable: playing, or Finished as a drop-in (log_playtime's rule).
   v_playing := v_sess.game_id is not null and exists (
     select 1 from public.games g
-     where g.id = v_sess.game_id and g.user_id = auth.uid() and g.status = 'playing');
+     where g.id = v_sess.game_id and g.user_id = auth.uid() and g.status in ('playing', 'finished'));
 
   if v_hours < (1.0 / 60.0) or not v_playing then
     update public.play_sessions
@@ -12761,7 +12807,7 @@ begin
 
   select l.coins, l.played_hours, l.bonus, l.milestone, l.regular, l.checkin
     into v_coins, v_played, v_bonus, v_milestone, v_regular, v_checkin
-    from public.log_playtime(v_sess.game_id, v_hours, v_sess.platform, v_sess.format) l;
+    from public.log_playtime(v_sess.game_id, v_hours, v_sess.platform, v_sess.format, p_note) l;
 
   return query select v_hours, v_coins, v_played, coalesce(v_bonus, 0), coalesce(v_milestone, 0), coalesce(v_regular, 0), v_checkin;
 end;
@@ -12785,10 +12831,10 @@ end;
 $$;
 
 revoke execute on function public.start_play_session(uuid, text, text) from public, anon;
-revoke execute on function public.end_play_session(uuid, real) from public, anon;
+revoke execute on function public.end_play_session(uuid, real, text) from public, anon;
 revoke execute on function public.discard_play_session(uuid) from public, anon;
 grant execute on function public.start_play_session(uuid, text, text) to authenticated;
-grant execute on function public.end_play_session(uuid, real) to authenticated;
+grant execute on function public.end_play_session(uuid, real, text) to authenticated;
 grant execute on function public.discard_play_session(uuid) to authenticated;
 
 -- The stopwatch link on playtime events (column added in the player-history
@@ -15648,7 +15694,7 @@ revoke execute on function public.set_family_cover(uuid, text, uuid) from public
 revoke execute on function public.set_family_split(uuid, boolean)    from public, anon;
 revoke execute on function public.set_family_primary(uuid, uuid)     from public, anon;
 revoke execute on function public.sever_family(uuid)                 from public, anon;
-revoke execute on function public.log_playtime(uuid, real, text, text) from public, anon;
+revoke execute on function public.log_playtime(uuid, real, text, text, text) from public, anon;
 revoke execute on function public.set_platform_playtime(uuid, text, text, real, boolean) from public, anon;
 revoke execute on function public.leaderboard()                 from public, anon;
 revoke execute on function public.player_library(uuid)          from public, anon;
@@ -15766,7 +15812,7 @@ grant execute on function public.set_family_cover(uuid, text, uuid) to authentic
 grant execute on function public.set_family_split(uuid, boolean)    to authenticated;
 grant execute on function public.set_family_primary(uuid, uuid)     to authenticated;
 grant execute on function public.sever_family(uuid)                 to authenticated;
-grant execute on function public.log_playtime(uuid, real, text, text) to authenticated;
+grant execute on function public.log_playtime(uuid, real, text, text, text) to authenticated;
 grant execute on function public.set_platform_playtime(uuid, text, text, real, boolean) to authenticated;
 grant execute on function public.leaderboard()                 to authenticated;
 grant execute on function public.player_library(uuid)          to authenticated;
@@ -16172,8 +16218,9 @@ begin
     -- friends (issue e3242526).
     and not coalesce((p.privacy->>'private_profile')::boolean, false)
     -- The owner's milestones outrank the moment the status write happened: a
-    -- clear they date to last year is history, not news (issue f9b7b594).
-    and public.clear_is_fresh(a.game_id, a.created_at)
+    -- clear they date to last year is history, not news (issue f9b7b594). A
+    -- drop-in is about the session, so an old clear doesn't hide it.
+    and (a.kind = 'drop_in' or public.clear_is_fresh(a.game_id, a.created_at))
     and (p_before is null or a.created_at < p_before)
   order by a.created_at desc, a.id desc
   limit greatest(1, least(coalesce(p_limit, 30), 100));
@@ -16821,7 +16868,7 @@ alter table public.co_op_pact_events add constraint co_op_pact_events_action_che
 -- kinds (the inline check was created with this auto-generated name).
 alter table public.activity_events drop constraint if exists activity_events_kind_check;
 alter table public.activity_events add constraint activity_events_kind_check
-  check (kind in ('game_imported', 'family_created', 'bounty_claimed', 'co_op_completed'));
+  check (kind in ('game_imported', 'family_created', 'bounty_claimed', 'co_op_completed', 'drop_in'));
 
 -- Pact identity now comes from the shared game_identity_key/game_identity_keys
 -- pair defined with catalog_games (rawg → igdb → catalog, crosswalk applied).

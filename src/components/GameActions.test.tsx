@@ -118,7 +118,7 @@ describe("GameActions Now Playing platform picker (instance isolation)", () => {
     fireEvent.click(screen.getByRole("button", { name: /^Log$/i }));
 
     await waitFor(() =>
-      expect(logPlaytime).toHaveBeenCalledWith("m", 2, "PlayStation 4", undefined),
+      expect(logPlaytime).toHaveBeenCalledWith("m", 2, "PlayStation 4", undefined, undefined),
     );
   });
 
@@ -205,6 +205,25 @@ describe("GameActions shared co-op time (issue 8df87f83)", () => {
     render(<GameActions game={playing()} />);
     expect(screen.getByRole("textbox", { name: /Log play time for/i })).toBeTruthy();
     expect(screen.getByText(/also counts for Sam/i)).toBeTruthy();
+  });
+
+  it("leaves a drop-in on a Finished card out of the pact, either side", () => {
+    const finished = game({ status: "finished", finishTag: "beaten", rawgId: 1 });
+    for (const p of [pact(), pact({ iAmInviter: false })]) {
+      act(() =>
+        useStore.setState({
+          viewing: null,
+          games: [finished],
+          coOpPacts: [p],
+          fetchPlaySessions: vi.fn(async () => []),
+        }),
+      );
+      const { unmount } = render(<GameActions game={finished} />);
+      fireEvent.click(screen.getByRole("button", { name: /Log a session/i }));
+      expect(screen.getByRole("textbox", { name: /Log play time for/i })).toBeTruthy();
+      expect(screen.queryByText(/also counts for Sam|logs your shared time/i)).toBeNull();
+      unmount();
+    }
   });
 });
 
@@ -638,7 +657,7 @@ describe("GameActions Rotation card (Rotation players, 2026-10-17)", () => {
     render(<GameActions game={rotation()} />);
     fireEvent.change(screen.getByLabelText("Log play time for Hearthstone"), { target: { value: "45m" } });
     fireEvent.click(screen.getByRole("button", { name: "Log" }));
-    expect(logPlaytime).toHaveBeenCalledWith("r", 0.75, undefined, undefined);
+    expect(logPlaytime).toHaveBeenCalledWith("r", 0.75, undefined, undefined, undefined);
     expect(screen.getByRole("button", { name: /Start stopwatch/ })).toBeTruthy();
   });
 
@@ -661,5 +680,67 @@ describe("GameActions Rotation card (Rotation players, 2026-10-17)", () => {
     render(<GameActions game={rotation()} />);
     expect(screen.getByText(/Next milestone: 6h 30m to go/)).toBeTruthy();
     expect(screen.getByRole("progressbar", { name: /next Rotation milestone/ }).getAttribute("aria-valuenow")).toBe("35");
+  });
+});
+
+describe("GameActions — drop-in sessions", () => {
+  it("logs a session on a Finished card, with a note, and keeps the game where it is", async () => {
+    const logPlaytime = vi.fn(async () => {});
+    const finished = game({ status: "finished", finishTag: "beaten", playedHours: 40 });
+    act(() =>
+      useStore.setState({
+        viewing: null,
+        cloud: true,
+        activeSession: null,
+        games: [finished],
+        fetchPlaySessions: vi.fn(async () => []),
+        logPlaytime,
+      }),
+    );
+    render(<GameActions game={finished} />);
+
+    // Tucked away until asked for.
+    expect(screen.queryByLabelText(/Log play time for/)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /Log a session/i }));
+    expect(screen.getByRole("button", { name: /Start stopwatch/i })).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText(/Log play time for/), { target: { value: "1h 30m" } });
+    fireEvent.change(screen.getByLabelText(/Note for this session/), { target: { value: "one quick hunt" } });
+    fireEvent.click(screen.getByRole("button", { name: /^Log$/ }));
+    await waitFor(() => expect(logPlaytime).toHaveBeenCalledWith("g1", 1.5, undefined, undefined, "one quick hunt"));
+  });
+
+  it("stops a stopwatch running on the card before the game moves", async () => {
+    const openSessionStop = vi.fn();
+    const unretireGame = vi.fn(async () => {});
+    const retired = game({ status: "finished", finishTag: "retired" });
+    act(() =>
+      useStore.setState({
+        viewing: null,
+        cloud: true,
+        games: [retired],
+        activeSession: { id: "s1", gameId: "g1", gameTitle: retired.title, platform: null, format: null, startedAt: Date.now() },
+        fetchPlaySessions: vi.fn(async () => []),
+        openSessionStop,
+        unretireGame,
+      }),
+    );
+    render(<GameActions game={retired} />);
+    fireEvent.click(screen.getByRole("button", { name: /Return to Bazaar/i }));
+    const confirms = screen.getAllByRole("button", { name: /^Return to Bazaar$/i });
+    fireEvent.click(confirms[confirms.length - 1]);
+    expect(openSessionStop).toHaveBeenCalledTimes(1);
+    expect(unretireGame).not.toHaveBeenCalled();
+    // The move runs once the session is logged or discarded.
+    (openSessionStop.mock.calls[0] as unknown as [() => void])[0]();
+    await waitFor(() => expect(unretireGame).toHaveBeenCalledWith("g1"));
+  });
+
+  it("offers it on a Retired card too", () => {
+    const retired = game({ status: "finished", finishTag: "retired" });
+    act(() => useStore.setState({ viewing: null, games: [retired], fetchPlaySessions: vi.fn(async () => []) }));
+    render(<GameActions game={retired} />);
+    fireEvent.click(screen.getByRole("button", { name: /Log a session/i }));
+    expect(screen.getByLabelText(/Log play time for/)).toBeTruthy();
   });
 });

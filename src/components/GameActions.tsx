@@ -35,6 +35,7 @@ import { ActivationModal } from "./ActivationModal";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { FINISH_TAGS, finishHint, finishTagLabel, type FinishTag } from "../lib/finishTags";
 import { canRedeemVoucher } from "../lib/vouchers";
+import { SESSION_NOTE_MAX } from "../lib/dropIns";
 import {
   canStartGame,
   canStartSomewhere,
@@ -411,6 +412,10 @@ export function GameActions({
   const [retiring, setRetiring] = useState(false);
   const [logHours, setLogHours] = useState("");
   const [logVersionKey, setLogVersionKey] = useState("");
+  // Drop-in sessions: a Finished (or Retired) card opens the time logger on
+  // demand, with an optional note about the session.
+  const [dropInOpen, setDropInOpen] = useState(false);
+  const [dropInNote, setDropInNote] = useState("");
   const [editingNote, setEditingNote] = useState(false);
   const [noteDraft, setNoteDraft] = useState("");
   const [shelving, setShelving] = useState(false);
@@ -559,7 +564,8 @@ export function GameActions({
   // Player 1 logs for both sides — the partner's log box is replaced with a
   // note (the server enforces the same lock), and Player 1's box gains an
   // "also counts for <partner>" hint.
-  const pact = activePactForCard(coOpPacts, game.id);
+  // A drop-in on a Finished card is solo play, so no pact binds it.
+  const pact = game.status === "playing" ? activePactForCard(coOpPacts, game.id) : null;
   const pactLocksLog = playtimeLockedByPact(pact);
   const pactSharesLog = playtimeSharedToPartner(pact);
   // Play-session stopwatch: the live tick only runs while the watch is on THIS
@@ -591,7 +597,7 @@ export function GameActions({
   // Pre-select the version you last logged time on, so returning to log more time
   // defaults to the same one instead of resetting to the first.
   useEffect(() => {
-    if (game.status !== "playing" || !showVersionPicker) return;
+    if ((game.status !== "playing" && !dropInOpen) || !showVersionPicker) return;
     let active = true;
     void fetchPlaySessions(game.id).then((sessions) => {
       if (!active) return;
@@ -608,15 +614,17 @@ export function GameActions({
       active = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [game.id, game.status, showVersionPicker, trackEditions]);
+  }, [game.id, game.status, showVersionPicker, trackEditions, dropInOpen]);
 
   function submitLog() {
     if (!(logParsed && logParsed > 0)) return;
     // Single copy → let the server auto-detect the version; otherwise attribute to
     // the chosen one.
     const version = showVersionPicker ? selectedVersion : undefined;
-    logPlaytime(game.id, logParsed, version?.platform, version?.format);
+    const dropIn = game.status === "finished";
+    logPlaytime(game.id, logParsed, version?.platform, version?.format, dropIn ? dropInNote : undefined);
     setLogHours("");
+    if (dropIn) setDropInNote("");
   }
   function startNote() {
     setNoteDraft(game.progressNote ?? "");
@@ -773,6 +781,17 @@ export function GameActions({
               <p className="mt-1 text-[11px] text-danger">
                 Try formats like “1h 30m”, “90m”, or “2.75”.
               </p>
+            )}
+            {cloud && game.status === "finished" && (
+              <input
+                type="text"
+                value={dropInNote}
+                onChange={(e) => setDropInNote(e.target.value)}
+                maxLength={SESSION_NOTE_MAX}
+                placeholder="Note (optional), e.g. one quick hunt"
+                aria-label={`Note for this session of ${game.title}`}
+                className="mt-2 w-full rounded-lg border border-line bg-surface px-2 py-1.5 text-sm text-ink outline-none transition placeholder:text-subtle focus:border-brand focus:ring-2 focus:ring-brand/25"
+              />
             )}
             {pactSharesLog && (
               <p className="mt-1 flex items-center gap-1.5 text-[11px] text-subtle">
@@ -1583,6 +1602,14 @@ export function GameActions({
               disable (with a reason) when their target lane is full; "Go for 100%" is
               hidden only when the game is already Completed (redundant). */}
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1 pt-0.5">
+            <button
+              onClick={() => setDropInOpen((open) => !open)}
+              aria-expanded={dropInOpen}
+              title={`Log time on ${game.title} and keep it where it is`}
+              className="inline-flex items-center gap-1.5 text-xs text-subtle transition hover:text-ink"
+            >
+              <Gamepad2 size={13} /> Log a session
+            </button>
             {game.finishTag === "retired" ? (
               // A retired game has no free re-entry (replay / 100% / Endless are
               // for real clears). Its one road back is the Bazaar — full price.
@@ -1634,6 +1661,7 @@ export function GameActions({
               </>
             )}
           </div>
+          {(dropInOpen || sessionOnThis) && playLogger}
 
           {finishedAction &&
             createPortal(
@@ -1710,10 +1738,13 @@ export function GameActions({
                         : "Convert"
                 }
                 onConfirm={() => {
-                  if (finishedAction === "replay") replayGame(game.id);
-                  else if (finishedAction === "completion") enterCompletionist(game.id);
-                  else if (finishedAction === "unretire") unretireGame(game.id);
-                  else convertToEndless(game.id);
+                  const action = finishedAction;
+                  withSessionStopped(() => {
+                    if (action === "replay") replayGame(game.id);
+                    else if (action === "completion") enterCompletionist(game.id);
+                    else if (action === "unretire") unretireGame(game.id);
+                    else convertToEndless(game.id);
+                  });
                   setFinishedAction(null);
                 }}
                 onCancel={() => setFinishedAction(null)}

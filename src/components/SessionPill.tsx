@@ -13,6 +13,7 @@ import {
   loggableHours,
   logsAnything,
 } from "../lib/playSessions";
+import { SESSION_NOTE_MAX } from "../lib/dropIns";
 
 /**
  * The app-wide face of the play-session stopwatch (soft launch): a floating
@@ -62,11 +63,14 @@ export function SessionPill() {
  *  active and the store's sessionStopOpen flag is set. */
 function StopDialog() {
   const { activeSession, closeSessionStop, endPlaySession, discardPlaySession } = useStore();
+  // A drop-in (the watch ran on a Finished game) takes an optional note.
+  const dropIn = useStore((s) => s.games.some((g) => g.id === activeSession?.gameId && g.status === "finished"));
   useScrollLock(true);
   const now = useNow(true);
   // "" = untrimmed: log the full elapsed time (the server recomputes it at
   // commit, so the seconds that pass while this dialog is open still count).
   const [trim, setTrim] = useState("");
+  const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
 
   // The session can vanish underneath the dialog (stopped from another device).
@@ -87,7 +91,7 @@ function StopDialog() {
     if (busy) return;
     setBusy(true);
     if (discard) await discardPlaySession();
-    else await endPlaySession(trimmed == null ? null : willLog);
+    else await endPlaySession(trimmed == null ? null : willLog, dropIn ? note : undefined);
     setBusy(false);
   };
 
@@ -137,6 +141,20 @@ function StopDialog() {
           <p className="mt-1 text-[11px] text-subtle">
             Under a minute — stopping now logs nothing.
           </p>
+        )}
+        {dropIn && (
+          <label className="mt-3 block text-[11px] text-muted">
+            Note (optional)
+            <input
+              type="text"
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              maxLength={SESSION_NOTE_MAX}
+              placeholder="e.g. one quick hunt"
+              aria-label="Note for this session"
+              className="mt-1 w-full rounded-lg border border-line bg-panel px-2 py-1.5 text-sm text-ink outline-none transition placeholder:text-subtle focus:border-brand focus:ring-2 focus:ring-brand/25"
+            />
+          </label>
         )}
         <div className="mt-4 flex gap-2">
           <button

@@ -98,6 +98,7 @@ import type {
 } from "./lib/compilationTemplates";
 import { summarizePlatformPlaytime, type PlaySession } from "./lib/platformPlaytime";
 import type { ActivePlaySession } from "./lib/playSessions";
+import { canLogTime } from "./lib/dropIns";
 import { downscaleImage } from "./lib/image";
 import { isAppearOffline, PRIVACY_KEYS } from "./lib/privacy";
 import {
@@ -1503,7 +1504,8 @@ interface BazaarState {
   // normal Bazaar game. Dated arrivals normally unlock themselves via the
   // boot sweep (fulfill_released_preorders).
   fulfillPreorder: (id: string) => Promise<void>;
-  logPlaytime: (id: string, hours: number, platform?: string, format?: CopyFormat) => Promise<void>;
+  // note: an optional line about a drop-in session (a Finished game's log).
+  logPlaytime: (id: string, hours: number, platform?: string, format?: CopyFormat, note?: string) => Promise<void>;
   setPlayedHours: (id: string, hours: number) => Promise<void>;
   // A game's logged play sessions (cloud only), for the per-version breakdown and
   // remembering which version was played last. Empty offline.
@@ -1514,7 +1516,7 @@ interface BazaarState {
   startPlaySession: (gameId: string, platform?: string, format?: CopyFormat) => Promise<void>;
   // hours null = log the full elapsed time; a number trims it down (the server
   // clamps: trim only, 24h cap, sub-minute stops discard).
-  endPlaySession: (hours: number | null) => Promise<void>;
+  endPlaySession: (hours: number | null, note?: string) => Promise<void>;
   discardPlaySession: () => Promise<void>;
   openSessionStop: (andThen?: () => void) => void;
   closeSessionStop: () => void;
@@ -7262,10 +7264,10 @@ export const useStore = create<BazaarState>((set, get) => ({
     done();
   },
 
-  logPlaytime: async (id, hours, platform, format) => {
+  logPlaytime: async (id, hours, platform, format, note) => {
     const { cloud, games } = get();
     const game = games.find((g) => g.id === id);
-    if (!game || game.status !== "playing" || !(hours > 0)) return;
+    if (!game || !canLogTime(game) || !(hours > 0)) return;
     // Logging time tracks your hours for stats; coins are paid as a flat bounty
     // when you finish, not per hour (see finishGame). The only coins a log can
     // earn are the once-a-day Daily Session bonus, decided server-side
@@ -7273,9 +7275,11 @@ export const useStore = create<BazaarState>((set, get) => ({
 
     if (!cloud) {
       const played = (game.playedHours ?? 0) + hours;
-      const next = games.map((g) => (g.id === id ? { ...g, playedHours: played } : g));
+      // A drop-in raises a Finished game's hours, which releases held bounty.
+      const released = withLocalRelease(game, played);
+      const next = games.map((g) => (g.id === id ? { ...g, playedHours: played, ...released.fields } : g));
       set({ games: next });
-      saveLocal(get().coins, next);
+      saveLocal(get().coins, next, released.ledger);
       toast(`${formatPlaytime(hours)} logged`, Gamepad2);
       return;
     }
@@ -7287,6 +7291,7 @@ export const useStore = create<BazaarState>((set, get) => ({
         p_hours: hours,
         p_platform: platform ?? null,
         p_format: format ?? null,
+        p_note: note ?? null,
       })
       .single();
     if (error) {
@@ -7315,6 +7320,8 @@ export const useStore = create<BazaarState>((set, get) => ({
     // A coin event's play boost may have used up some of its cap.
     if (paid > 0 && get().bonusEvents.length > 0) void get().fetchBonusEvents();
     if (game.inRotation) void get().fetchRotationProgress();
+    // A drop-in may have released some of a held bounty.
+    await get().refreshHeldBounty(id);
     void get().evaluateAchievements();
   },
 
@@ -7356,7 +7363,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     if (!supabase || !get().cloud) return [];
     const { data, error } = await supabase
       .from("playtime_events")
-      .select("platform, format, hours, created_at")
+      .select("platform, format, hours, created_at, drop_in, note")
       .eq("game_id", id)
       .order("created_at", { ascending: false });
     if (error) {
@@ -7368,6 +7375,8 @@ export const useStore = create<BazaarState>((set, get) => ({
       format: r.format === "physical" || r.format === "digital" ? r.format : null,
       hours: typeof r.hours === "number" ? r.hours : 0,
       createdAt: r.created_at ? Date.parse(r.created_at as string) : 0,
+      dropIn: r.drop_in === true,
+      note: typeof r.note === "string" ? r.note : null,
     }));
   },
 
@@ -7405,7 +7414,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     const { cloud, games, activeSession } = get();
     if (!supabase || !cloud) return;
     const game = games.find((g) => g.id === gameId);
-    if (!game || game.status !== "playing") return;
+    if (!game || !canLogTime(game)) return;
     // One watch at a time — the UI routes this through the stop dialog first.
     if (activeSession) {
       toast(`Stop your session on ${activeSession.gameTitle} first`, Timer);
@@ -7436,11 +7445,11 @@ export const useStore = create<BazaarState>((set, get) => ({
     toast(`Stopwatch running — ${game.title}`, Timer);
   },
 
-  endPlaySession: async (hours) => {
+  endPlaySession: async (hours, note) => {
     const s = get().activeSession;
     if (!supabase || !s) return;
     const { data, error } = await supabase
-      .rpc("end_play_session", { p_session: s.id, p_hours: hours })
+      .rpc("end_play_session", { p_session: s.id, p_hours: hours, p_note: note ?? null })
       .single();
     if (error) {
       set({ error: error.message });
@@ -7479,6 +7488,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       );
       if (paid > 0 && get().bonusEvents.length > 0) void get().fetchBonusEvents();
       if (s.gameId && get().games.find((g) => g.id === s.gameId)?.inRotation) void get().fetchRotationProgress();
+      if (s.gameId) await get().refreshHeldBounty(s.gameId);
       void get().evaluateAchievements();
     } else {
       // Sub-minute stop, or the game left the Playing lane mid-session.

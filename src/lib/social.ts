@@ -72,6 +72,8 @@ export function activityHeadline(
       return `started a Game Family with ${title}`;
     case "co_op_completed":
       return `cleared ${title} in a Co-op Pact with ${e.detail?.partner_name ?? "a friend"}`;
+    case "drop_in":
+      return `dropped back into ${title}`;
     case "bounty_claimed":
     default:
       switch (e.detail?.finish_tag) {

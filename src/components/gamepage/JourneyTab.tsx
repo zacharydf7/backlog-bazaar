@@ -5,6 +5,7 @@ import { parsePlaytime, formatPlaytime } from "../../lib/playtime";
 import { PlaytimeSection } from "./PlaytimeSection";
 import { PrerequisiteSection } from "./PrerequisiteSection";
 import { MilestonesSection } from "../MilestonesSection";
+import { DropInSessionsSection } from "./DropInSessionsSection";
 import { HeldBountyNote } from "../ClearLogChip";
 
 /** Your play story: logged time (per version in the cloud, one field offline),
@@ -22,6 +23,7 @@ export function JourneyTab({ game }: { game: Game }) {
       <HeldBountyNote game={game} />
       {!isWishlist && <PlayedField game={game} />}
       {cloud && <MilestonesSection game={game} />}
+      {cloud && <DropInSessionsSection game={game} />}
       {/* Changing the story lock of a game you're mid-way through is moot —
           the gate only applies on the way INTO Now Playing. */}
       {game.status !== "playing" && <PrerequisiteSection game={game} />}

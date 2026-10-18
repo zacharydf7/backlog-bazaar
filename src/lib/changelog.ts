@@ -41,6 +41,19 @@ export interface Release {
 export const RELEASES: Release[] = [
   // ── October 2026 ──────────────────────────────────────────────────────────
   {
+    id: "2026-10-18-drop-in-sessions",
+    date: "2026-10-18",
+    title: "Log time on finished games",
+    summary: "Went back to a game you already finished? Log the session without moving the game.",
+    tag: "feature",
+    items: [
+      "Tap Log a session on any Finished or Retired card.",
+      "Add an optional note, like the event you played.",
+      "Drop-in time counts toward your goals and the Daily Session bonus.",
+      "Friends see when you drop back into a game.",
+    ],
+  },
+  {
     id: "2026-10-18-board-questions",
     date: "2026-10-18",
     title: "Ask questions on the board",

@@ -147,7 +147,9 @@ export function AboutPage() {
                 ? ` (${featureBonuses.dailySessionMinMinutes} minutes or more)`
                 : ""}
               , earns a small <strong className="text-ink">Daily Session</strong> bonus of{" "}
-              <Coin n={featureBonuses.dailySession} />.
+              <Coin n={featureBonuses.dailySession} />. Went back to a game you already finished? Use{" "}
+              <strong className="text-ink">Log a session</strong> on its card to log a drop-in
+              without moving it; the time counts like any other play.
             </Section>
             <Section icon={Trophy} title="5 · Finish for the bounty">
               Mark a game finished to collect its <strong className="text-ink">bounty</strong> (at

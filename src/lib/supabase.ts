@@ -992,7 +992,7 @@ export interface ActivityEventRow {
 
 export function rowToActivityEvent(r: ActivityEventRow): ActivityEvent {
   const kind = (
-    ["game_imported", "family_created", "bounty_claimed", "co_op_completed"] as const
+    ["game_imported", "family_created", "bounty_claimed", "co_op_completed", "drop_in"] as const
   ).includes(r.kind as ActivityKind)
     ? (r.kind as ActivityKind)
     : "game_imported";

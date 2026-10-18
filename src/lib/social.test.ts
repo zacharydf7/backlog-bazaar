@@ -36,6 +36,12 @@ describe("friendAction", () => {
 });
 
 describe("activityHeadline", () => {
+  it("says a drop-in went back to the game", () => {
+    expect(activityHeadline({ kind: "drop_in", gameTitle: "Monster Hunter Wilds" })).toBe(
+      "dropped back into Monster Hunter Wilds",
+    );
+  });
+
   it("describes each broadcast kind", () => {
     expect(activityHeadline({ kind: "game_imported", gameTitle: "Celeste" })).toBe(
       "imported Celeste from the Wishlist",

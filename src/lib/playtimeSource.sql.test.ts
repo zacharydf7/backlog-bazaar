@@ -35,7 +35,7 @@ beforeAll(async () => {
     create table public.playtime_events (user_id uuid, game_id uuid, game_title text, hours real, played_after real,
       platform text, format text, genres jsonb, developers jsonb, game_hours real, pact_id uuid, session_id uuid,
       source text not null default 'live', in_rotation boolean not null default false,
-      created_at timestamptz not null default now());
+      drop_in boolean not null default false, note text, created_at timestamptz not null default now());
     create table public.bonus_calls (hours real);
     create function public.rotation_play_rewards(p_game uuid) returns table (milestone integer, regular integer, checkin integer)
       language sql as $$ select 0, 0, null::integer $$;

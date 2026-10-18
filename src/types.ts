@@ -376,7 +376,8 @@ export type ActivityKind =
   | "game_imported"
   | "family_created"
   | "bounty_claimed"
-  | "co_op_completed";
+  | "co_op_completed"
+  | "drop_in";
 
 /** One post in the activity feed: a friend's milestone, with cheer state. The
  *  coin amount in `detail` is omitted for friends who hide financial milestones;
