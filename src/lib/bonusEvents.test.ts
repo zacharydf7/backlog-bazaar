@@ -11,6 +11,7 @@ import {
   eventStartPrice,
   eventWhenLabel,
   hasBoost,
+  nextEventBoundary,
   spanUntil,
   repeatLabel,
   targetLabel,
@@ -273,5 +274,21 @@ describe("monthly pattern drafts", () => {
   it("knows an event with no boost", () => {
     expect(hasBoost({ ...DRAFT, bountyMult: 1 })).toBe(false);
     expect(hasBoost(DRAFT)).toBe(true);
+  });
+});
+
+describe("nextEventBoundary", () => {
+  it("is the soonest start or end still ahead", () => {
+    const now = 100 * D;
+    const events = [
+      { startsAt: now - D, endsAt: now + 2 * D }, // running: its end
+      { startsAt: now + 5 * H, endsAt: now + 3 * D }, // upcoming: its start
+    ];
+    expect(nextEventBoundary(events, now)).toBe(now + 5 * H);
+  });
+
+  it("is null when every event is over", () => {
+    expect(nextEventBoundary([{ startsAt: 0, endsAt: D }], 2 * D)).toBeNull();
+    expect(nextEventBoundary([], 0)).toBeNull();
   });
 });

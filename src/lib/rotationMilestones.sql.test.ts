@@ -40,7 +40,8 @@ beforeAll(async () => {
     insert into public.app_config values (1, 10, 25);
     create table public.profiles (id uuid primary key, coins integer not null default 0, economy boolean not null default true);
     create table public.games (id uuid primary key, user_id uuid, title text, status text, in_rotation boolean not null default false);
-    create table public.playtime_events (user_id uuid, game_id uuid, hours real, source text not null default 'live',
+    create table public.playtime_events (id uuid primary key default gen_random_uuid(), user_id uuid, game_id uuid,
+      hours real, source text not null default 'live',
       in_rotation boolean not null default false, created_at timestamptz not null default now());
     create table public.coin_events (user_id uuid, kind text, delta integer, label text);
     ${milestonesTable()}
@@ -105,6 +106,52 @@ describe("pay_rotation_milestones", () => {
     for (let i = 0; i < 9; i++) await log(20);
     // 180 hours logged today count as 24: two milestones, not eighteen.
     expect((await db.query("select count(*)::int as n from public.rotation_milestones")).rows).toEqual([{ n: 2 }]);
+  });
+
+  describe("one 24-hour budget a day across all the player's Rotation games", () => {
+    const others = ["c1", "c2", "c3"].map((s) => `00000000-0000-4000-8000-0000000000${s}`);
+
+    async function logOther(game: string, hours: number) {
+      await db.query("insert into public.playtime_events (user_id, game_id, hours, in_rotation) values ($1, $2, $3, true)", [
+        U,
+        game,
+        hours,
+      ]);
+      await db.query("select public.pay_rotation_milestones($1, $2)", [U, game]);
+    }
+
+    async function milestones() {
+      return (await db.query<{ n: number }>("select count(*)::int as n from public.rotation_milestones")).rows[0].n;
+    }
+
+    beforeEach(async () => {
+      for (const g of others) await db.query("insert into public.games values ($1, $2, 'Other', 'playing', true)", [g, U]);
+    });
+
+    it("never pays more than 24 hours a day, whichever game logs first", async () => {
+      expect(await log(24)).toBe(50);
+      for (const g of others) await logOther(g, 24);
+      expect(await milestones()).toBe(2);
+    });
+
+    it("credits a game only what's left of the day's budget", async () => {
+      for (const g of others) await logOther(g, 8);
+      expect(await log(20)).toBe(0);
+      const h = await db.query<{ h: number }>("select public.rotation_game_hours($1, $2)::float8 as h", [U, R]);
+      expect(h.rows[0].h).toBeCloseTo(0);
+    });
+
+    it("lets a correction lower only its own day, never later play", async () => {
+      await log(-10, true, "live", "1 day"); // trims time that was never credited
+      expect(await log(10)).toBe(25);
+    });
+
+    it("gives no budget back when a log is corrected down", async () => {
+      expect(await log(20)).toBe(50);
+      await log(-20);
+      await logOther(others[0], 20);
+      expect(await milestones()).toBe(2);
+    });
   });
 
   it("counts only live play logged while the game was in Rotation", async () => {

@@ -2072,16 +2072,6 @@ function configNumber(v: unknown, fallback: number): number {
   return Number.isFinite(n) ? n : fallback;
 }
 
-/** Coins the pre-order arrival bonus paid on a game (0 when none), and the
- *  balance it left (the server pays it in a trigger on the unlock). */
-async function arrivalBonus(gameId: string): Promise<number> {
-  if (!supabase) return 0;
-  const { data } = await supabase.from("preorder_bonuses").select("coins").eq("game_id", gameId).maybeSingle();
-  const coins = (data as { coins?: number } | null)?.coins ?? 0;
-  if (coins > 0) await refreshCoinsFromServer(useStore.setState, useStore.getState().userId);
-  return coins;
-}
-
 /** Re-read the coin balance after server-side payouts. */
 async function refreshCoinsFromServer(
   set: (p: { coins: number }) => void,
@@ -7023,7 +7013,11 @@ export const useStore = create<BazaarState>((set, get) => ({
     }
     set({ games: unlock(get().games) });
     celebrate();
-    const bonus = await arrivalBonus(id);
+    // The unlock may have paid the arrival bonus server-side: re-read the
+    // balance and toast what it rose by.
+    const coinsBefore = get().coins;
+    await refreshCoinsFromServer(set, get().userId);
+    const bonus = get().coins - coinsBefore;
     toast(
       bonus > 0
         ? `${game.title} has arrived · Pre-order bonus +${bonus}`

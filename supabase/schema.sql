@@ -12164,20 +12164,33 @@ create policy "rotation_milestones_select_own" on public.rotation_milestones
   for select to authenticated using (auth.uid() = user_id);
 
 -- A game's live hours toward Rotation milestones: play logged while it was in
--- Rotation, at most 24 hours on any one day (the player's), since no day
--- holds more play; without that, repeated 24-hour logs would mint coins.
+-- Rotation. No day holds more than 24 hours of play across ALL the player's
+-- games, so each day's logs draw on one 24-hour budget, first come first
+-- served: a log credits only what's left of it, later logs never shrink
+-- earlier credit (paid milestones stand), and a correction down lowers its own
+-- game's day (never below 0, so it can't eat into other days' play) without
+-- giving budget back. Without that, repeated logs, logs spread over many
+-- Rotation games, or log-then-correct cycles would mint coins.
 create or replace function public.rotation_game_hours(p_user uuid, p_game uuid)
 returns numeric
 language sql
 stable
 set search_path = public
 as $$
-  select coalesce(sum(least(d.hours, 24)), 0)::numeric
-    from (select greatest(sum(e.hours), 0) as hours
-            from public.playtime_events e
-           where e.user_id = p_user and e.game_id = p_game and e.in_rotation
-             and public.is_live_play(e.source, e.hours)
-           group by (e.created_at at time zone public.player_tz(p_user))::date) d;
+  with ev as (
+    select d.day, d.game_id, d.hours,
+           sum(greatest(d.hours, 0)) over (partition by d.day order by d.created_at, d.id) as spent
+      from (select e.id, e.game_id, e.hours, e.created_at,
+                   (e.created_at at time zone public.player_tz(p_user))::date as day
+              from public.playtime_events e
+             where e.user_id = p_user and e.in_rotation and public.is_live_play(e.source, e.hours)) d
+  )
+  select coalesce(sum(c.hours), 0)::numeric
+    from (select greatest(sum(case when ev.hours > 0 then least(ev.spent, 24) - least(ev.spent - ev.hours, 24)
+                                   else ev.hours end), 0) as hours
+            from ev
+           where ev.game_id = p_game
+           group by ev.day) c;
 $$;
 revoke execute on function public.rotation_game_hours(uuid, uuid) from public, anon, authenticated;
 
@@ -12205,6 +12218,9 @@ begin
   end if;
   select coalesce(c.rotation_milestone_hours, 5), coalesce(c.rotation_milestone_reward, 25)
     into v_step, v_reward from public.app_config c where c.id = 1;
+  -- One player's logs on different games settle one at a time, so each sees
+  -- the other's hours in the day's 24-hour share.
+  perform 1 from public.profiles where id = p_user for update;
   v_total := public.rotation_game_hours(p_user, p_game);
   select coalesce(max(m.milestone), 0) into v_paid
     from public.rotation_milestones m where m.user_id = p_user and m.game_id = p_game;
@@ -19392,11 +19408,17 @@ as $$
      and coalesce(g.played_hours, 0) >= coalesce((select bounty_gate_pct from public.app_config where id = 1), 25)
                                          / 100.0 * coalesce(g.personal_hours, g.hours)
   union all
-  -- Pre-orders that arrived (one per game), and those placed a year or more
-  -- before they arrived (the server's 'placed' time, not the marker).
+  -- Pre-orders that arrived (one per game) at least a day after being placed
+  -- (owner, 2026-10-17: keeps real last-minute pre-orders, stops marking and
+  -- confirming at once), and those placed a year or more ahead; both by the
+  -- server's 'placed' time, not the marker.
   select 'preorders_arrived', count(distinct coalesce(f.game_id::text, f.game_title))::numeric
     from public.preorder_events f
    where f.user_id = p_user and f.action = 'fulfilled'
+     and exists (select 1 from public.preorder_events pl
+                  where pl.user_id = p_user and pl.action = 'placed'
+                    and coalesce(pl.game_id::text, pl.game_title) = coalesce(f.game_id::text, f.game_title)
+                    and pl.created_at <= f.created_at - interval '1 day')
   union all
   select 'early_preorders', count(distinct coalesce(f.game_id::text, f.game_title))::numeric
     from public.preorder_events f
@@ -22459,8 +22481,8 @@ create trigger games_preorder_fulfilled_redate
 -- confirm) pays preorder_bonus coins, if it was placed at least
 -- preorder_bonus_lead_days earlier (the server's 'placed' event time, never
 -- the client-written marker), at most once per game (catalog identity) and at
--- most preorder_bonus_monthly_cap times a month (site timezone), so marking
--- Bazaar games "pre-ordered" can't farm it. Economy off records the arrival
+-- most preorder_bonus_monthly_cap times a month (site timezone), which caps
+-- what marking Bazaar games "pre-ordered" can earn. Economy off records the arrival
 -- at 0 coins (no back-pay later). Append-only preorder_bonuses rows.
 -- ---------------------------------------------------------------------------
 alter table public.app_config add column if not exists preorder_bonus integer not null default 50
@@ -22525,6 +22547,8 @@ begin
   if exists (select 1 from public.preorder_bonuses b where b.user_id = new.user_id and b.game_key = v_key) then
     return null;
   end if;
+  -- Two arrivals at once settle one at a time against the monthly cap.
+  perform 1 from public.profiles where id = new.user_id for update;
   v_month := date_trunc('month', now() at time zone v_tz) at time zone v_tz;
   v_pay := case
     when not public.economy_enabled(new.user_id) then 0
@@ -22544,8 +22568,7 @@ end;
 $$;
 revoke execute on function public.pay_preorder_bonus() from public, anon, authenticated;
 
--- After the audit trigger ('fulfilled' logged) and the redate; trigger names
--- fire alphabetically, so this one is named to come last.
+-- Named zz to fire after the other pre-order triggers; it doesn't depend on them.
 drop trigger if exists games_preorder_zz_bonus on public.games;
 create trigger games_preorder_zz_bonus
   after update of status, preordered_at on public.games
