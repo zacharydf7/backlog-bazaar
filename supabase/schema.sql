@@ -12129,7 +12129,8 @@ create trigger games_log_playtime
 
 -- ---------------------------------------------------------------------------
 -- Rotation milestones (owner, 2026-10-17): a live-service game never finishes,
--- so it can't pay a bounty; instead every rotation_milestone_hours of live play
+-- so it can't pay a bounty; instead every rotation_milestone_hours (5; was 10
+-- until the owner shortened it, 2026-10-17) of live play
 -- logged on it while it's in Rotation pays rotation_milestone_reward. Only play
 -- logged while in Rotation counts (playtime_events.in_rotation, recorded from
 -- 2026-10-17 on), so hours already paid by a finish bounty never pay twice,
@@ -12139,7 +12140,7 @@ create trigger games_log_playtime
 -- one just needs the total to climb past it.
 -- ---------------------------------------------------------------------------
 alter table public.playtime_events add column if not exists in_rotation boolean not null default false;
-alter table public.app_config add column if not exists rotation_milestone_hours numeric not null default 10
+alter table public.app_config add column if not exists rotation_milestone_hours numeric not null default 5
   check (rotation_milestone_hours > 0);
 alter table public.app_config add column if not exists rotation_milestone_reward integer not null default 25
   check (rotation_milestone_reward between 0 and 100000);
@@ -12202,7 +12203,7 @@ begin
                   where id = p_game and user_id = p_user and status = 'playing' and in_rotation) then
     return 0;
   end if;
-  select coalesce(c.rotation_milestone_hours, 10), coalesce(c.rotation_milestone_reward, 25)
+  select coalesce(c.rotation_milestone_hours, 5), coalesce(c.rotation_milestone_reward, 25)
     into v_step, v_reward from public.app_config c where c.id = 1;
   v_total := public.rotation_game_hours(p_user, p_game);
   select coalesce(max(m.milestone), 0) into v_paid

@@ -47,7 +47,7 @@ export const RELEASES: Release[] = [
     summary: "Live-service games like Hearthstone now earn coins, goals and recaps, and never cost you a streak.",
     tag: "feature",
     items: [
-      "Rotation games pay 25 coins for every 10 hours you play.",
+      "Rotation games pay 25 coins for every 5 hours you play.",
       "A Regular streak pays more each week you keep playing Rotation games.",
       "Log time or use the stopwatch on Rotation cards, which checks you in too.",
       "New Rotation goals, and live-service adds never break your Clear Streak.",
