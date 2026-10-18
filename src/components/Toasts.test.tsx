@@ -34,11 +34,11 @@ describe("Toasts", () => {
     expect(useToasts.getState().toasts).toHaveLength(0);
   });
 
-  it("the stack clears the mobile bottom tab bar (bottom-20, back to bottom-4 on md+)", () => {
+  it("the stack clears the mobile bottom tab bar and the phone's own bar (and just the phone's bar on md+)", () => {
     const { container } = render(<Toasts />);
     act(() => toast("Saved"));
     const stack = container.firstElementChild as HTMLElement;
-    expect(stack.className).toContain("bottom-20");
-    expect(stack.className).toContain("md:bottom-4");
+    expect(stack.className).toContain("bottom-[calc(5rem+var(--safe-bottom))]");
+    expect(stack.className).toContain("md:bottom-[calc(1rem+var(--safe-bottom))]");
   });
 });

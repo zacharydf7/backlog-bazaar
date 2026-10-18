@@ -10,7 +10,7 @@ export function UpdateBanner() {
   if (!outdated || dismissed) return null;
 
   return (
-    <div className="fixed inset-x-0 bottom-4 z-[80] flex justify-center px-4">
+    <div className="fixed inset-x-0 bottom-[calc(1rem+var(--safe-bottom))] z-[80] flex justify-center px-4">
       <div className="flex items-center gap-3 rounded-2xl border border-line bg-surface px-4 py-3 shadow-2xl">
         <RefreshCw size={16} className="shrink-0 text-accent" />
         <span className="text-sm text-ink">A new version of Backlog Bazaar is available.</span>

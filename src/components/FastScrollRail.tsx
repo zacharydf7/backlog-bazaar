@@ -135,12 +135,12 @@ export function FastScrollRail({
   return (
     // The track is layout only — it never takes a tap, so cards under the
     // right edge stay fully clickable. Spans from just under the app chrome to
-    // just above the Jump-to-top button (bottom-36 + its 44px).
+    // just above the Jump-to-top button (9rem + the phone's bar, + its 44px).
     <div
       ref={trackRef}
       data-testid="rail-track"
       className="pointer-events-none fixed right-0 z-40 w-11 md:hidden"
-      style={{ top: "calc(var(--chrome-h) + 16px)", bottom: "12.5rem" }}
+      style={{ top: "calc(var(--chrome-h) + 16px)", bottom: "calc(12.5rem + var(--safe-bottom))" }}
     >
       <div
         role="slider"

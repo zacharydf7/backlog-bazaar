@@ -35,12 +35,12 @@ export function SessionPill() {
   const longRunning = isLongRunning(activeSession.startedAt, now);
   return (
     <>
-      {/* bottom-20 on phones clears the fixed bottom tab bar (and sits opposite
+      {/* 5rem (+ the phone's own bar) on phones clears the fixed bottom tab bar (and sits opposite
           the bottom-right FAB); md+ tucks into the bottom-right corner. */}
       <button
         onClick={() => openSessionStop()}
         title={`Stopwatch running on ${activeSession.gameTitle} — tap to stop`}
-        className="fixed bottom-20 left-4 z-40 inline-flex max-w-[70vw] items-center gap-2 rounded-full border border-line bg-surface/95 py-2 pl-3 pr-4 text-sm shadow-xl backdrop-blur transition hover:border-brand md:bottom-4 md:left-auto md:right-4"
+        className="fixed bottom-[calc(5rem+var(--safe-bottom))] left-4 z-40 inline-flex max-w-[70vw] items-center gap-2 rounded-full border border-line bg-surface/95 py-2 pl-3 pr-4 text-sm shadow-xl backdrop-blur transition hover:border-brand md:bottom-[calc(1rem+var(--safe-bottom))] md:left-auto md:right-[calc(1rem+var(--safe-right))]"
       >
         <span className="relative flex h-2 w-2 shrink-0">
           <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-brand opacity-60" />

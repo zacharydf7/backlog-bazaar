@@ -37,7 +37,7 @@ export function NotificationsDrawer({
       <div
         role="dialog"
         aria-label="Notifications"
-        className="relative flex h-full w-full max-w-md flex-col border-l border-line bg-surface shadow-2xl"
+        className="relative flex h-full w-full max-w-md flex-col border-l border-line bg-surface pb-[var(--safe-bottom)] pr-[var(--safe-right)] shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-line px-4 py-3">

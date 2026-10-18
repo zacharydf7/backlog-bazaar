@@ -30,10 +30,10 @@ export function Toasts() {
   const { toasts, dismiss } = useToasts();
 
   return (
-    // bottom-20 on phones keeps the stack clear of the fixed bottom tab bar
+    // 5rem (+ the phone's own bar) on phones keeps the stack clear of the fixed bottom tab bar
     // (same clearance as the Add FAB); the bar is md:hidden, so md+ returns to
-    // the compact bottom-4.
-    <div className="pointer-events-none fixed inset-x-0 bottom-20 z-[100] flex flex-col items-center gap-2 px-4 md:bottom-4">
+    // a compact 1rem (+ the phone's bar, for an iPhone held sideways).
+    <div className="pointer-events-none fixed inset-x-0 bottom-[calc(5rem+var(--safe-bottom))] z-[100] flex flex-col items-center gap-2 px-4 md:bottom-[calc(1rem+var(--safe-bottom))]">
       <AnimatePresence>
         {toasts.map((t) => {
           const Icon = t.icon;

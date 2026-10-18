@@ -1248,10 +1248,10 @@ export default function App() {
       <Sidebar {...chrome} />
       {/* Full-height column so the footer is pushed to the bottom of the viewport
           even on short pages (the content wrapper below grows to fill). */}
-      <div className="flex min-h-dvh flex-col md:pl-64">
+      <div className="flex min-h-dvh flex-col pl-[var(--safe-left)] pr-[var(--safe-right)] md:pl-[calc(16rem+var(--safe-left))]">
         <MobileNav {...chrome} />
         <TopBar {...chrome} />
-        <main className="mx-auto flex w-full max-w-[1600px] flex-1 flex-col px-4 pb-24 pt-6 md:px-6 md:pb-16">
+        <main className="mx-auto flex w-full max-w-[1600px] flex-1 flex-col px-4 pb-[calc(6rem+var(--safe-bottom))] pt-6 md:px-6 md:pb-16">
         <div className="flex-1">
         {/* Admin: site is closed to everyone else */}
         {(isAdmin || can("site.maintenance")) && maintenanceFlag && (

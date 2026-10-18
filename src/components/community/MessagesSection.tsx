@@ -14,7 +14,7 @@ export function MessagesSection({
   return (
     <div
       className="flex min-h-[22rem] flex-col overflow-hidden rounded-2xl border border-line bg-surface"
-      style={{ height: "calc(100dvh - var(--chrome-h) - 15rem)" }}
+      style={{ height: "calc(100dvh - var(--chrome-h) - var(--safe-bottom) - 15rem)" }}
     >
       <MessagesPanel key={compose ? compose.id : "list"} initialCompose={compose} />
     </div>

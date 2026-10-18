@@ -981,7 +981,7 @@ export function Sidebar(props: ChromeProps) {
   const communityCount = useCommunityCount();
   const sections = visiting ? TABS.filter((t) => t.id !== "market") : TABS;
   return (
-    <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col overflow-y-auto border-r border-edge bg-surface/95 backdrop-blur md:flex">
+    <aside className="fixed inset-y-0 left-0 z-30 hidden w-[calc(16rem+var(--safe-left))] flex-col overflow-y-auto border-r border-edge bg-surface/95 pl-[var(--safe-left)] backdrop-blur md:flex">
       <div className="flex shrink-0 flex-col gap-4 p-4">
         <button onClick={() => props.setView("backlog")} className="block text-left">
           <h1 className="font-display text-2xl font-semibold tracking-tight text-ink transition hover:text-accent">
@@ -1123,7 +1123,7 @@ export function MobileNav(props: ChromeProps) {
           for width: brand on top, the wallet bar below (hidden while visiting). */}
       <header
         ref={headerRef}
-        className="sticky top-0 z-30 flex flex-col gap-2 border-b border-edge bg-canvas/85 px-4 py-2.5 backdrop-blur md:hidden"
+        className="sticky top-0 z-30 flex flex-col gap-2 border-b border-edge bg-canvas/85 px-4 pb-2.5 pt-[calc(0.625rem+var(--safe-top))] backdrop-blur md:hidden"
       >
         <div className="flex items-center justify-between gap-3">
           <button
@@ -1181,7 +1181,7 @@ export function MobileNav(props: ChromeProps) {
         )}
       </header>
 
-      <nav className="fixed inset-x-0 bottom-0 z-30 flex border-t border-edge bg-surface/95 backdrop-blur md:hidden">
+      <nav className="fixed inset-x-0 bottom-0 z-30 flex border-t border-edge bg-surface/95 pb-[var(--safe-bottom)] pl-[var(--safe-left)] pr-[var(--safe-right)] backdrop-blur md:hidden">
         {/* While visiting, their Profile (the visit landing) gets a tab too —
             same reachability as the desktop rail. */}
         {visiting && (
@@ -1260,7 +1260,7 @@ export function MobileNav(props: ChromeProps) {
           while visiting — you can't add to someone else's library — and on
           utility pages where adding a game isn't the obvious action. */}
       {!visiting && onGameTab && (
-        <div className="fixed bottom-20 right-4 z-30 md:hidden">
+        <div className="fixed bottom-[calc(5rem+var(--safe-bottom))] right-4 z-30 md:hidden">
           <AddMenu onAdd={props.onAdd} onAddCompilation={props.onAddCompilation} onImportCsv={props.onImportCsv} variant="fab" />
         </div>
       )}
@@ -1269,7 +1269,7 @@ export function MobileNav(props: ChromeProps) {
         <div className="fixed inset-0 z-50 md:hidden" onClick={() => setMenuOpen(false)}>
           <div className="absolute inset-0 bg-black/40" />
           <div
-            className="absolute inset-x-0 bottom-0 max-h-[85vh] overflow-y-auto rounded-t-2xl border-t border-edge bg-surface p-4 pb-6 shadow-2xl"
+            className="absolute inset-x-0 bottom-0 max-h-[85vh] overflow-y-auto rounded-t-2xl border-t border-edge bg-surface p-4 pb-[calc(1.5rem+var(--safe-bottom))] shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-edge/60" />

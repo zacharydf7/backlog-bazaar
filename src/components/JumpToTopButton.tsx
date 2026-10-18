@@ -38,9 +38,9 @@ export function JumpToTopButton() {
       onClick={jump}
       tabIndex={visible ? 0 : -1}
       className={
-        "fixed bottom-36 right-4 z-30 flex h-11 w-11 items-center justify-center rounded-full " +
+        "fixed bottom-[calc(9rem+var(--safe-bottom))] right-4 z-30 flex h-11 w-11 items-center justify-center rounded-full " +
         "border border-line bg-panel/90 text-muted shadow-lg backdrop-blur transition " +
-        "hover:border-brand/50 hover:text-ink md:bottom-6 md:right-6 " +
+        "hover:border-brand/50 hover:text-ink md:bottom-[calc(1.5rem+var(--safe-bottom))] md:right-[calc(1.5rem+var(--safe-right))] " +
         (visible ? "opacity-100" : "pointer-events-none opacity-0")
       }
     >

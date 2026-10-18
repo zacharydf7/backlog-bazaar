@@ -600,7 +600,7 @@ export function IssueBoard({
           // scrolls) — except the admin kanban (`wide`), which always needs a
           // bounded height for its column scroll.
           "mx-auto flex w-full flex-col rounded-2xl border border-line bg-surface md:h-[calc(100dvh-9rem)] md:overflow-hidden " +
-          (wide ? "h-[calc(100dvh-9rem)] max-w-none overflow-hidden" : "max-w-5xl")
+          (wide ? "h-[calc(100dvh-9rem-var(--safe-bottom))] max-w-none overflow-hidden" : "max-w-5xl")
         }
       >
         <div className="flex items-center justify-between border-b border-line p-4">

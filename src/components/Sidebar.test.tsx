@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, it, expect, afterEach, vi } from "vitest";
 import { act, render, screen, fireEvent } from "@testing-library/react";
 import { Sidebar, MobileNav, TopBar, type ChromeProps } from "./Sidebar";
@@ -283,6 +284,19 @@ describe("MobileNav visiting tabs", () => {
     act(() => useStore.setState({ viewing: null }));
     render(<MobileNav {...chromeProps()} />);
     expect(screen.queryByRole("button", { name: /^Profile$/i })).toBeNull();
+  });
+
+  // The phone's own bar covers the page's bottom edge (issue fae311ea). jsdom
+  // can't measure safe areas, so this checks the wiring: the viewport opts in,
+  // the inset becomes --safe-bottom, and the tab bar pads by it.
+  it("pads the bottom bar clear of the phone's own buttons", () => {
+    const html = readFileSync("index.html", "utf8");
+    const css = readFileSync("src/index.css", "utf8");
+    expect(html).toMatch(/name="viewport"[^>]*viewport-fit=cover/);
+    expect(css).toMatch(/--safe-bottom:\s*env\(safe-area-inset-bottom/);
+    act(() => useStore.setState({ viewing: null }));
+    render(<MobileNav {...chromeProps()} />);
+    expect(screen.getByRole("navigation").className).toContain("pb-[var(--safe-bottom)]");
   });
 
   it("puts a Leave icon in the mobile header while visiting (the banner is gone)", () => {

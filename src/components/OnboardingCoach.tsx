@@ -206,7 +206,7 @@ export function OnboardingCoach({
   // ---- Fresh signup, collapsed pill ----
   if (collapsed) {
     return (
-      <div className="pointer-events-none fixed inset-x-0 bottom-0 z-40 flex justify-center px-3 pb-3 sm:px-4 sm:pb-4">
+      <div className="pointer-events-none fixed inset-x-0 bottom-0 z-40 flex justify-center px-3 pb-[calc(0.75rem+var(--safe-bottom))] sm:px-4 sm:pb-[calc(1rem+var(--safe-bottom))]">
         <button
           onClick={() => setCollapsed(false)}
           className="pointer-events-auto inline-flex items-center gap-1.5 rounded-full border border-brand/40 bg-surface px-3.5 py-2 text-xs font-semibold text-ink shadow-lg ring-1 ring-brand/20 transition hover:brightness-105"
@@ -322,7 +322,7 @@ export function OnboardingCoach({
 /** The docked coach container (shared card chrome). */
 function Shell({ children }: { children: React.ReactNode }) {
   return (
-    <div className="pointer-events-none fixed inset-x-0 bottom-0 z-40 flex justify-center px-3 pb-3 sm:px-4 sm:pb-4">
+    <div className="pointer-events-none fixed inset-x-0 bottom-0 z-40 flex justify-center px-3 pb-[calc(0.75rem+var(--safe-bottom))] sm:px-4 sm:pb-[calc(1rem+var(--safe-bottom))]">
       <div className="pointer-events-auto w-full max-w-md rounded-2xl border border-brand/40 bg-surface p-4 shadow-2xl ring-1 ring-brand/20">
         {children}
       </div>

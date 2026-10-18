@@ -223,7 +223,7 @@ function RoleEditor({
       onClick={onClose}
     >
       <div
-        className="flex max-h-[90vh] w-full max-w-lg flex-col overflow-hidden rounded-t-2xl border border-line bg-surface shadow-2xl sm:rounded-2xl"
+        className="flex max-h-[90vh] w-full max-w-lg flex-col overflow-hidden rounded-t-2xl border border-line bg-surface pb-[var(--safe-bottom)] shadow-2xl sm:rounded-2xl sm:pb-0"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between gap-2 border-b border-line p-4">
