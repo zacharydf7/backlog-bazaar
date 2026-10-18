@@ -7,7 +7,7 @@ import {
   boostedReward,
   coerceBonusPerks,
   eventFinishBonus,
-  rewardsBoost,
+  boostWithoutGame,
   eventStartPrice,
   eventWhenLabel,
   hasBoost,
@@ -93,7 +93,7 @@ describe("labels", () => {
   it("names each active boost", () => {
     expect(boostLabels({ bountyMult: 2, sessionMult: 1.5, rewardsMult: 1, startDiscountPct: 25, discountLimit: null })).toEqual([
       "Bounties ×2",
-      "Daily Session coins ×1.5",
+      "Play rewards ×1.5",
       "25% off starts",
     ]);
     expect(boostLabels({ bountyMult: 1, sessionMult: 1, rewardsMult: 1, startDiscountPct: 50, discountLimit: 2 })).toEqual([
@@ -228,10 +228,10 @@ describe("rewards boost", () => {
       capUsed: 0,
       discountUsed: 0,
       ...over,
-    }) as Parameters<typeof rewardsBoost>[0][number];
+    }) as Parameters<typeof boostWithoutGame>[0][number];
 
   it("picks the strongest live rewards event, with its cap left", () => {
-    expect(rewardsBoost([ev(), ev({ name: "Triple", rewardsMult: 3, playerCap: 100, capUsed: 40 })], D)).toEqual({
+    expect(boostWithoutGame([ev(), ev({ name: "Triple", rewardsMult: 3, playerCap: 100, capUsed: 40 })], D, "rewards")).toEqual({
       event: "Triple",
       mult: 3,
       capLeft: 60,
@@ -239,9 +239,27 @@ describe("rewards boost", () => {
   });
 
   it("ignores upcoming events, other boosts, and a used-up cap", () => {
-    expect(rewardsBoost([ev({ startsAt: 2 * D })], D)).toBeNull();
-    expect(rewardsBoost([ev({ rewardsMult: 1, bountyMult: 2 })], D)).toBeNull();
-    expect(rewardsBoost([ev({ playerCap: 50, capUsed: 50 })], D)).toBeNull();
+    expect(boostWithoutGame([ev({ startsAt: 2 * D })], D, "rewards")).toBeNull();
+    expect(boostWithoutGame([ev({ rewardsMult: 1, bountyMult: 2 })], D, "rewards")).toBeNull();
+    expect(boostWithoutGame([ev({ playerCap: 50, capUsed: 50 })], D, "rewards")).toBeNull();
+  });
+
+  it("skips a used-up cap for the next strongest, and ties to the one ending first", () => {
+    const spent = ev({ name: "Triple", rewardsMult: 3, playerCap: 50, capUsed: 50 });
+    expect(boostWithoutGame([spent, ev()], D, "rewards")?.event).toBe("Double");
+    const late = ev({ name: "Late", endsAt: 5 * D });
+    expect(boostWithoutGame([late, ev({ name: "Soon", endsAt: 3 * D })], D, "rewards")?.event).toBe("Soon");
+  });
+
+  it("takes a play boost for a Regular week only from an event aimed at every game", () => {
+    const play = (over: Record<string, unknown>) => ev({ rewardsMult: 1, sessionMult: 2, ...over });
+    expect(boostWithoutGame([play({ genres: ["RPG"] }), play({ name: "Any", sessionMult: 1.5 })], D, "session")).toEqual({
+      event: "Any",
+      mult: 1.5,
+      capLeft: null,
+    });
+    expect(boostWithoutGame([play({ offMainPlatform: true }), play({ maxHours: 10 })], D, "session")).toBeNull();
+    expect(boostWithoutGame([ev({ genres: ["RPG"] })], D, "rewards")?.mult).toBe(2);
   });
 
   it("pays a claim like bonus_event_pay", () => {

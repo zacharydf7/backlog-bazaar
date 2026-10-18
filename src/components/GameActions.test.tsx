@@ -642,6 +642,20 @@ describe("GameActions Rotation card (Rotation players, 2026-10-17)", () => {
     expect(screen.getByRole("button", { name: /Start stopwatch/ })).toBeTruthy();
   });
 
+  it("shows a coin event's play boost on the check-in and milestone amounts", () => {
+    act(() =>
+      useStore.setState({
+        games: [rotation()],
+        rotationCheckinReward: 50,
+        bonusPerks: { r: { session: { event: "Double Weekend", factor: 2, capLeft: null } } },
+      }),
+    );
+    render(<GameActions game={rotation()} />);
+    expect(screen.getByRole("button", { name: /Played this week/ }).textContent).toMatch(/100/);
+    expect(screen.getByText(/Double Weekend: Rotation rewards ×2/)).toBeTruthy();
+    expect(screen.getByText(/Next milestone/).parentElement?.textContent).toMatch(/\+\s*50/);
+  });
+
   it("shows how far it is to the next hours milestone", () => {
     act(() => useStore.setState({ games: [rotation()] }));
     render(<GameActions game={rotation()} />);

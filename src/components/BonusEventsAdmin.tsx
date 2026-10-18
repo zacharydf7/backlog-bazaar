@@ -363,7 +363,7 @@ function EventForm({
         {multiplier("Finish bounty", draft.bountyMult, (v) =>
           patch({ bountyMult: v }),
         )}
-        {multiplier("Daily Session", draft.sessionMult, (v) =>
+        {multiplier("Play rewards", draft.sessionMult, (v) =>
           patch({ sessionMult: v }),
         )}
         {multiplier("Goal & medal rewards", draft.rewardsMult, (v) =>

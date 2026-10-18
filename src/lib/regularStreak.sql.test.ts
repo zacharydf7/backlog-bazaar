@@ -40,6 +40,10 @@ beforeAll(async () => {
     ${weeksTable()}
     create schema auth;
     create function auth.uid() returns uuid language sql as $$ select '${U}'::uuid $$;
+    -- A coin event's play boost: none running unless a test sets test.boost.
+    create function public.bonus_event_pay(p_user uuid, p_game uuid, p_kind text, p_base integer)
+      returns integer language sql
+      as $$ select case when p_kind = 'session' then floor(p_base * (coalesce(nullif(current_setting('test.boost', true), ''), '1')::numeric - 1))::integer else 0 end $$;
     create function public.economy_enabled(p_user uuid) returns boolean language sql
       as $$ select economy from public.profiles where id = p_user $$;
     create function public.log_coin_event(p_user uuid, p_kind text, p_coin_delta integer,
@@ -87,6 +91,15 @@ describe("pay_regular_week", () => {
     expect((await db.query("select kind, delta, label from public.coin_events")).rows).toEqual([
       { kind: "regular_week", delta: 10, label: "Week 1" },
     ]);
+  });
+
+  it("adds a running coin event's play boost to a Regular week", async () => {
+    await db.exec("select set_config('test.boost', '2', false)");
+    try {
+      expect(await play(1)).toBe(20);
+    } finally {
+      await db.exec("select set_config('test.boost', '1', false)");
+    }
   });
 
   it("grows the bonus for weeks in a row, up to the cap", async () => {

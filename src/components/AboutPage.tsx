@@ -252,7 +252,8 @@ export function AboutPage() {
               you play most. The <strong className="text-ink">Calendar</strong> shows what&apos;s
               on and what&apos;s coming, with tips to get ready, alongside goal resets and your own
               pre-orders and renewals. A start discount is savings on the start. A bounty boost
-              pays on a Verified finish, and an event may cap how much extra each player can earn.
+              pays on a Verified finish, a play boost covers Daily Session coins and Rotation
+              rewards, and an event may cap how much extra each player can earn.
             </p>
             <p>
               A game&apos;s length comes from a shared estimate, but you can set{" "}

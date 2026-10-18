@@ -1,7 +1,7 @@
 import { RefreshCw } from "lucide-react";
 import { useStore } from "../store";
 import { formatPlaytime } from "../lib/playtime";
-import { spanUntil } from "../lib/bonusEvents";
+import { boostWithoutGame, boostedReward, spanUntil } from "../lib/bonusEvents";
 import { CoinIcon } from "./CoinIcon";
 
 /** The Regular streak on the Now Playing board: weeks in a row with at least
@@ -12,12 +12,16 @@ export function RegularStreakStrip() {
   const streak = useStore((s) => s.regularStreak);
   const viewing = useStore((s) => s.viewing);
   const economyOn = useStore((s) => s.economyEnabled);
+  const events = useStore((s) => s.bonusEvents);
   const hasRotation = useStore((s) => s.games.some((g) => g.status === "playing" && g.inRotation === true));
   if (viewing || !streak || !hasRotation) return null;
 
   const left = Math.max(0, streak.minHours - streak.weekHours);
   const fraction = streak.minHours > 0 ? Math.min(1, streak.weekHours / streak.minHours) : 1;
   const coins = economyOn && streak.nextBonus > 0;
+  // A live event's play boost aimed at every game covers a Regular week too.
+  const boost = boostWithoutGame(events, Date.now(), "session");
+  const next = boostedReward(streak.nextBonus, boost);
   return (
     <div className="mb-4 rounded-xl border border-accent/30 bg-accent/5 p-3">
       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
@@ -47,7 +51,8 @@ export function RegularStreakStrip() {
             {coins ? (
               <>
                 {" "}
-                for <CoinIcon size={11} /> {streak.nextBonus}
+                for <CoinIcon size={11} /> {next}
+                {boost && ` (${boost.event})`}
               </>
             ) : null}
             {streak.weekEnds > 0 && ` · ${spanUntil(streak.weekEnds, Date.now())} left`}.

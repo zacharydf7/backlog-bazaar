@@ -188,7 +188,7 @@ import {
   coerceBonusPerks,
   eventStartPrice,
   nextEventBoundary,
-  rewardsBoost,
+  boostWithoutGame,
   type AdminBonusEvent,
   type BonusEvent,
   type BonusEventDraft,
@@ -6744,6 +6744,8 @@ export const useStore = create<BazaarState>((set, get) => ({
       rotationCheckedIn: [...get().rotationCheckedIn, id],
     });
     toast(awarded > 0 ? `+${awarded} — checked in ${game.title}` : `Checked in ${game.title}`, Coins);
+    // A coin event's play boost may have used up some of its cap.
+    if (awarded > 0 && get().bonusEvents.length > 0) void get().fetchBonusEvents();
     void get().evaluateAchievements();
   },
 
@@ -7310,6 +7312,8 @@ export const useStore = create<BazaarState>((set, get) => ({
       loggedToastText(hours, bonus ?? 0, milestone ?? 0, regular ?? 0, checkin ?? null),
       paid > 0 ? Coins : Gamepad2,
     );
+    // A coin event's play boost may have used up some of its cap.
+    if (paid > 0 && get().bonusEvents.length > 0) void get().fetchBonusEvents();
     if (game.inRotation) void get().fetchRotationProgress();
     void get().evaluateAchievements();
   },
@@ -7473,6 +7477,7 @@ export const useStore = create<BazaarState>((set, get) => ({
         loggedToastText(row.logged, row.bonus ?? 0, row.milestone ?? 0, row.regular ?? 0, row.checkin ?? null),
         paid > 0 ? Coins : Gamepad2,
       );
+      if (paid > 0 && get().bonusEvents.length > 0) void get().fetchBonusEvents();
       if (s.gameId && get().games.find((g) => g.id === s.gameId)?.inRotation) void get().fetchRotationProgress();
       void get().evaluateAchievements();
     } else {
@@ -7627,6 +7632,7 @@ export const useStore = create<BazaarState>((set, get) => ({
               : `Daily Session +${coins - coinsBefore}${event ? ` · ${event} bonus included` : ""}`,
             Sparkles,
           );
+          if (get().bonusEvents.length > 0) void get().fetchBonusEvents();
         }
       }
     }
@@ -8706,7 +8712,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       const what = row.medals === 1 ? "achievement reward" : `${row.medals} achievement rewards`;
       // A running rewards boost was paid inside the claim (the events list still
       // holds the pre-claim cap use, so it says whether one applied).
-      const boost = rewardsBoost(get().bonusEvents, Date.now());
+      const boost = boostWithoutGame(get().bonusEvents, Date.now(), "rewards");
       toast(
         `+${row.paid} coins — ${what} claimed${boost ? ` · ${boost.event} ×${boost.mult} included` : ""}`,
         boost ? PartyPopper : Coins,
@@ -8771,7 +8777,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       const what = row.claimed === 1 ? "challenge reward" : `${row.claimed} challenge rewards`;
       // A running rewards boost was paid inside the claim (the events list still
       // holds the pre-claim cap use, so it says whether one applied).
-      const boost = rewardsBoost(get().bonusEvents, Date.now());
+      const boost = boostWithoutGame(get().bonusEvents, Date.now(), "rewards");
       toast(
         `+${row.paid} coins — ${what} claimed${boost ? ` · ${boost.event} ×${boost.mult} included` : ""}`,
         boost ? PartyPopper : Coins,

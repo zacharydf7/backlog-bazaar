@@ -8455,6 +8455,7 @@ declare
   v_tz       text;
   v_period   timestamptz;
   v_coins    integer;
+  v_event    integer := 0;
 begin
   if auth.uid() is null then raise exception 'Not authenticated'; end if;
 
@@ -8478,7 +8479,9 @@ begin
   end if;
   v_period := public.rotation_period_start(now(), coalesce(v_dow, 0), coalesce(v_hour, 0), v_tz);
 
-  -- One reward per reset period: a check-in already logged since the boundary blocks.
+  -- One reward per reset period: a check-in already logged since the boundary
+  -- blocks. The profile lock queues a double tap behind the first check-in.
+  perform 1 from public.profiles where id = auth.uid() for update;
   if exists (
     select 1 from public.rotation_checkins
      where user_id = auth.uid() and game_id = p_game and created_at >= v_period
@@ -8495,6 +8498,12 @@ begin
     perform public.log_coin_event(
       auth.uid(), 'rotation_checkin', v_reward, 0, v_coins, null, p_game, v_title, 'Rotation check-in'
     );
+    -- A running coin event's play boost covers Rotation rewards too (owner,
+    -- 2026-10-18), on top of the base as its own 'event_bonus' row.
+    v_event := public.bonus_event_pay(auth.uid(), p_game, 'session', v_reward);
+    if v_event > 0 then
+      select coins into v_coins from public.profiles where id = auth.uid();
+    end if;
   else
     select coins into v_coins from public.profiles where id = auth.uid();
   end if;
@@ -8502,7 +8511,7 @@ begin
   insert into public.rotation_checkins (user_id, game_id, game_title, coins_awarded)
   values (auth.uid(), p_game, v_title, v_reward);
 
-  return query select v_coins, v_reward;
+  return query select v_coins, v_reward + v_event;
 end;
 $$;
 
@@ -12384,6 +12393,10 @@ begin
       v_sum := v_sum + v_reward;
     end if;
   end loop;
+  -- A running coin event's play boost covers them too.
+  if v_sum > 0 then
+    v_sum := v_sum + public.bonus_event_pay(p_user, p_game, 'session', v_sum);
+  end if;
   return v_sum;
 end;
 $$;
@@ -12497,6 +12510,9 @@ begin
     update public.profiles set coins = coins + v_pay where id = p_user returning coins into v_coins;
     perform public.log_coin_event(p_user, 'regular_week', v_pay, 0, v_coins, null, null, null,
                                   'Week ' || v_streak, jsonb_build_object('streak', v_streak, 'week', w.week_start));
+    -- A running coin event's play boost covers it too, when the event is aimed
+    -- at every game (a Regular week isn't one game's).
+    v_pay := v_pay + public.bonus_event_pay(p_user, null, 'session', v_pay);
   end if;
   return v_pay;
 end;
@@ -21574,8 +21590,20 @@ as $$
      and (p_kind <> 'discount' or e.discount_limit is null or p_discounts_used < e.discount_limit);
 $$;
 
--- The strongest usable event for one kind of boost on this game (claims
--- aren't tied to a game), with how much of its per-player cap is left.
+-- Is the event aimed at every game (no genre, length or platform target)?
+create or replace function public.bonus_event_untargeted(e public.bonus_events)
+returns boolean
+language sql
+immutable
+as $$
+  select cardinality(e.genres) = 0 and cardinality(e.platforms) = 0
+     and e.min_hours is null and e.max_hours is null and not e.off_main_platform;
+$$;
+revoke execute on function public.bonus_event_untargeted(public.bonus_events) from public, anon, authenticated;
+
+-- The strongest usable event for one kind of boost on this game, with how much
+-- of its per-player cap is left. Claims aren't tied to a game; a play reward
+-- tied to no one game (a Regular week) takes only an event aimed at every game.
 create or replace function public.best_bonus_event(p_user uuid, p_game uuid, p_kind text)
 returns table (event_id uuid, event_name text, factor numeric, cap_left integer)
 language sql
@@ -21585,7 +21613,9 @@ as $$
   select (l.ev).id, (l.ev).name, public.bonus_event_factor(l.ev, p_kind), l.cap_left
     from public.live_bonus_events(p_user) l
    where public.bonus_event_usable(l.ev, p_kind, l.cap_left, l.discounts_used)
-     and (p_kind = 'rewards' or public.bonus_event_applies(l.ev, p_user, p_game))
+     and (p_kind = 'rewards'
+          or (p_game is null and public.bonus_event_untargeted(l.ev))
+          or public.bonus_event_applies(l.ev, p_user, p_game))
    order by 3 desc, l.occ_end
    limit 1;
 $$;

@@ -45,6 +45,10 @@ beforeAll(async () => {
       in_rotation boolean not null default false, created_at timestamptz not null default now());
     create table public.coin_events (user_id uuid, kind text, delta integer, label text);
     ${milestonesTable()}
+    -- A coin event's play boost: none running unless a test sets test.boost.
+    create function public.bonus_event_pay(p_user uuid, p_game uuid, p_kind text, p_base integer)
+      returns integer language sql
+      as $$ select case when p_kind = 'session' then floor(p_base * (coalesce(nullif(current_setting('test.boost', true), ''), '1')::numeric - 1))::integer else 0 end $$;
     create function public.economy_enabled(p_user uuid) returns boolean language sql
       as $$ select economy from public.profiles where id = p_user $$;
     create function public.log_coin_event(p_user uuid, p_kind text, p_coin_delta integer,
@@ -93,6 +97,15 @@ describe("pay_rotation_milestones", () => {
     expect((await db.query("select kind, delta, label from public.coin_events")).rows).toEqual([
       { kind: "rotation_milestone", delta: 25, label: "10 hours" },
     ]);
+  });
+
+  it("adds a running coin event's play boost to what milestones pay", async () => {
+    await db.exec("select set_config('test.boost', '2', false)");
+    try {
+      expect(await log(10)).toBe(50);
+    } finally {
+      await db.exec("select set_config('test.boost', '1', false)");
+    }
   });
 
   it("pays every milestone a long session crosses, day after day", async () => {

@@ -83,6 +83,7 @@ beforeAll(async () => {
     "live_bonus_events",
     "bonus_event_factor",
     "bonus_event_usable",
+    "bonus_event_untargeted",
     "best_bonus_event",
     "bonus_event_pay",
     "bonus_event_discount",
@@ -254,6 +255,13 @@ describe("bonus_event_pay", () => {
   it("boosts reward claims (no game) whatever the targets", async () => {
     await event({ bounty_mult: "1", rewards_mult: "2", genres: "'{Puzzle}'" });
     expect(await pay("rewards", 25, null)).toBe(25);
+  });
+
+  it("boosts a play reward with no game (a Regular week) only from an event aimed at every game", async () => {
+    await event({ bounty_mult: "1", session_mult: "3", genres: "'{RPG}'" });
+    expect(await pay("session", 20, null)).toBe(0);
+    await event({ name: "'Any'", bounty_mult: "1", session_mult: "2" });
+    expect(await pay("session", 20, null)).toBe(20);
   });
 });
 

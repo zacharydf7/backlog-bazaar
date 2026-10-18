@@ -1,12 +1,12 @@
 import { useState } from "react";
 import { Check, Coins, PartyPopper } from "lucide-react";
 import { useStore } from "../store";
-import { boostedReward, rewardsBoost } from "../lib/bonusEvents";
+import { boostWithoutGame, boostedReward } from "../lib/bonusEvents";
 
 /** A running coin event's boost on reward claims, if any (null otherwise). */
 function useRewardsBoost() {
   const events = useStore((s) => s.bonusEvents);
-  return rewardsBoost(events, Date.now());
+  return boostWithoutGame(events, Date.now(), "rewards");
 }
 
 /** A coin reward's state on a medal, goal or event: a Claim button while it

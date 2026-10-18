@@ -84,7 +84,7 @@ import {
 } from "../lib/economy";
 import { beatenFinishLength, effectiveLength, finishBountyOffset } from "../lib/personalLength";
 import { bountyGateHours, heldAtFinish, isVerifiedClear } from "../lib/bountyHold";
-import { eventFinishBonus, eventStartPrice, times } from "../lib/bonusEvents";
+import { boostedReward, eventFinishBonus, eventStartPrice, times } from "../lib/bonusEvents";
 import { FinishCheckModal } from "./FinishCheckModal";
 import { useScrollLock } from "../lib/useScrollLock";
 import { CoinIcon } from "./CoinIcon";
@@ -396,6 +396,8 @@ export function GameActions({
   const coachTarget = useStore(selectCoachTarget);
   // What a running coin event does for this game (start discount / finish boost).
   const perk = useStore((s) => s.bonusPerks[game.id]);
+  // A running coin event's play boost, which covers Rotation rewards too.
+  const playBoost = perk?.session ? { mult: perk.session.factor, capLeft: perk.session.capLeft } : null;
   const coachRing = " ring-2 ring-brand ring-offset-2 ring-offset-canvas";
   const [showWhy, setShowWhy] = useState(false);
   const [activating, setActivating] = useState(false);
@@ -847,7 +849,7 @@ export function GameActions({
                   <CalendarCheck size={15} /> Played this week
                   {economyEnabled && rotationCheckinReward > 0 && (
                     <span className="inline-flex items-center gap-1">
-                      · +<CoinIcon size={13} /> {rotationCheckinReward}
+                      · +<CoinIcon size={13} /> {boostedReward(rotationCheckinReward, playBoost)}
                     </span>
                   )}
                 </button>
@@ -855,6 +857,12 @@ export function GameActions({
               </div>
             )}
             {playLogger}
+            {economyEnabled && perk?.session && (
+              <p className="inline-flex items-center justify-center gap-1 text-center text-xs font-semibold text-success">
+                <PartyPopper size={13} className="shrink-0" /> {perk.session.event}: Rotation rewards{" "}
+                {times(perk.session.factor)}
+              </p>
+            )}
             {/* Hours milestones: the live-service stand-in for a finish bounty. */}
             {cloud && economyEnabled && rotationMilestone.reward > 0 && (() => {
               const p = rotationProgress[game.id];
@@ -866,7 +874,7 @@ export function GameActions({
                       <Trophy size={12} className="text-accent" /> Next milestone: {formatPlaytime(m.toGo)} to go
                     </span>
                     <span className="inline-flex items-center gap-1 font-medium text-ink">
-                      +<CoinIcon size={11} /> {rotationMilestone.reward}
+                      +<CoinIcon size={11} /> {boostedReward(rotationMilestone.reward, playBoost)}
                     </span>
                   </div>
                   <div
