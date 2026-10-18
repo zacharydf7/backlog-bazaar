@@ -7020,6 +7020,10 @@ declare
   v_full_price     integer;
   v_discount_event text;
 begin
+  -- The price comes from the client: a negative one would ADD coins below.
+  if p_price is null or p_price < 0 then
+    raise exception 'Invalid price';
+  end if;
   -- Economy off: activation is FREE — the fee is forced to zero server-side
   -- (whatever a client passed), the balance stays frozen, and no ledger row is
   -- written. Everything else (gates, slots, lanes, the state change) is

@@ -14,6 +14,14 @@ const schema = readFileSync(new URL("../../supabase/schema.sql", import.meta.url
 const start = schema.indexOf("create or replace function public.apply_purchase(");
 const body = schema.slice(start, schema.indexOf("\n$$;", start));
 
+describe("apply_purchase price guard", () => {
+  it("rejects a negative or missing client price before any coins move", () => {
+    const guard = body.search(/if p_price is null or p_price < 0 then\s+raise exception 'Invalid price';/);
+    expect(guard).toBeGreaterThan(-1);
+    expect(guard).toBeLessThan(body.indexOf("set coins = coins - p_price"));
+  });
+});
+
 describe("apply_purchase lane routing", () => {
   it("derives co-op from a live pact bound to the card, letting Completionist win", () => {
     expect(start).toBeGreaterThan(-1);
