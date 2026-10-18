@@ -13,8 +13,10 @@ import {
   Infinity as InfinityIcon,
   Handshake,
   SlidersHorizontal,
+  FlaskConical,
   type LucideIcon,
 } from "lucide-react";
+import { boardOf, isDemo } from "./lib/demos";
 import { useCosmeticEventVisit } from "./lib/useCosmeticEventVisit";
 import { useStore } from "./store";
 import { Avatar } from "./components/Avatar";
@@ -427,7 +429,7 @@ export default function App() {
   // each of which counts once on the board it sits on.
   const counts = useMemo(() => {
     const c: Record<GameStatus, number> = { backlog: 0, playing: 0, finished: 0, wishlist: 0 };
-    for (const g of famGrouping.boardGames) c[g.status]++;
+    for (const g of famGrouping.boardGames) c[boardOf(g)]++;
     for (const col of grouping.collapsed) c[col.board]++;
     for (const fam of famGrouping.families) c[fam.board]++;
     return c;
@@ -456,7 +458,7 @@ export default function App() {
     });
   };
   const boardGamesForView = useMemo(
-    () => famGrouping.boardGames.filter((g) => g.status === view),
+    () => famGrouping.boardGames.filter((g) => boardOf(g) === view),
     [famGrouping, view],
   );
   const hasRetired = view === "finished" && boardGamesForView.some(isRetired);
@@ -2383,7 +2385,9 @@ function PlayingBoard({
   families?: UnifiedFamily[];
   highlightId: string | null;
 }) {
-  const lanes = partitionByLane(games);
+  // Demos aren't owned, so they sit in their own row, apart from the lanes.
+  const demos = games.filter(isDemo);
+  const lanes = partitionByLane(games.filter((g) => !isDemo(g)));
   const order = LANE_ORDER;
   const famsByLane = new Map<Lane, UnifiedFamily[]>();
   for (const f of families ?? []) {
@@ -2437,6 +2441,28 @@ function PlayingBoard({
           </motion.div>
         ))}
       </AnimatePresence>
+      {demos.length > 0 && (
+        <section className="col-span-full mt-2 flex flex-col gap-3">
+          <h3 className="inline-flex items-center gap-1.5 text-sm font-semibold text-muted">
+            <FlaskConical size={15} className="text-accent" /> Demos
+            <span className="font-normal text-subtle">({demos.length})</span>
+          </h3>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {demos.map((g) => (
+              <div
+                key={g.id}
+                id={boardGameAnchor(g.id)}
+                className={
+                  "h-full scroll-mt-24 rounded-2xl transition-shadow duration-300 " +
+                  (highlightId === g.id ? "ring-2 ring-brand ring-offset-2 ring-offset-canvas" : "")
+                }
+              >
+                <GameCard game={g} />
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
     </div>
   );
 }

@@ -27,7 +27,8 @@ beforeAll(async () => {
   await db.exec(`
     create table public.profiles (id uuid primary key, coins integer not null default 0,
       economy boolean not null default true);
-    create table public.games (id uuid primary key, title text);
+    create table public.games (id uuid primary key, title text, status text not null default 'playing',
+      demo boolean not null default false);
     create table public.app_config (id integer primary key, session_bonus integer,
       session_bonus_min_minutes integer, session_bonus_daily_cap integer, rotation_reset_tz text);
     insert into public.app_config values (1, 5, 0, 3, 'UTC');
@@ -55,7 +56,7 @@ beforeEach(async () => {
   await db.exec(`
     delete from public.coin_events; delete from public.games; delete from public.profiles;
     insert into public.profiles (id, coins) values ('${U}', 100);
-    insert into public.games values ('${G}', 'Doom');
+    insert into public.games (id, title) values ('${G}', 'Doom');
     update public.app_config set session_bonus = 5, session_bonus_min_minutes = 0, session_bonus_daily_cap = 3;
   `);
 });
@@ -73,6 +74,12 @@ describe("pay_session_bonus", () => {
   it("pays 5 coins for each log, any length, up to 3 a day", async () => {
     expect([await log(0.05), await log(2), await log(0.5), await log(1)]).toEqual([5, 5, 5, 0]);
     expect(await coins()).toBe(115);
+  });
+
+  it("pays nothing on a demo's time", async () => {
+    await db.exec(`update public.games set status = 'wishlist', demo = true`);
+    expect(await log(1)).toBe(0);
+    expect(await coins()).toBe(100);
   });
 
   it("starts the count again the next day", async () => {

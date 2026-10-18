@@ -8,6 +8,7 @@ import {
   versionHoursForGroup,
   splitCopiesByPlatform,
   mergeWishlistIntoOwned,
+  ownedInstanceCovering,
   libraryPresence,
 } from "./addRouting";
 import type { PlaytimeRow } from "./platformPlaytime";
@@ -218,6 +219,23 @@ describe("routeAdd — library destinations (per-platform instances)", () => {
       expect(d.groups[0].action).toBe("new");
       expect(d.intercepts.map((w) => w.id)).toEqual([wish.id]);
     }
+  });
+
+  it("sends a game you're demoing on that platform through the demo, so its hours come along", () => {
+    const demo = game({ rawgId: 42, status: "wishlist", demo: true, copies: [copy("Nintendo Switch")] });
+    const d = routeAdd({
+      games: [demo],
+      meta: META,
+      destination: "backlog",
+      copies: [copy("Nintendo Switch", "physical")],
+    });
+    expect(d).toEqual({ kind: "blocked-demo", demo });
+  });
+
+  it("leaves a demo on another platform alone, and never removes it", () => {
+    const demo = game({ rawgId: 42, status: "wishlist", demo: true, copies: [copy("Nintendo Switch")] });
+    const d = routeAdd({ games: [demo], meta: META, destination: "backlog", copies: [copy("PC")] });
+    expect(d.kind).toBe("clean");
   });
 
   it("a wishlist entry for a DIFFERENT platform is left untouched (no intercept, no prompt)", () => {
@@ -484,6 +502,14 @@ describe("mergeWishlistIntoOwned (offline import merge, platform-aware)", () => 
     expect(res.mergedInto).toBe(owned.id);
     expect(res.games).toHaveLength(1);
     expect(res.games[0].copies?.map((c) => c.format)).toEqual(["digital", "physical"]);
+  });
+
+  it("finds the owned card a demo's platform falls on (so it can't become a second one)", () => {
+    const owned = game({ rawgId: 42, status: "backlog", copies: [copy("PC", "digital")] });
+    const demo = game({ rawgId: 42, status: "wishlist", demo: true, copies: [copy("PC")] });
+    const other = game({ rawgId: 42, status: "wishlist", demo: true, copies: [copy("PlayStation 5")] });
+    expect(ownedInstanceCovering([owned, demo, other], demo)?.id).toBe(owned.id);
+    expect(ownedInstanceCovering([owned, demo, other], other)).toBeNull();
   });
 
   it("a want for a DIFFERENT platform never merges — it becomes its own card", () => {

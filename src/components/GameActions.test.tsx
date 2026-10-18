@@ -744,3 +744,46 @@ describe("GameActions — drop-in sessions", () => {
     expect(screen.getByLabelText(/Log play time for/)).toBeTruthy();
   });
 });
+
+describe("GameActions — demos", () => {
+  it("lets you log a demo's time and get the full game", async () => {
+    const importFromWishlist = vi.fn(async () => {});
+    const demo = game({ status: "wishlist", demo: true, playedHours: 1 });
+    act(() =>
+      useStore.setState({
+        viewing: null,
+        cloud: true,
+        activeSession: null,
+        games: [demo],
+        fetchPlaySessions: vi.fn(async () => []),
+        importFromWishlist,
+      }),
+    );
+    render(<GameActions game={demo} />);
+    expect(screen.getByLabelText(/Log play time for/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Start stopwatch/i })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Import to your Bazaar/i })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: /Get the full game/i }));
+    await waitFor(() => expect(importFromWishlist).toHaveBeenCalledWith("g1"));
+  });
+
+  it("explains instead of offering the full game when it's already owned on that platform", () => {
+    const demo = game({ status: "wishlist", demo: true, rawgId: 7, copies: [{ id: "c1", platform: "PC" }] });
+    const owned = game({ id: "o1", status: "backlog", rawgId: 7, copies: [{ id: "c2", platform: "PC" }] });
+    act(() => useStore.setState({ viewing: null, games: [demo, owned], fetchPlaySessions: vi.fn(async () => []) }));
+    render(<GameActions game={demo} />);
+    expect(screen.queryByRole("button", { name: /Get the full game/i })).toBeNull();
+    expect(screen.getByText(/already own this on that platform/i)).toBeTruthy();
+  });
+
+  it("offers to start a demo from a plain wishlist card", async () => {
+    const setDemo = vi.fn(async () => {});
+    const wish = game({ status: "wishlist" });
+    act(() => useStore.setState({ viewing: null, games: [wish], setDemo }));
+    render(<GameActions game={wish} />);
+    expect(screen.queryByLabelText(/Log play time for/)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /Playing the demo/i }));
+    await waitFor(() => expect(setDemo).toHaveBeenCalledWith("g1", true));
+  });
+});

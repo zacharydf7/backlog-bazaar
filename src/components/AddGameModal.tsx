@@ -1,7 +1,7 @@
 import { trackEvent } from "../lib/appEvents";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { X, Store, Heart, Trophy, Plus, Lightbulb, Flag, FlagOff, Package, Lock, CalendarClock, EyeOff, Infinity as InfinityIcon, type LucideIcon } from "lucide-react";
+import { X, Store, Heart, Trophy, Plus, Lightbulb, Flag, FlagOff, Package, Lock, CalendarClock, EyeOff, FlaskConical, Infinity as InfinityIcon, type LucideIcon } from "lucide-react";
 import type { Game, GameCopy, GameMeta, GameStatus } from "../types";
 import { FINISH_TAGS, type FinishTag } from "../lib/finishTags";
 import { useStore } from "../store";
@@ -179,7 +179,7 @@ export function AddGameModal({
    *  to link the created card back to its recommendation (issue c48e8f6d). */
   onAdded?: (gameId: string) => void;
 }) {
-  const { games, addGame, attachCopies, removeGame, trackEditions, platformList, economy, economyEnabled, fetchCatalogGame, searchCatalogGames, fetchCatalogOverrides, fetchGameScreenshots, submitGameSubmission, parentTemplates, setPreorder, clearStreak, clearStreak_cfg } =
+  const { games, addGame, attachCopies, removeGame, trackEditions, platformList, economy, economyEnabled, fetchCatalogGame, searchCatalogGames, fetchCatalogOverrides, fetchGameScreenshots, submitGameSubmission, parentTemplates, setPreorder, setDemo, clearStreak, clearStreak_cfg } =
     useStore();
   // Community screenshots for the picked game, shown as a preview gallery.
   const [previewShots, setPreviewShots] = useState<string[]>([]);
@@ -229,6 +229,8 @@ export function AddGameModal({
   // Wishlist adds: the game was already pre-ordered when it's being added —
   // it lands marked, with an optional expected date (issue: pre-orders).
   const [preorderOn, setPreorderOn] = useState(false);
+  // A Wishlist add the player is trying as a demo (issue 02759349).
+  const [demoOn, setDemoOn] = useState(false);
   const [preorderDate, setPreorderDate] = useState("");
   // Extra metadata captured from a selected suggestion (cover art, id, genres).
   const [picked, setPicked] = useState<
@@ -568,6 +570,7 @@ export function AddGameModal({
   );
   const duplicateBlocked =
     liveDecision.kind === "blocked-duplicate-version" ? liveDecision : null;
+  const demoBlocked = liveDecision.kind === "blocked-demo" ? liveDecision.demo : null;
 
   // "Missing platform?": if a copy is tagged on a platform this catalogued game
   // isn't verified for, seamlessly file a platform edit-suggestion (the game is
@@ -623,6 +626,7 @@ export function AddGameModal({
       effectiveDestination === "backlog" && preorderOn && canOfferPreorder(meta.released)
         ? { expectedOn: preorderDate.trim() || null }
         : undefined;
+    const demoPlan = effectiveDestination === "wishlist" && demoOn;
     for (const g of groups) {
       const slice = versionHoursForGroup(hours, g.platform);
       if (g.action === "attach" && g.target) {
@@ -634,6 +638,7 @@ export function AddGameModal({
         if (preorderPlan && g.target.status === "backlog") {
           await setPreorder(g.target.id, preorderPlan.expectedOn);
         }
+        if (demoPlan && g.target.status === "wishlist") await setDemo(g.target.id, true);
       } else {
         const newId = await addGame(
           { ...meta, copies: g.copies },
@@ -647,6 +652,7 @@ export function AddGameModal({
             stealth: stealthRef.current,
             priority,
             preorder: preorderPlan,
+            demo: demoPlan,
           },
         );
         if (newId) onAdded?.(newId);
@@ -669,7 +675,7 @@ export function AddGameModal({
       setError("Choose the platform you own this game on before adding it.");
       return;
     }
-    if (duplicateBlocked) return; // surfaced inline; the button is disabled too
+    if (duplicateBlocked || demoBlocked) return; // surfaced inline; the button is disabled too
     stealthRef.current = stealth;
     // Ongoing games carry no owned-copy cost data — they're free-to-play live games.
     const copies = ongoing ? [] : rowsToCopies(copyRows);
@@ -683,7 +689,7 @@ export function AddGameModal({
       destination: effectiveDestination,
       copies,
     });
-    if (decision.kind === "blocked-duplicate-version") return; // inline, like duplicateBlocked
+    if (decision.kind === "blocked-duplicate-version" || decision.kind === "blocked-demo") return; // inline
     // Clear Streak guard (issue 01cc7662): only an add that actually INSERTS a
     // new game to play (Bazaar destination, at least one new card) breaks a live
     // streak — straight-to-Finished logs, wishlist wants, attach-only adds
@@ -1146,6 +1152,12 @@ export function AddGameModal({
                 )}
               </p>
             )}
+            {demoBlocked && (
+              <p className="text-xs text-danger">
+                You&apos;re playing the demo of this game. Use Get the full game on its card in Now
+                Playing, so your demo hours come with it.
+              </p>
+            )}
             {canRequestPlatform && allPlatforms && (
               <p className="text-xs text-subtle">
                 Showing every platform. Pick one this game isn&apos;t listed on and we&apos;ll send a
@@ -1203,6 +1215,28 @@ export function AddGameModal({
             </div>
             <p className="text-xs text-subtle">{DESTINATIONS.find((d) => d.value === destination)!.hint}</p>
           </div>
+          )}
+
+          {/* Trying the demo (issue 02759349): it stays a want, but sits in the
+              Demos row on Now Playing so its time can be logged. */}
+          {!ongoing && destination === "wishlist" && (
+            <label className="flex cursor-pointer items-start gap-2.5 rounded-xl border border-accent/30 bg-accent/5 px-3 py-2.5">
+              <input
+                type="checkbox"
+                checked={demoOn}
+                onChange={(e) => setDemoOn(e.target.checked)}
+                className="mt-0.5 h-4 w-4 shrink-0 accent-[var(--brand)]"
+              />
+              <span className="flex flex-col gap-0.5">
+                <span className="inline-flex items-center gap-1.5 text-sm font-medium text-ink">
+                  <FlaskConical size={14} className="text-accent" /> I&apos;m playing the demo
+                </span>
+                <span className="text-xs text-subtle">
+                  It goes in the Demos row on Now Playing so you can log your time. Demo time
+                  earns no coins; get the full game later and the hours come with it.
+                </span>
+              </span>
+            </label>
           )}
 
           {/* A pre-order goes in your BAZAAR — you bought it, it's part of
@@ -1326,7 +1360,7 @@ export function AddGameModal({
             <div className="flex flex-wrap gap-2">
               <button
                 type="submit"
-                disabled={!meta.title || platformMissing || duplicateBlocked != null}
+                disabled={!meta.title || platformMissing || duplicateBlocked != null || demoBlocked != null}
                 className="min-w-0 flex-1 basis-48 rounded-xl bg-brand px-3 py-2.5 font-semibold text-brand-fg shadow-sm transition hover:brightness-105 active:brightness-95 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {ongoing ? "Add to Library — free" : `Add to ${destinationNoun(destination)}`}
@@ -1337,7 +1371,7 @@ export function AddGameModal({
               <button
                 type="button"
                 onClick={() => void beginSubmit(true)}
-                disabled={!meta.title || platformMissing || duplicateBlocked != null}
+                disabled={!meta.title || platformMissing || duplicateBlocked != null || demoBlocked != null}
                 className="inline-flex min-w-0 items-center justify-center gap-1.5 rounded-xl border border-line bg-panel px-3 py-2.5 font-semibold text-muted transition hover:border-brand/50 hover:text-ink disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <EyeOff size={15} /> Stealth Add

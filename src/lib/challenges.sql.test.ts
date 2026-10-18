@@ -61,10 +61,12 @@ beforeAll(async () => {
     create table public.game_status_events (user_id uuid, game_id uuid, to_status text,
       created_at timestamptz not null default now());
     create table public.playtime_events (user_id uuid, game_id uuid, hours real, source text not null default 'live',
-      in_rotation boolean not null default false, created_at timestamptz not null default now());
+      in_rotation boolean not null default false, demo boolean not null default false, session_id uuid,
+      created_at timestamptz not null default now());
     create table public.action_undos (user_id uuid, game_id uuid, action text, undone_at timestamptz,
       created_at timestamptz not null default now());
-    create table public.play_sessions (user_id uuid, status text, ended_at timestamptz);
+    create table public.play_sessions (id uuid primary key default gen_random_uuid(), user_id uuid, status text,
+      ended_at timestamptz);
     create table public.review_events (user_id uuid, game_id uuid, review text, created_at timestamptz not null default now());
     create table public.rotation_checkins (user_id uuid, game_id uuid, created_at timestamptz not null default now());
     create table public.badges (id uuid primary key, name text, icon text, kind text not null default 'granted');
@@ -331,6 +333,31 @@ describe("evaluate_challenges + claim_challenge_rewards", () => {
 });
 
 describe("logged play", () => {
+  it("leaves a demo's time out of goals", async () => {
+    await db.exec(`insert into public.playtime_events (user_id, hours, demo) values ('${ME}', 2, true), ('${ME}', 1, false)`);
+    const r = await db.query<{ hours: number; days: number }>(
+      `select public.challenge_metric($1, 'hours_logged', now() - interval '1 day', now() + interval '1 day') as hours,
+              public.challenge_metric($1, 'play_days', now() - interval '1 day', now() + interval '1 day') as days`,
+      [ME],
+    );
+    expect([Number(r.rows[0].hours), Number(r.rows[0].days)]).toEqual([1, 1]);
+  });
+
+  it("leaves a demo's stopwatch sessions out of goals", async () => {
+    await db.exec(`
+      insert into public.play_sessions (id, user_id, status, ended_at) values
+        ('00000000-0000-4000-8000-0000000000d1', '${ME}', 'logged', now()),
+        ('00000000-0000-4000-8000-0000000000d2', '${ME}', 'logged', now());
+      insert into public.playtime_events (user_id, hours, demo, session_id)
+        values ('${ME}', 1, true, '00000000-0000-4000-8000-0000000000d1');
+    `);
+    const r = await db.query<{ v: number }>(
+      "select public.challenge_metric($1, 'stopwatch_sessions', now() - interval '1 day', now() + interval '1 day') as v",
+      [ME],
+    );
+    expect(Number(r.rows[0].v)).toBe(1);
+  });
+
   it("never counts below zero, even after a correction to catch-up time", async () => {
     await db.exec(`insert into public.playtime_events (user_id, hours, source) values
       ('${ME}', 12, 'backfill'), ('${ME}', 1.5, 'live'), ('${ME}', -2, 'live')`);

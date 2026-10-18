@@ -116,6 +116,7 @@ export interface GameRow {
   catalog_id: string | null;
   private: boolean | null;
   stealth: boolean | null;
+  demo?: boolean | null;
   priority: string | null;
   original_platform: string | null;
   compilation_game_for?: string | null;
@@ -215,6 +216,7 @@ export function rowToGame(r: GameRow): Game {
     catalogId: r.catalog_id ?? undefined,
     private: r.private ?? false,
     stealth: r.stealth ?? false,
+    demo: r.demo ?? false,
     priority: coerceGamePriority(r.priority),
     originalPlatform: r.original_platform ?? null,
     compilationGameFor: r.compilation_game_for ?? null,

@@ -417,6 +417,35 @@ describe("AddGameModal pre-submission routing", () => {
     useStore.setState({ games: [] });
   });
 
+  it("points a game you're demoing to the demo's Get the full game instead of a new card", async () => {
+    useStore.setState({
+      games: [libraryRow({ id: "demo1", status: "wishlist", demo: true, copies: [{ id: "c1", platform: "PC" }] })],
+    });
+    const addSpy = vi.spyOn(useStore.getState(), "addGame").mockResolvedValue(null);
+    render(<AddGameModal onClose={() => {}} />);
+    await pickZelda();
+    addCopyOn("PC");
+    expect(screen.getByText(/playing the demo of this game/i)).toBeTruthy();
+    expect((screen.getByRole("button", { name: /Add to Bazaar/i }) as HTMLButtonElement).disabled).toBe(true);
+    expect(addSpy).not.toHaveBeenCalled();
+    addSpy.mockRestore();
+    useStore.setState({ games: [] });
+  });
+
+  it("adds a Wishlist game as a demo being played when ticked", async () => {
+    const addSpy = vi.spyOn(useStore.getState(), "addGame").mockResolvedValue(null);
+    render(<AddGameModal onClose={() => {}} />);
+    await pickZelda();
+    fireEvent.click(screen.getByRole("button", { name: "Wishlist" }));
+    addCopyOn("PC");
+    fireEvent.click(screen.getByRole("checkbox", { name: /playing the demo/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Add to Wishlist/i }));
+    await waitFor(() => expect(addSpy).toHaveBeenCalled());
+    expect(addSpy.mock.calls[0][1]).toBe("wishlist");
+    expect(addSpy.mock.calls[0][3]).toMatchObject({ demo: true });
+    addSpy.mockRestore();
+  });
+
   it("notes the fulfilled wishlist entry will be removed, and removes it on confirm", async () => {
     useStore.setState({ games: [libraryRow({ id: "wish1", status: "wishlist", copies: [] })] });
     const addSpy = vi.spyOn(useStore.getState(), "addGame").mockResolvedValue(null);

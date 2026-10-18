@@ -888,6 +888,43 @@ alter table public.games add column if not exists private boolean not null defau
 -- (existing games default to non-stealth).
 alter table public.games add column if not exists stealth boolean not null default false;
 
+-- demo (issue 02759349, 2026-10-18): a wishlist game the player is trying as a
+-- demo. It isn't owned, so like any wishlist entry it uses no lane, can't be
+-- finished or shelved, and never breaks the Clear Streak; the flag only lets
+-- time be logged on it, and that time earns nothing (no Daily Session bonus,
+-- no goal progress: playtime_events.demo). "Get the full game" imports it as
+-- usual, keeping its hours. The flag means nothing off the wishlist, so it
+-- clears when the game leaves it. Owner-settable: it only ever lets a player
+-- log coin-free time. Additive; existing games default to false.
+alter table public.games add column if not exists demo boolean not null default false;
+
+create or replace function public.games_clear_demo()
+returns trigger
+language plpgsql
+set search_path = public
+as $$
+begin
+  if new.status <> 'wishlist' then
+    new.demo := false;
+  end if;
+  return new;
+end;
+$$;
+drop trigger if exists games_clear_demo on public.games;
+create trigger games_clear_demo
+  before insert or update of status, demo on public.games
+  for each row execute function public.games_clear_demo();
+
+-- Can time be logged on a game in this state? Playing; Finished, as a drop-in
+-- (issue f40bf121); or a wishlist demo. Mirrors canLogTime in src/lib/dropIns.ts.
+create or replace function public.game_takes_time(p_status text, p_demo boolean)
+returns boolean
+language sql
+immutable
+as $$
+  select p_status in ('playing', 'finished') or (p_status = 'wishlist' and coalesce(p_demo, false));
+$$;
+
 -- resumed: true while a FINISHED game has been pulled back into play for free —
 -- via a Replay slot or by resuming it into an Endless slot. It marks the game as
 -- a replay so re-finishing pays the smaller Replay Bonus (never the full bounty
@@ -9253,6 +9290,10 @@ declare
   v_title  text;
 begin
   if p_user is null or p_hours is null or p_hours <= 0 then return 0; end if;
+  -- A demo's time earns nothing (issue 02759349).
+  if exists (select 1 from public.games where id = p_game and status = 'wishlist' and demo) then
+    return 0;
+  end if;
   perform 1 from public.profiles where id = p_user for update;
   select session_bonus, session_bonus_min_minutes, session_bonus_daily_cap,
          coalesce(nullif(btrim(rotation_reset_tz), ''), 'UTC')
@@ -9301,6 +9342,7 @@ declare
   v_regular   integer := 0;
   v_checkin   integer;
   v_status    text;
+  v_demo      boolean;
   v_note      text := nullif(btrim(p_note), '');
 begin
   if p_hours is null or p_hours <= 0 then
@@ -9313,8 +9355,9 @@ begin
   -- Ownership first, so the pact checks below can never probe another player's
   -- card ids. A Finished (or Retired) game takes time as a drop-in session
   -- (issue f40bf121): it stays where it is, and the time counts like any play.
-  select status into v_status from public.games where id = p_game and user_id = auth.uid();
-  if v_status is null or v_status not in ('playing', 'finished') then
+  -- A wishlist demo (issue 02759349) takes it too, earning nothing.
+  select status, demo into v_status, v_demo from public.games where id = p_game and user_id = auth.uid();
+  if v_status is null or not public.game_takes_time(v_status, v_demo) then
     raise exception 'Game not available to log time';
   end if;
   if v_status = 'finished' then
@@ -9656,10 +9699,11 @@ declare
   v_merged  jsonb;
   v_copy    jsonb;
   v_stealth boolean; -- either side stealth = no feed post (issue 4604769c)
+  v_demo    boolean;
 begin
   select g.title, g.rawg_id, g.igdb_id, g.catalog_id, coalesce(g.copies, '[]'::jsonb),
-         coalesce(g.stealth, false)
-    into v_title, v_rawg, v_igdb, v_catalog, v_copies, v_stealth
+         coalesce(g.stealth, false), g.demo
+    into v_title, v_rawg, v_igdb, v_catalog, v_copies, v_stealth, v_demo
     from public.games g
    where g.id = p_game and g.user_id = auth.uid() and g.status = 'wishlist'
      for update;
@@ -9678,7 +9722,7 @@ begin
   -- "the same platform's card"; a platform-less want matches any owned card).
   -- With no covering card the entry flips to backlog as its own instance —
   -- a foreign platform is never smeared onto another platform's card.
-  -- Mirrors mergeWishlistIntoOwned in src/lib/addRouting.ts.
+  -- Mirrors ownedInstanceCovering in src/lib/addRouting.ts.
   select g.id into v_target
     from public.games g
    where g.user_id = auth.uid() and g.id <> p_game
@@ -9702,6 +9746,12 @@ begin
             g.added_at asc, g.id asc
    limit 1
    for update;
+
+  -- A demo whose platform you already own can't become a second card for it,
+  -- and merging would drop its logged hours (issue 02759349).
+  if v_demo and v_target is not null then
+    raise exception 'You already own this game on that platform';
+  end if;
 
   if v_target is null then
     -- No owned copy: the classic import — the wishlist row itself moves into
@@ -12203,6 +12253,9 @@ alter table public.playtime_events add constraint playtime_events_source_check
 -- (app.play_note). Additive; existing rows stay false / null.
 alter table public.playtime_events add column if not exists drop_in boolean not null default false;
 alter table public.playtime_events add column if not exists note    text;
+-- demo (issue 02759349): logged on a wishlist demo, so it earns nothing and
+-- counts toward no goal (challenge_metric), though totals and the recap keep it.
+alter table public.playtime_events add column if not exists demo    boolean not null default false;
 alter table public.playtime_events drop constraint if exists playtime_events_note_check;
 alter table public.playtime_events add constraint playtime_events_note_check
   check (note is null or char_length(note) <= 140);
@@ -12306,12 +12359,13 @@ begin
     end;
     insert into public.playtime_events
       (user_id, game_id, game_title, hours, played_after, platform, format, genres, developers, game_hours,
-       pact_id, session_id, source, in_rotation, drop_in, note)
+       pact_id, session_id, source, in_rotation, drop_in, note, demo)
     values (new.user_id, new.id, new.title, new.played_hours - old.played_hours, new.played_hours,
             v_platform, v_format, new.genres, new.developers, new.hours, v_pact, v_session, v_source,
             coalesce(new.in_rotation, false),
             coalesce(current_setting('app.play_drop_in', true), '') = '1',
-            nullif(current_setting('app.play_note', true), ''));
+            nullif(current_setting('app.play_note', true), ''),
+            new.status = 'wishlist' and coalesce(new.demo, false));
   end if;
   return new;
 end;
@@ -12705,7 +12759,7 @@ declare
 begin
   select title into v_title
     from public.games
-   where id = p_game and user_id = auth.uid() and status in ('playing', 'finished');
+   where id = p_game and user_id = auth.uid() and public.game_takes_time(status, demo);
   if v_title is null then
     raise exception 'Game not available to track';
   end if;
@@ -12782,10 +12836,10 @@ begin
   if v_hours > v_elapsed then v_hours := v_elapsed; end if;  -- trim only, never inflate
   v_hours := round(v_hours * 60.0) / 60.0;
 
-  -- Still loggable: playing, or Finished as a drop-in (log_playtime's rule).
+  -- Still loggable (log_playtime's rule).
   v_playing := v_sess.game_id is not null and exists (
     select 1 from public.games g
-     where g.id = v_sess.game_id and g.user_id = auth.uid() and g.status in ('playing', 'finished'));
+     where g.id = v_sess.game_id and g.user_id = auth.uid() and public.game_takes_time(g.status, g.demo));
 
   if v_hours < (1.0 / 60.0) or not v_playing then
     update public.play_sessions
@@ -13721,6 +13775,55 @@ drop trigger if exists games_log_visibility on public.games;
 create trigger games_log_visibility
   after update of private on public.games
   for each row execute function public.log_game_visibility_event();
+
+-- Demo history (issue 02759349): one append-only row each time a game starts
+-- or stops being a demo (marked, unmarked, or cleared on leaving the
+-- wishlist), since games.demo overwrites in place. Same posture as
+-- game_visibility_events: trigger-written, read-own + admin, title snapshot.
+-- No backfill: demos are new.
+create table if not exists public.game_demo_events (
+  id          uuid primary key default gen_random_uuid(),
+  user_id     uuid not null references auth.users (id) on delete cascade,
+  game_id     uuid references public.games (id) on delete set null,
+  game_title  text,
+  demo        boolean not null,
+  created_at  timestamptz not null default now()
+);
+create index if not exists game_demo_events_user_idx
+  on public.game_demo_events (user_id, created_at desc, id desc);
+create index if not exists game_demo_events_game_idx
+  on public.game_demo_events (game_id);
+
+alter table public.game_demo_events enable row level security;
+revoke insert, update, delete on public.game_demo_events from authenticated, anon;
+
+drop policy if exists "game_demo_events_select" on public.game_demo_events;
+create policy "game_demo_events_select" on public.game_demo_events
+  for select to authenticated using (
+    auth.uid() = user_id
+    or exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin)
+  );
+
+-- Fires on status too: leaving the wishlist clears the flag in a BEFORE
+-- trigger, which a column-specific AFTER UPDATE OF demo would miss.
+create or replace function public.log_game_demo_event()
+returns trigger
+language plpgsql
+security definer set search_path = public
+as $$
+begin
+  if new.demo is distinct from (case when tg_op = 'INSERT' then false else old.demo end) then
+    insert into public.game_demo_events (user_id, game_id, game_title, demo)
+    values (new.user_id, new.id, new.title, new.demo);
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists games_log_demo on public.games;
+create trigger games_log_demo
+  after insert or update of status, demo on public.games
+  for each row execute function public.log_game_demo_event();
 
 -- ---------------------------------------------------------------------------
 -- Community board history (audit/event logging — Phase B). One append-only,
@@ -15557,6 +15660,7 @@ begin
   delete from public.playtime_events        where user_id = v_uid;
   delete from public.game_status_events     where user_id = v_uid;
   delete from public.game_visibility_events where user_id = v_uid;
+  delete from public.game_demo_events       where user_id = v_uid;
   delete from public.copy_events            where user_id = v_uid;
   delete from public.game_dlc_events        where user_id = v_uid;
   delete from public.game_dlc               where user_id = v_uid;
@@ -19543,14 +19647,17 @@ as $$
   union all
   select 'best_streak', coalesce((select clear_streak_best from public.profiles where id = p_user), 0)::numeric
   union all
-  -- Different days with play logged, in the player's own timezone.
+  -- Different days with play logged, in the player's own timezone. Demo
+  -- time earns nothing (issue 02759349), so it moves no medal here or below.
   select 'play_days', count(distinct (e.created_at at time zone public.player_tz(p_user))::date)::numeric
     from public.playtime_events e
-   where e.user_id = p_user and e.hours > 0 and public.is_live_play(e.source, e.hours)
+   where e.user_id = p_user and e.hours > 0 and public.is_live_play(e.source, e.hours) and not e.demo
   union all
   select 'stopwatch_sessions', count(*)::numeric
     from public.play_sessions s
    where s.user_id = p_user and s.status = 'logged'
+     and not exists (select 1 from public.playtime_events e
+                      where e.user_id = p_user and e.session_id = s.id and e.demo)
   union all
   -- Clears of games that waited a year or more in the library.
   select 'backlog_year_clears',
@@ -19600,7 +19707,7 @@ as $$
   -- Play logged between midnight and 4am in the player's own timezone.
   select 'night_owl_logs', count(*)::numeric
     from public.playtime_events e
-   where e.user_id = p_user and e.hours > 0 and public.is_live_play(e.source, e.hours)
+   where e.user_id = p_user and e.hours > 0 and public.is_live_play(e.source, e.hours) and not e.demo
      and extract(hour from e.created_at at time zone public.player_tz(p_user)) < 4
   union all
   -- Compilations with every game (2+) cleared.
@@ -19939,7 +20046,7 @@ as $$
       from public.playtime_events e
       join public.games g on g.id = e.game_id
      where p_metric in ('games_played', 'revisits')
-       and e.user_id = p_user and e.hours > 0 and public.is_live_play(e.source, e.hours)
+       and e.user_id = p_user and e.hours > 0 and public.is_live_play(e.source, e.hours) and not e.demo
        and e.created_at >= p_from - interval '30 days' and e.created_at < p_to
   )
   select (case p_metric
@@ -19950,16 +20057,18 @@ as $$
       (select count(*) from clears c where c.finished - c.added_at >= interval '365 days')
     when 'hours_logged' then
       (select greatest(coalesce(sum(e.hours), 0), 0) from public.playtime_events e
-        where e.user_id = p_user and public.is_live_play(e.source, e.hours)
+        where e.user_id = p_user and public.is_live_play(e.source, e.hours) and not e.demo
           and e.created_at >= p_from and e.created_at < p_to)
     when 'play_days' then
       (select count(distinct (e.created_at at time zone public.player_tz(p_user))::date)
          from public.playtime_events e
-        where e.user_id = p_user and e.hours > 0 and public.is_live_play(e.source, e.hours)
+        where e.user_id = p_user and e.hours > 0 and public.is_live_play(e.source, e.hours) and not e.demo
           and e.created_at >= p_from and e.created_at < p_to)
     when 'stopwatch_sessions' then
       (select count(*) from public.play_sessions s
-        where s.user_id = p_user and s.status = 'logged' and s.ended_at >= p_from and s.ended_at < p_to)
+        where s.user_id = p_user and s.status = 'logged' and s.ended_at >= p_from and s.ended_at < p_to
+          and not exists (select 1 from public.playtime_events e
+                           where e.user_id = p_user and e.session_id = s.id and e.demo))
     when 'reviews_written' then
       (select count(*) from (
          select r.game_id, min(r.created_at) as first_written

@@ -28,7 +28,10 @@ import {
   CloudOff,
   Sparkles,
   BadgePercent,
+  FlaskConical,
 } from "lucide-react";
+import { isDemo } from "../lib/demos";
+import { ownedInstanceCovering } from "../lib/addRouting";
 import type { Game } from "../types";
 import { useStore, selectCoachTarget } from "../store";
 import { ActivationModal } from "./ActivationModal";
@@ -349,6 +352,7 @@ export function GameActions({
     logPlaytime,
     abandonGame,
     importFromWishlist,
+    setDemo,
     fulfillPreorder,
     setProgressNote,
     fetchPlaySessions,
@@ -597,7 +601,7 @@ export function GameActions({
   // Pre-select the version you last logged time on, so returning to log more time
   // defaults to the same one instead of resetting to the first.
   useEffect(() => {
-    if ((game.status !== "playing" && !dropInOpen) || !showVersionPicker) return;
+    if ((game.status !== "playing" && !dropInOpen && !isDemo(game)) || !showVersionPicker) return;
     let active = true;
     void fetchPlaySessions(game.id).then((sessions) => {
       if (!active) return;
@@ -1754,7 +1758,33 @@ export function GameActions({
         </div>
       )}
 
-      {game.status === "wishlist" && (
+      {isDemo(game) && (
+        <div className="flex flex-col gap-2">
+          <span className="inline-flex items-center gap-1.5 text-xs text-muted">
+            <FlaskConical size={13} className="text-accent" /> Playing the demo · its time earns no coins
+          </span>
+          {playLogger}
+          {/* Getting the full game is the usual import (the purchase comes
+              after, in the Bazaar); the demo's hours stay on the card. Owning
+              it on this platform already, there's nothing to get. */}
+          {ownedInstanceCovering(games, game) ? (
+            <p className="text-center text-[11px] text-subtle">
+              You already own this on that platform: log your time on that card, and remove the
+              demo when you&apos;re done.
+            </p>
+          ) : (
+            <button
+              onClick={() => withSessionStopped(() => importFromWishlist(game.id))}
+              title="Move this into your Bazaar with its hours, ready to buy"
+              className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-brand px-3 py-2 text-sm font-semibold text-brand-fg shadow-stamp-sm transition hover:brightness-105 active:translate-x-px active:translate-y-px active:shadow-none"
+            >
+              <Stamp size={15} /> Get the full game
+            </button>
+          )}
+        </div>
+      )}
+
+      {game.status === "wishlist" && !isDemo(game) && (
         <div className="flex flex-col gap-2">
           <span className="inline-flex items-center gap-1.5 text-xs text-muted">
             <Heart size={13} /> On your wishlist
@@ -1769,6 +1799,13 @@ export function GameActions({
             className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-brand px-3 py-2 text-sm font-semibold text-brand-fg shadow-stamp-sm transition hover:brightness-105 active:translate-x-px active:translate-y-px active:shadow-none"
           >
             <Stamp size={15} /> Import to your Bazaar
+          </button>
+          <button
+            onClick={() => void setDemo(game.id, true)}
+            title="Log time on its demo from the Demos row on Now Playing"
+            className="inline-flex items-center justify-center gap-1.5 text-xs text-subtle transition hover:text-ink"
+          >
+            <FlaskConical size={13} /> Playing the demo?
           </button>
         </div>
       )}

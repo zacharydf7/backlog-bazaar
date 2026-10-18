@@ -31,11 +31,13 @@ beforeAll(async () => {
       as $$ select nullif(current_setting('test.uid', true), '')::uuid $$;
     create table public.games (id uuid primary key, user_id uuid, title text, played_hours real not null default 0,
       copies jsonb not null default '[]'::jsonb, genres jsonb, developers jsonb, hours real,
-      in_rotation boolean not null default false);
+      in_rotation boolean not null default false, status text not null default 'playing',
+      demo boolean not null default false);
     create table public.playtime_events (user_id uuid, game_id uuid, game_title text, hours real, played_after real,
       platform text, format text, genres jsonb, developers jsonb, game_hours real, pact_id uuid, session_id uuid,
       source text not null default 'live', in_rotation boolean not null default false,
-      drop_in boolean not null default false, note text, created_at timestamptz not null default now());
+      drop_in boolean not null default false, note text, demo boolean not null default false,
+      created_at timestamptz not null default now());
     create table public.bonus_calls (hours real);
     create function public.rotation_play_rewards(p_game uuid) returns table (milestone integer, regular integer, checkin integer)
       language sql as $$ select 0, 0, null::integer $$;

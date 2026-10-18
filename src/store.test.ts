@@ -789,6 +789,36 @@ describe("local-mode store", () => {
     expect(store().games[0].bountyHeld).toBe(0);
   });
 
+  it("marks a wishlist game as a demo and logs its time, paying nothing", async () => {
+    await store().addGame(sampleMeta(), "wishlist");
+    const id = store().games[0].id;
+    const coins = store().coins;
+
+    await store().logPlaytime(id, 1); // not a demo yet: refused
+    expect(store().games[0].playedHours ?? 0).toBe(0);
+
+    await store().setDemo(id, true);
+    await store().logPlaytime(id, 1.5);
+    expect(store().games[0]).toMatchObject({ status: "wishlist", demo: true, playedHours: 1.5 });
+    expect(store().coins).toBe(coins);
+  });
+
+  it("stops being a demo once it leaves the wishlist, even if it comes back", async () => {
+    await store().addGame(sampleMeta(), "wishlist", null, { demo: true });
+    const id = store().games[0].id;
+    await store().importFromWishlist(id, { preorder: "skip" });
+    await store().bazaarToWishlist(id);
+    expect(store().games[0]).toMatchObject({ status: "wishlist", demo: false });
+  });
+
+  it("won't import a demo you already own on that platform", async () => {
+    await store().addGame(sampleMeta({ rawgId: 7, copies: [{ id: "c1", platform: "PC" }] }), "backlog");
+    await store().addGame(sampleMeta({ rawgId: 7, copies: [{ id: "c2", platform: "PC" }] }), "wishlist", null, { demo: true });
+    const demo = store().games.find((g) => g.status === "wishlist")!;
+    await store().importFromWishlist(demo.id, { preorder: "skip" });
+    expect(store().games.find((g) => g.id === demo.id)).toMatchObject({ status: "wishlist", demo: true });
+  });
+
   it("ignores play-time logs for games that aren't playing", async () => {
     await store().addGame(sampleMeta()); // still in backlog
     const coins = store().coins;

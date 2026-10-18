@@ -99,6 +99,7 @@ import type {
 import { summarizePlatformPlaytime, type PlaySession } from "./lib/platformPlaytime";
 import type { ActivePlaySession } from "./lib/playSessions";
 import { canLogTime } from "./lib/dropIns";
+import { isDemo } from "./lib/demos";
 import { downscaleImage } from "./lib/image";
 import { isAppearOffline, PRIVACY_KEYS } from "./lib/privacy";
 import {
@@ -376,7 +377,7 @@ import {
   type IdentityLinkRow,
   type IdentityLinkStatus,
 } from "./lib/identityLinks";
-import { mergeWishlistIntoOwned, type VersionHours } from "./lib/addRouting";
+import { mergeWishlistIntoOwned, ownedInstanceCovering, type VersionHours } from "./lib/addRouting";
 import {
   totalCost as copiesTotalCost,
   ownedPlatformSummary,
@@ -1344,6 +1345,8 @@ interface BazaarState {
       // no activity-feed broadcasts ever, and the Clear Streak is untouched in
       // both directions (no break on add, no extension on finish).
       stealth?: boolean;
+      // A wishlist add the player is trying as a demo (issue 02759349).
+      demo?: boolean;
       // Triage tier picked on the Add form (issue 901eb363); null/absent =
       // unassigned. The INSERT audit trigger logs the assignment.
       priority?: GamePriority | null;
@@ -1552,6 +1555,8 @@ interface BazaarState {
   regainAccess: (id: string) => Promise<void>;
   lapseService: (provider: string) => Promise<void>;
   setGamePrivate: (id: string, value: boolean) => Promise<void>;
+  // Mark a wishlist game as a demo you're playing, or not (issue 02759349).
+  setDemo: (id: string, value: boolean) => Promise<void>;
   // Set (or clear, with null) a game's triage tier (issue 901eb363). Personal
   // metadata only — never touches the economy; history lands server-side in
   // game_priority_events.
@@ -5147,6 +5152,7 @@ export const useStore = create<BazaarState>((set, get) => ({
         // and the Clear Streak for the game's whole life.
         private: opts?.private || opts?.stealth || undefined,
         stealth: opts?.stealth || undefined,
+        demo: (status === "wishlist" && opts?.demo) || undefined,
         priority: opts?.priority ?? undefined,
         preorderedAt: preorder ? Date.now() : undefined,
         preorderExpectedOn: preorder?.expectedOn ?? undefined,
@@ -5218,6 +5224,7 @@ export const useStore = create<BazaarState>((set, get) => ({
         // mutes the game's broadcasts and streak effects server-side.
         private: (opts?.private || opts?.stealth) ?? false,
         stealth: opts?.stealth ?? false,
+        demo: status === "wishlist" && opts?.demo === true,
         priority: opts?.priority ?? null,
         // Added-as-pre-ordered: the row lands marked, and the INSERT audit
         // trigger logs the 'placed' event.
@@ -5918,6 +5925,12 @@ export const useStore = create<BazaarState>((set, get) => ({
     const { cloud, games, coins } = get();
     const game = games.find((g) => g.id === id);
     if (!game || game.status !== "wishlist") return;
+    // A demo of a game you already own on that platform would be a second card
+    // for it (import_from_wishlist refuses the same).
+    if (isDemo(game) && ownedInstanceCovering(games, game)) {
+      toast(`You already own ${game.title} on that platform`, Stamp);
+      return;
+    }
 
     // A game the catalog says isn't out yet is almost certainly a pre-order —
     // intercept into the "did you pre-order it?" prompt before moving
@@ -5950,6 +5963,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     const markPreorder = (g: Game): Game => ({
       ...g,
       status: "backlog" as const,
+      demo: false,
       preorderedAt: Date.now(),
       preorderExpectedOn: plan?.expectedOn ?? null,
       copies: plan?.copies ?? g.copies,
@@ -5963,7 +5977,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       const next = mergeRes.mergedInto
         ? mergeRes.games
         : games.map((g) =>
-            g.id === id ? (plan ? markPreorder(g) : { ...g, status: "backlog" as const }) : g,
+            g.id === id ? (plan ? markPreorder(g) : { ...g, status: "backlog" as const, demo: false }) : g,
           );
       // Importing moves a wishlist want into the owned library — an acquisition,
       // so it breaks the Clear Streak (mirrors the server break-streak trigger).
@@ -6013,7 +6027,7 @@ export const useStore = create<BazaarState>((set, get) => ({
       set({
         preorderImportPromptId: null,
         games: get().games.map((g) =>
-          g.id === id ? (plan ? markPreorder(g) : { ...g, status: "backlog" as const }) : g,
+          g.id === id ? (plan ? markPreorder(g) : { ...g, status: "backlog" as const, demo: false }) : g,
         ),
       });
       // The what-you-paid amount rides the copies column — informational
@@ -7884,6 +7898,22 @@ export const useStore = create<BazaarState>((set, get) => ({
     }
     if (!supabase) return;
     const { error } = await supabase.from("games").update({ private: value }).eq("id", id);
+    if (error) set({ error: error.message });
+  },
+
+  setDemo: async (id, value) => {
+    const { cloud, games, coins } = get();
+    const game = games.find((g) => g.id === id);
+    if (!game || game.status !== "wishlist" || (game.demo ?? false) === value) return;
+    const next = games.map((g) => (g.id === id ? { ...g, demo: value } : g));
+    set({ games: next });
+
+    if (!cloud) {
+      saveLocal(coins, next);
+      return;
+    }
+    if (!supabase) return;
+    const { error } = await supabase.from("games").update({ demo: value }).eq("id", id);
     if (error) set({ error: error.message });
   },
 

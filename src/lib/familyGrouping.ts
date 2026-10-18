@@ -11,6 +11,7 @@ import type { Game, GameStatus } from "../types";
 import { familyName, familyPrimary } from "./families";
 import { gameMatches, type Filters } from "./bazaarView";
 import { gameMatchesQuery } from "./librarySearch";
+import { isDemo } from "./demos";
 
 /** A folded family, ready to render as one unified card. */
 export interface UnifiedFamily {
@@ -46,7 +47,8 @@ export function groupCollapsedFamilies(games: Game[]): {
 } {
   const byFamily = new Map<string, Game[]>();
   for (const g of games) {
-    if (g.familyId == null) continue;
+    // A demo stays its own card, in the Demos row on Now Playing.
+    if (g.familyId == null || isDemo(g)) continue;
     const list = byFamily.get(g.familyId);
     if (list) list.push(g);
     else byFamily.set(g.familyId, [g]);

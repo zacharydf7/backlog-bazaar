@@ -17,6 +17,15 @@ const game = (id: string, over: Partial<Game> = {}): Game => ({
 });
 
 describe("groupCollapsedFamilies", () => {
+  it("never folds a demo into a family card, so it reaches the Demos row", () => {
+    const a = game("a", { familyId: "F", status: "backlog" });
+    const b = game("b", { familyId: "F", status: "finished" });
+    const demo = game("d", { familyId: "F", status: "wishlist", demo: true });
+    const { boardGames, families } = groupCollapsedFamilies([a, b, demo]);
+    expect(boardGames.map((g) => g.id)).toEqual(["d"]);
+    expect(families[0].members.map((g) => g.id)).toEqual(["a", "b"]);
+  });
+
   it("folds a ≥2-member family into one card and hides its members", () => {
     const a = game("a", { familyId: "F", status: "finished", playedHours: 10 });
     const b = game("b", { familyId: "F", status: "playing", playedHours: 5 });

@@ -41,6 +41,19 @@ export interface Release {
 export const RELEASES: Release[] = [
   // ── October 2026 ──────────────────────────────────────────────────────────
   {
+    id: "2026-10-18-demos",
+    date: "2026-10-18",
+    title: "Track the demos you play",
+    summary: "Trying a demo? Log your time on it, then keep those hours when you get the full game.",
+    tag: "feature",
+    items: [
+      "Tick I'm playing the demo when you add a game to your Wishlist.",
+      "Demos sit in their own row on Now Playing.",
+      "Demo time earns no coins and doesn't count toward goals.",
+      "Get the full game and your demo hours come along.",
+    ],
+  },
+  {
     id: "2026-10-18-drop-in-sessions",
     date: "2026-10-18",
     title: "Log time on finished games",

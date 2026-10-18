@@ -13,6 +13,7 @@
 
 import type { CopyFormat, Game, GameCopy, GameMeta, GameStatus } from "../types";
 import { catalogKey } from "./ownershipMerge";
+import { isDemo } from "./demos";
 import {
   ownedPlatformSummary,
   ownedVersions,
@@ -53,6 +54,10 @@ export type AddRouteDecision =
    *  `duplicateVersions` are the existing versions collided with; empty means
    *  "you have this game — pick a specific new version". */
   | { kind: "blocked-duplicate-version"; target: Game; duplicateVersions: OwnedVersion[] }
+  /** You're playing a demo of this game on a platform this add would make a
+   *  new card for: the full game comes from the demo ("Get the full game"), so
+   *  its hours reach the card you buy (issue 02759349). */
+  | { kind: "blocked-demo"; demo: Game }
   /** The add lands on or beside existing instances — confirm before executing:
    *  each group either attaches to its target or becomes a new card, and every
    *  `intercepts` wishlist entry is fulfilled by this add and will be removed
@@ -272,11 +277,25 @@ export function routeAdd(input: {
       }
     }
 
+    const demo = wishRows.find(
+      (w) =>
+        isDemo(w) &&
+        groups.some((g) => {
+          if (g.action !== "new") return false;
+          const platforms = instancePlatforms(w);
+          return g.platform == null || platforms.length === 0 || platforms.includes(g.platform);
+        }),
+    );
+    if (demo) return { kind: "blocked-demo", demo };
+
     // Wishlist entries this add fulfills (their platform is being bought, or
     // they list no platform — an ambiguous want any add satisfies). Removed on
     // confirm, and the dialog says so. A wishlist entry for a platform
     // NOT being added is simply untouched — it keeps hunting its own version.
+    // A demo is never removed this way: its logged hours live on its card
+    // (issue 02759349).
     const intercepts = wishRows.filter((w) => {
+      if (isDemo(w)) return false;
       const platforms = instancePlatforms(w);
       if (platforms.length === 0) return true;
       return platforms.some((p) => requestedPlatforms.has(p));
@@ -375,6 +394,23 @@ export function versionHoursForGroup(
   return hours.filter((vh) => vh.platform === platform);
 }
 
+/** The owned standalone instance a wishlist entry's platforms fall on: the one
+ *  covering EVERY platform it lists (a platform-less entry: the best owned
+ *  instance). Null when there's none. Mirrors import_from_wishlist's lookup. */
+export function ownedInstanceCovering(games: Game[], row: Game): Game | null {
+  const key = catalogKey(row);
+  if (!key) return null;
+  const owned = standaloneMatches(games, key).filter(
+    (g) => g.id !== row.id && g.status !== "wishlist",
+  );
+  const rowPlatforms = instancePlatforms(row);
+  const candidates = owned.filter((g) => {
+    const have = instancePlatforms(g);
+    return rowPlatforms.every((p) => have.includes(p));
+  });
+  return candidates.length === 0 ? null : pickBest(candidates);
+}
+
 /** Offline mirror of the wishlist-import merge (the SQL in
  *  import_from_wishlist), platform-aware: importing a wishlist entry merges into
  *  the owned standalone instance that covers EVERY platform the entry lists
@@ -390,18 +426,8 @@ export function mergeWishlistIntoOwned(
 ): { games: Game[]; mergedInto: string | null; mergedCopies: GameCopy[] } {
   const row = games.find((g) => g.id === wishlistId && g.status === "wishlist");
   if (!row) return { games, mergedInto: null, mergedCopies: [] };
-  const key = catalogKey(row);
-  if (!key) return { games, mergedInto: null, mergedCopies: [] };
-  const owned = standaloneMatches(games, key).filter(
-    (g) => g.id !== row.id && g.status !== "wishlist",
-  );
-  const rowPlatforms = instancePlatforms(row);
-  const candidates = owned.filter((g) => {
-    const have = instancePlatforms(g);
-    return rowPlatforms.every((p) => have.includes(p));
-  });
-  if (candidates.length === 0) return { games, mergedInto: null, mergedCopies: [] };
-  const target = pickBest(candidates);
+  const target = ownedInstanceCovering(games, row);
+  if (!target) return { games, mergedInto: null, mergedCopies: [] };
 
   // Conflict-based skip (not just exact version match): a format-less wishlist
   // copy for a platform already owned in some format is a duplicate, not new.

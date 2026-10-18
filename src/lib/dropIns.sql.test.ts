@@ -34,17 +34,21 @@ beforeAll(async () => {
     create table public.games (id uuid primary key, user_id uuid, title text, status text not null,
       played_hours real not null default 0, copies jsonb not null default '[]'::jsonb, genres jsonb,
       developers jsonb, hours real, in_rotation boolean not null default false,
-      private boolean not null default false, stealth boolean not null default false);
+      private boolean not null default false, stealth boolean not null default false,
+      demo boolean not null default false);
     create table public.profiles (id uuid primary key, coins integer not null default 0);
     create table public.playtime_events (user_id uuid, game_id uuid, game_title text, hours real, played_after real,
       platform text, format text, genres jsonb, developers jsonb, game_hours real, pact_id uuid, session_id uuid,
       source text not null default 'live', in_rotation boolean not null default false,
-      drop_in boolean not null default false, note text, created_at timestamptz not null default now());
+      drop_in boolean not null default false, note text, demo boolean not null default false,
+      created_at timestamptz not null default now());
     create table public.co_op_pacts (id uuid primary key, status text, inviter_game uuid, invitee_game uuid,
       inviter_finished_at timestamptz);
     create table public.play_sessions (id uuid primary key default gen_random_uuid(), user_id uuid, game_id uuid,
       game_title text, platform text, format text, status text not null default 'active',
       started_at timestamptz not null default now(), ended_at timestamptz, logged_hours real);
+    create table public.game_demo_events (user_id uuid, game_id uuid, game_title text, demo boolean,
+      created_at timestamptz not null default now());
     create table public.activity_events (actor uuid, kind text, game_id uuid, game_title text,
       detail jsonb not null default '{}'::jsonb, created_at timestamptz not null default now());
     create function public.pay_session_bonus(p_user uuid, p_game uuid, p_hours real) returns integer
@@ -52,7 +56,13 @@ beforeAll(async () => {
     create function public.rotation_play_rewards(p_game uuid) returns table (milestone integer, regular integer, checkin integer)
       language sql as $$ select 0, 0, null::integer $$;
   `);
-  await db.exec(fn("log_playtime_event"));
+  for (const name of ["game_takes_time", "games_clear_demo", "log_game_demo_event", "log_playtime_event"]) {
+    await db.exec(fn(name));
+  }
+  await db.exec(`create trigger games_log_demo after insert or update of status, demo on public.games
+    for each row execute function public.log_game_demo_event()`);
+  await db.exec(`create trigger games_clear_demo before insert or update of status, demo on public.games
+    for each row execute function public.games_clear_demo()`);
   await db.exec(`create trigger games_log_playtime after update of played_hours on public.games
     for each row execute function public.log_playtime_event()`);
   for (const name of ["log_playtime", "start_play_session", "end_play_session"]) await db.exec(fn(name));
@@ -66,6 +76,7 @@ beforeEach(async () => {
   await db.exec(`
     delete from public.playtime_events; delete from public.games; delete from public.activity_events;
     delete from public.co_op_pacts; delete from public.profiles; delete from public.play_sessions;
+    delete from public.game_demo_events;
     insert into public.profiles (id) values ('${ME}');
     insert into public.games (id, user_id, title, status, played_hours)
       values ('${G}', '${ME}', 'Monster Hunter Wilds', 'finished', 40);
@@ -84,6 +95,10 @@ async function events() {
       "select hours, drop_in, note from public.playtime_events order by created_at, hours",
     )
   ).rows;
+}
+
+async function demoStamps() {
+  return (await db.query<{ hours: number; demo: boolean }>("select hours, demo from public.playtime_events")).rows;
 }
 
 async function feed() {
@@ -156,5 +171,64 @@ describe("drop-in sessions", () => {
   it("lets a finished Player 2 start the stopwatch while Player 1 still plays", async () => {
     await db.exec(`insert into public.co_op_pacts values (gen_random_uuid(), 'active', '${PARTNER}', '${G}', null)`);
     await expect(db.query("select id from public.start_play_session($1)", [G])).resolves.toBeTruthy();
+  });
+
+  describe("demos", () => {
+    beforeEach(async () => {
+      await db.exec(`update public.games set status = 'wishlist', demo = true`);
+    });
+
+    it("logs a demo's time, marked as demo time, with no feed post", async () => {
+      await log(1);
+      expect(await demoStamps()).toEqual([{ hours: 1, demo: true }]);
+      expect(await feed()).toEqual([]);
+      expect((await db.query("select status from public.games")).rows).toEqual([{ status: "wishlist" }]);
+    });
+
+    it("runs the stopwatch on a demo", async () => {
+      const started = await db.query<{ id: string }>("select id from public.start_play_session($1)", [G]);
+      await db.exec(`update public.play_sessions set started_at = now() - interval '20 minutes'`);
+      await db.transaction((tx) => tx.query("select * from public.end_play_session($1)", [started.rows[0].id]));
+      const [row] = await demoStamps();
+      expect(row.demo).toBe(true);
+      expect(row.hours).toBeCloseTo(1 / 3, 3);
+    });
+
+    it("refuses a plain wishlist entry", async () => {
+      await db.exec(`update public.games set demo = false`);
+      await expect(log(1)).rejects.toThrow(/not available to log time/);
+    });
+
+    it("records each start and stop of a demo, including leaving the wishlist", async () => {
+      await db.exec(`update public.games set status = 'backlog'`);
+      expect((await db.query("select demo from public.game_demo_events order by created_at, demo desc")).rows).toEqual([
+        { demo: true },
+        { demo: false },
+      ]);
+    });
+
+    it("leaves demo time out of the coin-paying medals", () => {
+      const metrics = fn("achievement_metrics");
+      const arm = (metric: string) => {
+        const rest = metrics.slice(metrics.indexOf(`select '${metric}'`));
+        return rest.slice(0, rest.indexOf("union all"));
+      };
+      expect(arm("play_days")).toContain("and not e.demo");
+      expect(arm("night_owl_logs")).toContain("and not e.demo");
+      expect(arm("stopwatch_sessions")).toContain("and not exists (select 1 from public.playtime_events e");
+      expect(arm("stopwatch_sessions")).toContain("e.session_id = s.id and e.demo");
+    });
+
+    it("stops being a demo when it leaves the wishlist, keeping its hours", async () => {
+      await log(2);
+      await db.exec(`update public.games set status = 'backlog'`);
+      expect((await db.query("select demo, played_hours from public.games")).rows).toEqual([
+        { demo: false, played_hours: 42 },
+      ]);
+      await expect(log(1)).rejects.toThrow(/not available to log time/);
+      await db.exec(`insert into public.games (id, user_id, title, status, demo)
+        values (gen_random_uuid(), '${ME}', 'Owned', 'backlog', true)`);
+      expect((await db.query("select demo from public.games where title = 'Owned'")).rows).toEqual([{ demo: false }]);
+    });
   });
 });
