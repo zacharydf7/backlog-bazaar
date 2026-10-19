@@ -45,7 +45,7 @@ beforeEach(() => {
       economyEnabled: true,
       challenges: state(),
       fetchChallenges: vi.fn(async () => true),
-      evaluateChallenges: vi.fn(async () => {}),
+      evaluateChallenges: vi.fn(async () => true),
       pickMonthlyGoal: vi.fn(async () => {}),
       swapQuickGoal: vi.fn(async () => {}),
       claimChallengeRewards: vi.fn(async () => {}),
@@ -202,11 +202,11 @@ describe("ChallengesPage — seasonal", () => {
 
 describe("ChallengesPage — load failure", () => {
   it("offers Try again instead of loading forever", async () => {
-    const fetchChallenges = vi.fn(async () => false);
-    act(() => useStore.setState({ challenges: null, fetchChallenges }));
+    const evaluateChallenges = vi.fn(async () => false);
+    act(() => useStore.setState({ challenges: null, evaluateChallenges }));
     render(<ChallengesPage />);
     fireEvent.click(await screen.findByRole("button", { name: "Try again" }));
-    await vi.waitFor(() => expect(fetchChallenges).toHaveBeenCalledTimes(2));
+    await vi.waitFor(() => expect(evaluateChallenges).toHaveBeenCalledTimes(2));
   });
 });
 

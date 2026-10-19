@@ -72,6 +72,11 @@ afterEach(() => {
       notifications: [],
       friendRequestCount: 0,
       unreadMessageCount: 0,
+      challenges: null,
+      achievements: [],
+      isAdmin: false,
+      submissionCount: 0,
+      economyEnabled: true,
     }),
   );
 });
@@ -126,6 +131,58 @@ describe("Sidebar coin event chip", () => {
     render(<Sidebar {...chromeProps()} />);
     expect(screen.queryByRole("button", { name: / is on/ })).toBeNull();
     act(() => useStore.setState({ economyEnabled: true, bonusEvents: [] }));
+  });
+});
+
+describe("rewards waiting to be claimed (5aa51ab1)", () => {
+  // Two challenge goals done but unclaimed and one claimed; one medal waiting.
+  const pick = (id: string, rewardPaidAt: number | null) => ({
+    id, goalKey: id, name: id, target: 1, progress: 1, reward: 50, completedAt: 1, rewardPaidAt,
+  });
+  const board = (paid: number | null) =>
+    ({
+      picks: [pick("p1", paid), pick("p2", paid), pick("p3", 2)],
+      bonus: null,
+      unclaimedEarlier: [],
+      seasonal: [],
+      daily: null,
+      weekly: [],
+      weeklyBonus: null,
+    }) as never;
+  const medals = (paid: number | null) => [{ id: "m1", earnedAt: 1, reward: 25, rewardPaidAt: paid }] as never;
+  const waiting = { cloud: true, economyEnabled: true, viewing: null, challenges: board(null), achievements: medals(null) };
+
+  it("counts them on Challenges and Achievements, each where you claim it", () => {
+    act(() => useStore.setState(waiting));
+    render(<Sidebar {...chromeProps()} />);
+    expect(screen.getByRole("button", { name: /Challenges/ }).textContent).toMatch(/Challenges2$/);
+    expect(screen.getByRole("button", { name: /Achievements/ }).textContent).toMatch(/Achievements1$/);
+  });
+
+  it("totals them on the phone's More button, naming an admin's review items too", () => {
+    act(() => useStore.setState({ ...waiting, isAdmin: true, submissionCount: 1 }));
+    render(<MobileNav {...chromeProps()} />);
+    const more = screen.getByRole("button", { name: "More options (3 rewards to claim, items need review)" });
+    expect(more.textContent).toBe("3");
+  });
+
+  it("shows nothing once everything is claimed, leaving an admin's review dot", () => {
+    act(() =>
+      useStore.setState({ ...waiting, challenges: board(2), achievements: medals(2), isAdmin: true, submissionCount: 1 }),
+    );
+    render(<MobileNav {...chromeProps()} />);
+    const more = screen.getByRole("button", { name: "More options (items need review)" });
+    expect(more.textContent).toBe("");
+    expect(more.querySelector("span.rounded-full")).toBeTruthy();
+  });
+
+  it("shows no counts with the economy off, when rewards can't be claimed", () => {
+    act(() => useStore.setState({ ...waiting, economyEnabled: false }));
+    const { unmount } = render(<Sidebar {...chromeProps()} />);
+    expect(screen.getByRole("button", { name: /Challenges/ }).textContent).toMatch(/Challenges$/);
+    unmount();
+    render(<MobileNav {...chromeProps()} />);
+    expect(screen.getByRole("button", { name: "More options" })).toBeTruthy();
   });
 });
 

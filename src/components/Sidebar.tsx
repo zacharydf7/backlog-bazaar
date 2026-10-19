@@ -46,6 +46,8 @@ import {
 import { useNow } from "../lib/useNow";
 import { boostLabels, eventIsLive, hasBoost, spanUntil } from "../lib/bonusEvents";
 import { useStore, selectCoachTarget } from "../store";
+import { unclaimedChallengeRewards } from "../lib/challenges";
+import { unclaimedRewards } from "../lib/achievements";
 import { isClearStreakActive } from "../lib/pricing";
 import { CoinIcon } from "./CoinIcon";
 import { Avatar } from "./Avatar";
@@ -631,6 +633,25 @@ function useCommunityCount(): number {
   return friendRequestCount + unreadMessageCount + pendingRecCount;
 }
 
+/** Rewards waiting to be claimed (issue 5aa51ab1): challenge goals on the
+ *  Challenges entry, medals on Achievements, each pointing at the page where
+ *  you claim them. None with the economy off, when claiming is paused. */
+function useRewardsToClaim(): { challenges: number; medals: number } {
+  const economyEnabled = useStore((s) => s.economyEnabled);
+  const challenges = useStore((s) => unclaimedChallengeRewards(s.challenges).count);
+  const medals = useStore((s) => unclaimedRewards(s.achievements).count);
+  return economyEnabled ? { challenges, medals } : { challenges: 0, medals: 0 };
+}
+
+/** The More button's accessible name: everything its badge stands for. */
+function moreOptionsLabel(rewardsWaiting: number, needsReview: boolean): string {
+  const notes = [
+    rewardsWaiting > 0 ? `${rewardsWaiting} ${rewardsWaiting === 1 ? "reward" : "rewards"} to claim` : "",
+    needsReview ? "items need review" : "",
+  ].filter(Boolean);
+  return notes.length ? `More options (${notes.join(", ")})` : "More options";
+}
+
 /** `masterLedger` prepends a Master Ledger row — the mobile More sheet needs
  *  one (its bottom-bar slot went to Community); the desktop rail keeps the
  *  Ledger in its primary nav instead. */
@@ -641,6 +662,7 @@ function UtilityActions(
     useStore();
   const canAdmin = hasAnyAdminPermission(permissions, isAdmin);
   const unseen = isUnseen(LATEST_RELEASE_ID, props.seenReleaseId);
+  const toClaim = useRewardsToClaim();
   const run = (fn: () => void) => () => {
     fn();
     props.onClose?.();
@@ -695,6 +717,7 @@ function UtilityActions(
         <UtilRow
           icon={Medal}
           label="Achievements"
+          count={toClaim.medals}
           active={props.view === "achievements"}
           onClick={run(props.onAchievements)}
         />
@@ -703,6 +726,7 @@ function UtilityActions(
         <UtilRow
           icon={Target}
           label="Challenges"
+          count={toClaim.challenges}
           active={props.view === "challenges"}
           onClick={run(props.onChallenges)}
         />
@@ -1089,6 +1113,10 @@ export function MobileNav(props: ChromeProps) {
   // menu, so flag pending items with a dot on the More button — otherwise hidden.
   const menuAlert =
     cloud && hasAnyAdminPermission(permissions, isAdmin) && submissionCount + reportCount > 0;
+  // Rewards waiting live in the overflow menu too (Challenges, Achievements),
+  // so the More button counts them.
+  const toClaim = useRewardsToClaim();
+  const rewardsWaiting = cloud ? toClaim.challenges + toClaim.medals : 0;
   // See Sidebar: while visiting, drop your-account chrome (wallet, Add, The
   // Caravan, and the overflow menu of utility pages).
   const visiting = useStore((s) => s.viewing != null);
@@ -1147,12 +1175,18 @@ export function MobileNav(props: ChromeProps) {
             {!visiting && (
               <button
                 onClick={() => setMenuOpen(true)}
-                aria-label={menuAlert ? "More options (items need review)" : "More options"}
+                aria-label={moreOptionsLabel(rewardsWaiting, menuAlert)}
                 className={iconBtn}
               >
                 <MoreHorizontal size={18} />
-                {menuAlert && (
-                  <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-brand ring-2 ring-canvas" />
+                {rewardsWaiting > 0 ? (
+                  <span className="absolute -right-1.5 -top-1.5 grid h-4 min-w-4 place-items-center rounded-full bg-brand px-1 text-[9px] font-bold text-brand-fg ring-2 ring-canvas">
+                    {rewardsWaiting > 9 ? "9+" : rewardsWaiting}
+                  </span>
+                ) : (
+                  menuAlert && (
+                    <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-brand ring-2 ring-canvas" />
+                  )
                 )}
               </button>
             )}

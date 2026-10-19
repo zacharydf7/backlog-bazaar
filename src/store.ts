@@ -1707,9 +1707,10 @@ interface BazaarState {
   claimAchievementRewards: (achievementId?: string) => Promise<void>;
   // Load the Challenges page (menu + progress, picks, bonus, seasonal events).
   fetchChallenges: () => Promise<boolean>;
-  // Record newly completed goals and events and toast them. Runs alongside
-  // evaluateAchievements (same triggers), so every call site covers both.
-  evaluateChallenges: () => Promise<void>;
+  // Record newly completed goals and events and toast them, then reload the
+  // list; resolves true once it's loaded. Runs alongside evaluateAchievements
+  // (same triggers), so every call site covers both.
+  evaluateChallenges: () => Promise<boolean>;
   // Pick one of this month's goals (up to 3; final for the month).
   pickMonthlyGoal: (goalKey: string) => Promise<void>;
   // Claim one completed goal/bonus/event reward by its row id, or all of them.
@@ -8843,7 +8844,7 @@ export const useStore = create<BazaarState>((set, get) => ({
   },
 
   evaluateChallenges: async () => {
-    if (!supabase || !get().cloud) return;
+    if (!supabase || !get().cloud) return false;
     // Opportunistic, like evaluateAchievements: a miss self-heals next call.
     try {
       const { data, error } = await supabase.rpc("evaluate_challenges");
@@ -8856,9 +8857,12 @@ export const useStore = create<BazaarState>((set, get) => ({
         const message = completionToastMessage(names, waiting);
         if (message) toast(message, Target);
       }
-      if (get().challenges) await get().fetchChallenges();
+      // Loaded from boot on, not just once the page opens: the menu's badge
+      // counts the rewards waiting (issue 5aa51ab1).
+      return await get().fetchChallenges();
     } catch {
       // Never let an opportunistic call surface or reject.
+      return false;
     }
   },
 
@@ -8870,9 +8874,8 @@ export const useStore = create<BazaarState>((set, get) => ({
       return;
     }
     trackEvent("feature", "challenge_pick", { goal: goalKey });
-    // A goal already met completes on pick, so evaluate before reloading.
+    // A goal already met completes on pick; evaluating reloads the list too.
     await get().evaluateChallenges();
-    await get().fetchChallenges();
   },
 
   claimChallengeRewards: async (id) => {

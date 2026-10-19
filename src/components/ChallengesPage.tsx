@@ -262,7 +262,6 @@ function SeasonalCard({ challenge, now }: { challenge: SeasonalChallenge; now: n
 export function ChallengesPage() {
   const cloud = useStore((s) => s.cloud);
   const challenges = useStore((s) => s.challenges);
-  const fetchChallenges = useStore((s) => s.fetchChallenges);
   const evaluateChallenges = useStore((s) => s.evaluateChallenges);
   const claimAll = useStore((s) => s.claimChallengeRewards);
   const swap = useStore((s) => s.swapQuickGoal);
@@ -272,11 +271,9 @@ export function ChallengesPage() {
   useEffect(() => {
     if (!cloud) return;
     setFailed(false);
-    // Record anything just completed, then load the page with fresh progress.
-    void evaluateChallenges()
-      .then(() => fetchChallenges())
-      .then((ok) => setFailed(!ok));
-  }, [cloud, evaluateChallenges, fetchChallenges, attempt]);
+    // Record anything just completed; that reloads the page with fresh progress.
+    void evaluateChallenges().then((ok) => setFailed(!ok));
+  }, [cloud, evaluateChallenges, attempt]);
 
   if (!cloud) {
     return (
