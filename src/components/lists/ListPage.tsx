@@ -655,7 +655,7 @@ export function ListPage({ listId, onBack }: { listId: string; onBack: () => voi
     void navigator.clipboard
       .writeText(url)
       .then(() => toast("Link copied — anyone with it can view this list.", Link2))
-      .catch(() => toast("Couldn't copy — the link is in your address bar."));
+      .catch(() => toast("Couldn't copy the link."));
   }
 
   if (loading) {
