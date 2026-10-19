@@ -12,12 +12,29 @@ import {
 } from "../lib/identityLinks";
 import { GameSubmissionForm } from "./GameSubmissionForm";
 import { GameSearchBox } from "./GameSearchBox";
-import { normalizeCatalogTitle, type CatalogFields, type CommunityCatalogEntry } from "../lib/submissions";
+import {
+  displayField,
+  FIELD_LABELS,
+  normalizeCatalogTitle,
+  type CatalogFields,
+  type CommunityCatalogEntry,
+} from "../lib/submissions";
+import {
+  LINKED_FIELDS,
+  mergeLinkedFields,
+  providerCatalogFields,
+  type CatalogLinkPreview,
+  type LinkPrimary,
+} from "../lib/catalogLink";
+import { searchGames } from "../lib/gamedata";
 import type { CompilationTemplate, TemplateGame } from "../lib/compilationTemplates";
 import type { GameMeta } from "../types";
 import { formatLength, parsePlaytime } from "../lib/playtime";
 import { newCopyId } from "../lib/copies";
 import { useScrollLock } from "../lib/useScrollLock";
+import { ConfirmDialog } from "./ConfirmDialog";
+
+const SIDE_LABELS: Record<LinkPrimary, string> = { catalog: "Community", provider: "Game database" };
 
 /** A one-line summary of an entry's catalog fields, for the list row. */
 function fieldsSummary(e: CommunityCatalogEntry): string {
@@ -321,11 +338,17 @@ function IdentityLinksSection() {
 function GamesCatalogSection() {
   const fetchCommunityCatalog = useStore((s) => s.fetchCommunityCatalog);
   const adminEditCatalogGame = useStore((s) => s.adminEditCatalogGame);
+  const unlinkCatalogProvider = useStore((s) => s.unlinkCatalogProvider);
+  const can = useStore((s) => s.can);
+  // Linking rewrites catalog fields, so the server wants both keys.
+  const canLink = can("catalog.identity") && can("catalog.manage");
 
   const [entries, setEntries] = useState<CommunityCatalogEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
   const [editing, setEditing] = useState<CommunityCatalogEntry | null>(null);
+  const [linking, setLinking] = useState<CommunityCatalogEntry | null>(null);
+  const [unlinking, setUnlinking] = useState<CommunityCatalogEntry | null>(null);
 
   async function load() {
     setLoading(true);
@@ -348,6 +371,11 @@ function GamesCatalogSection() {
     const ok = await adminEditCatalogGame(id, proposed);
     if (ok) await load();
     return ok;
+  }
+
+  async function unlink(entry: CommunityCatalogEntry) {
+    setUnlinking(null);
+    if (await unlinkCatalogProvider(entry.id)) await load();
   }
 
   return (
@@ -398,11 +426,34 @@ function GamesCatalogSection() {
               <div className="min-w-0 flex-1">
                 <div className="truncate font-medium text-ink">{e.title}</div>
                 <div className="truncate text-xs text-muted">{fieldsSummary(e)}</div>
-                <div className="mt-0.5 inline-flex items-center gap-1 text-[11px] text-subtle">
-                  <Users size={11} /> {e.ownerCount} {e.ownerCount === 1 ? "library" : "libraries"}
+                <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-subtle">
+                  <span className="inline-flex items-center gap-1">
+                    <Users size={11} /> {e.ownerCount} {e.ownerCount === 1 ? "library" : "libraries"}
+                  </span>
+                  {e.linkPrimary && e.igdbId != null && (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-success/15 px-2 py-0.5 font-medium text-success">
+                      <Link2 size={11} /> Same game as IGDB #{e.igdbId} · {SIDE_LABELS[e.linkPrimary]} primary
+                    </span>
+                  )}
                 </div>
               </div>
-              <div className="flex shrink-0 items-center gap-2">
+              <div className="flex shrink-0 flex-wrap items-center gap-2">
+                {canLink && e.igdbId == null && (
+                  <button
+                    onClick={() => setLinking(e)}
+                    className="inline-flex items-center gap-1 rounded-md border border-line px-2 py-1 text-[11px] text-muted transition hover:border-brand/50 hover:text-ink"
+                  >
+                    <Link2 size={12} /> Same game as…
+                  </button>
+                )}
+                {canLink && e.linkPrimary && (
+                  <button
+                    onClick={() => setUnlinking(e)}
+                    className="inline-flex items-center gap-1 rounded-md border border-line px-2 py-1 text-[11px] text-muted transition hover:border-brand/50 hover:text-ink"
+                  >
+                    <Unlink size={12} /> Unlink
+                  </button>
+                )}
                 <button
                   onClick={() => setEditing(e)}
                   className="inline-flex items-center gap-1 rounded-md border border-line px-2 py-1 text-[11px] text-muted transition hover:border-brand/50 hover:text-ink"
@@ -428,7 +479,279 @@ function GamesCatalogSection() {
           onAdminSave={(proposed) => saveEdit(editing.id, proposed)}
         />
       )}
+
+      {linking && (
+        <SameGameModal
+          entry={linking}
+          onClose={() => setLinking(null)}
+          onLinked={() => {
+            setLinking(null);
+            void load();
+          }}
+        />
+      )}
+
+      {unlinking && (
+        <ConfirmDialog
+          title="Unlink from the game database?"
+          body={
+            <>
+              <span className="text-ink">{unlinking.title}</span> stops being the same game as IGDB #
+              {unlinking.igdbId}. Copies the link touched go back to how they were, unless they changed
+              since; the merged details stay on the entry.
+            </>
+          }
+          confirmLabel="Unlink"
+          tone="danger"
+          onConfirm={() => void unlink(unlinking)}
+          onCancel={() => setUnlinking(null)}
+        />
+      )}
     </div>
+  );
+}
+
+/** "Same game as…" (issue 52f98b68): tie a community entry to the IGDB game it
+ *  duplicates. Searches the game database directly — the merged search would
+ *  fold this very entry into its results — then previews the field-by-field
+ *  merge for the chosen primary side and what the link would touch. */
+function SameGameModal({
+  entry,
+  onClose,
+  onLinked,
+}: {
+  entry: CommunityCatalogEntry;
+  onClose: () => void;
+  onLinked: () => void;
+}) {
+  const previewCatalogProviderLink = useStore((s) => s.previewCatalogProviderLink);
+  const linkCatalogProvider = useStore((s) => s.linkCatalogProvider);
+  const genreList = useStore((s) => s.genreList);
+  const platformList = useStore((s) => s.platformList);
+  useScrollLock(true);
+  const [query, setQuery] = useState(entry.title);
+  const [results, setResults] = useState<GameMeta[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [searchFailed, setSearchFailed] = useState(false);
+  const [picked, setPicked] = useState<GameMeta | null>(null);
+  const [primary, setPrimary] = useState<LinkPrimary>("provider");
+  // null while the check runs.
+  const [preview, setPreview] = useState<CatalogLinkPreview | { error: string } | null>(null);
+  const [working, setWorking] = useState(false);
+
+  useEffect(() => {
+    const q = query.trim();
+    if (q.length < 2) {
+      setResults([]);
+      return;
+    }
+    let live = true;
+    const handle = setTimeout(async () => {
+      setSearching(true);
+      try {
+        // IGDB results only: a standby provider's ids can't be linked.
+        const found = await searchGames(q);
+        if (live) {
+          setResults(found.filter((g) => g.igdbId != null).slice(0, 8));
+          setSearchFailed(false);
+        }
+      } catch {
+        if (live) {
+          setResults([]);
+          setSearchFailed(true);
+        }
+      } finally {
+        if (live) setSearching(false);
+      }
+    }, 300);
+    return () => {
+      live = false;
+      clearTimeout(handle);
+    };
+  }, [query]);
+
+  useEffect(() => {
+    setPreview(null);
+    if (picked?.igdbId == null) return;
+    let live = true;
+    void previewCatalogProviderLink(entry.id, picked.igdbId).then((p) => {
+      if (live) setPreview(p);
+    });
+    return () => {
+      live = false;
+    };
+  }, [picked, entry.id, previewCatalogProviderLink]);
+
+  const merge = useMemo(
+    () =>
+      picked ? mergeLinkedFields(entry, providerCatalogFields(picked, genreList, platformList), primary) : null,
+    [picked, entry, genreList, platformList, primary],
+  );
+
+  async function link() {
+    if (picked?.igdbId == null || !merge || working) return;
+    setWorking(true);
+    const ok = await linkCatalogProvider(entry.id, picked.igdbId, primary, merge.fields);
+    setWorking(false);
+    if (ok) onLinked();
+  }
+
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[60] flex items-start justify-center overflow-y-auto bg-black/50 p-3 backdrop-blur-sm sm:p-8"
+      onClick={onClose}
+    >
+      <div
+        role="dialog"
+        aria-label="Same game as…"
+        className="w-full max-w-xl rounded-2xl border border-line bg-surface shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between gap-2 border-b border-line p-4">
+          <h2 className="inline-flex min-w-0 items-center gap-2 font-display text-xl text-ink">
+            <Link2 size={18} className="shrink-0 text-accent" />
+            <span className="truncate">Same game as…</span>
+          </h2>
+          <button onClick={onClose} aria-label="Close" className="shrink-0 text-muted transition hover:text-ink">
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="flex flex-col gap-3 p-3 sm:p-4">
+          <p className="text-xs text-muted">
+            Link <span className="text-ink">{entry.title}</span> to the game database entry it
+            duplicates. Search then shows one game, and copies on both sides count as the same game.
+          </p>
+
+          <label className="relative block">
+            <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-subtle" />
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search the game database…"
+              aria-label="Search the game database"
+              className="w-full rounded-lg border border-line bg-panel py-2 pl-9 pr-3 text-sm text-ink outline-none transition placeholder:text-subtle focus:border-brand focus:ring-2 focus:ring-brand/25"
+            />
+          </label>
+
+          {searching ? (
+            <p className="text-xs text-muted">Searching…</p>
+          ) : searchFailed ? (
+            <p className="text-xs text-danger">The game database is unreachable right now.</p>
+          ) : results.length === 0 && query.trim().length >= 2 ? (
+            <p className="text-xs text-muted">No game database matches.</p>
+          ) : null}
+          {results.length > 0 && (
+            <ul className="flex max-h-60 flex-col gap-1 overflow-y-auto">
+              {results.map((g) => (
+                <li key={g.igdbId}>
+                  <button
+                    onClick={() => setPicked(g)}
+                    aria-pressed={picked?.igdbId === g.igdbId}
+                    className={
+                      "flex w-full items-center gap-2 rounded-lg border p-2 text-left transition " +
+                      (picked?.igdbId === g.igdbId ? "border-brand bg-brand/10" : "border-line hover:border-brand/50")
+                    }
+                  >
+                    <div className="h-10 w-7 shrink-0 overflow-hidden rounded-sm border border-line bg-panel">
+                      {g.image && <img src={g.image} alt="" className="h-full w-full object-cover" />}
+                    </div>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm text-ink">{g.title}</span>
+                      <span className="block text-[11px] text-subtle">
+                        {g.released?.slice(0, 4) || "—"} · IGDB #{g.igdbId}
+                      </span>
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {picked && merge && (
+            <>
+              <div className="flex flex-wrap items-center gap-2 text-sm text-muted">
+                Primary
+                <div className="inline-flex overflow-hidden rounded-lg border border-line">
+                  {(["catalog", "provider"] as const).map((side) => (
+                    <button
+                      key={side}
+                      onClick={() => setPrimary(side)}
+                      aria-pressed={primary === side}
+                      className={
+                        "px-3 py-1.5 text-xs font-medium transition " +
+                        (primary === side ? "bg-brand text-brand-fg" : "bg-panel text-muted hover:text-ink")
+                      }
+                    >
+                      {SIDE_LABELS[side]}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <dl className="flex flex-col divide-y divide-line rounded-lg border border-line">
+                {LINKED_FIELDS.map((key) => {
+                  const source = merge.sources[key];
+                  return (
+                    <div key={key} className="flex flex-wrap items-start gap-x-3 gap-y-0.5 p-2 text-xs">
+                      <dt className="w-24 shrink-0 text-muted">{FIELD_LABELS[key]}</dt>
+                      <dd className="min-w-0 flex-1 break-words text-ink">
+                        {key === "image" && merge.fields.image ? (
+                          <img
+                            src={merge.fields.image}
+                            alt=""
+                            className="h-14 w-10 rounded-sm border border-line object-cover"
+                          />
+                        ) : (
+                          displayField(key, merge.fields)
+                        )}
+                      </dd>
+                      <dd className="shrink-0 text-[11px] text-subtle">{source ? SIDE_LABELS[source] : "—"}</dd>
+                    </div>
+                  );
+                })}
+              </dl>
+
+              {!preview ? (
+                <p className="text-xs text-muted">Checking what this touches…</p>
+              ) : "error" in preview ? (
+                <p className="rounded-lg border border-danger/40 bg-danger/10 p-2.5 text-xs text-danger">
+                  Couldn&apos;t check what this touches: {preview.error}
+                </p>
+              ) : preview.conflict ? (
+                <p className="rounded-lg border border-danger/40 bg-danger/10 p-2.5 text-xs text-danger">
+                  {preview.conflict}
+                </p>
+              ) : (
+                <p className="rounded-lg border border-line bg-panel/50 p-2.5 text-xs text-muted">
+                  {preview.communityCopies} community {preview.communityCopies === 1 ? "copy gains" : "copies gain"}{" "}
+                  the IGDB id; {preview.igdbCopiesToAdopt} game database{" "}
+                  {preview.igdbCopiesToAdopt === 1 ? "copy joins" : "copies join"} this entry. Nobody&apos;s
+                  playtime, status or coins change.
+                </p>
+              )}
+            </>
+          )}
+
+          <div className="mt-1 flex gap-2">
+            <button
+              onClick={() => void link()}
+              disabled={!merge || !preview || "error" in preview || preview.conflict != null || working}
+              className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-brand px-3 py-2.5 font-semibold text-brand-fg shadow-sm transition hover:brightness-105 active:brightness-95 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <Link2 size={15} /> {working ? "Linking…" : "Link"}
+            </button>
+            <button
+              onClick={onClose}
+              className="rounded-xl bg-panel px-4 py-2.5 font-medium text-ink transition hover:brightness-95"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>,
+    document.body,
   );
 }
 

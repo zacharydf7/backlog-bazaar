@@ -1,8 +1,10 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { act, render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { act, render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 import { CatalogManager } from "./CatalogManager";
+import { searchGames } from "../lib/gamedata";
 import { useStore } from "../store";
 import type { CommunityCatalogEntry } from "../lib/submissions";
+import type { CatalogLinkPreview } from "../lib/catalogLink";
 import type { CompilationTemplate, TemplateGame } from "../lib/compilationTemplates";
 
 // Keep the parent-picker's game search deterministic and offline: RAWG resolves
@@ -34,6 +36,8 @@ const owned: CommunityCatalogEntry = {
   ownerCount: 2,
   createdAt: 1,
   updatedAt: 1,
+  igdbId: null,
+  linkPrimary: null,
 };
 const orphan: CommunityCatalogEntry = {
   ...owned,
@@ -222,5 +226,101 @@ describe("CatalogManager compilation parent cover", () => {
     await waitFor(() =>
       expect(setTemplateImageMock).toHaveBeenCalledWith("t1", "https://x/catalog/u1/tpl.jpg?v=1"),
     );
+  });
+});
+
+describe("CatalogManager — Same game as… (52f98b68)", () => {
+  const previewMock = vi.fn(
+    async (): Promise<CatalogLinkPreview | { error: string }> => ({
+      communityCopies: 2,
+      igdbCopiesToAdopt: 1,
+      conflict: null,
+    }),
+  );
+  const linkMock = vi.fn(async () => true);
+  const unlinkMock = vi.fn(async () => true);
+
+  beforeEach(() => {
+    previewMock.mockClear();
+    linkMock.mockClear();
+    unlinkMock.mockClear();
+    vi.mocked(searchGames).mockResolvedValue([
+      { title: "Xenoblade Chronicles", igdbId: 501, genres: [], image: "https://x/igdb.jpg", released: "2010-06-10" },
+      { title: "Xenoblade (RAWG)", rawgId: 9, genres: [] },
+    ]);
+    act(() =>
+      useStore.setState({
+        previewCatalogProviderLink: previewMock,
+        linkCatalogProvider: linkMock,
+        unlinkCatalogProvider: unlinkMock,
+      }),
+    );
+  });
+
+  async function openModal() {
+    render(<CatalogManager />);
+    await screen.findByText("Xenoblade Chronicles");
+    fireEvent.click(screen.getAllByRole("button", { name: /Same game as/i })[0]);
+    return screen.findByRole("dialog", { name: /Same game as/i });
+  }
+
+  it("searches IGDB only, previews the merge and links with the primary's fields", async () => {
+    const dialog = await openModal();
+    const pick = await within(dialog).findByRole("button", { name: /IGDB #501/ });
+    expect(within(dialog).queryByText("Xenoblade (RAWG)")).toBeNull();
+    fireEvent.click(pick);
+
+    await waitFor(() => expect(previewMock).toHaveBeenCalledWith("c1", 501));
+    expect(await within(dialog).findByText(/2 community copies gain the IGDB id/)).toBeTruthy();
+    // The game database is primary by default: its cover wins, the catalog fills the gaps.
+    fireEvent.click(within(dialog).getByRole("button", { name: /^Link$/ }));
+    await waitFor(() =>
+      expect(linkMock).toHaveBeenCalledWith(
+        "c1",
+        501,
+        "provider",
+        expect.objectContaining({ image: "https://x/igdb.jpg", hours: 60, developers: ["Monolith Soft"] }),
+      ),
+    );
+  });
+
+  it("keeps the community values when it is made primary", async () => {
+    const dialog = await openModal();
+    fireEvent.click(await within(dialog).findByRole("button", { name: /IGDB #501/ }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Community" }));
+    await within(dialog).findByText(/community copies gain/);
+    fireEvent.click(within(dialog).getByRole("button", { name: /^Link$/ }));
+    await waitFor(() =>
+      expect(linkMock).toHaveBeenCalledWith("c1", 501, "catalog", expect.objectContaining({ image: "https://x/cover.jpg" })),
+    );
+  });
+
+  it("shows a conflict and won't link", async () => {
+    previewMock.mockResolvedValueOnce({ communityCopies: 0, igdbCopiesToAdopt: 0, conflict: "IGDB #501 already has its own catalog entry" });
+    const dialog = await openModal();
+    fireEvent.click(await within(dialog).findByRole("button", { name: /IGDB #501/ }));
+    expect(await within(dialog).findByText(/already has its own catalog entry/)).toBeTruthy();
+    expect((within(dialog).getByRole("button", { name: /^Link$/ }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("shows a failed check in place of the spinner and won't link", async () => {
+    previewMock.mockResolvedValueOnce({ error: "network down" });
+    const dialog = await openModal();
+    fireEvent.click(await within(dialog).findByRole("button", { name: /IGDB #501/ }));
+    expect(await within(dialog).findByText(/Couldn.t check what this touches: network down/)).toBeTruthy();
+    expect(within(dialog).queryByText(/Checking what this touches/)).toBeNull();
+    expect((within(dialog).getByRole("button", { name: /^Link$/ }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("shows a linked entry's chip and unlinks after a confirm", async () => {
+    fetchMock.mockResolvedValueOnce([owned, { ...orphan, id: "c3", igdbId: 501, linkPrimary: "provider" }]);
+    render(<CatalogManager />);
+    expect(await screen.findByText(/Same game as IGDB #501 · Game database primary/)).toBeTruthy();
+    // Only the unlinked community entry offers a new link.
+    expect(screen.getAllByRole("button", { name: /Same game as/i })).toHaveLength(1);
+    fireEvent.click(screen.getByRole("button", { name: /^Unlink$/ }));
+    const confirm = (await screen.findByText("Unlink from the game database?")).parentElement!;
+    fireEvent.click(within(confirm).getByRole("button", { name: /^Unlink$/ }));
+    await waitFor(() => expect(unlinkMock).toHaveBeenCalledWith("c3"));
   });
 });

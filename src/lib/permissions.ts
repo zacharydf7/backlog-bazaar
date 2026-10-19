@@ -78,7 +78,7 @@ export const PERMISSIONS: PermissionInfo[] = [
     key: "catalog.identity",
     label: "Rule on cross-provider game links",
     description:
-      "Decide whether a RAWG entry and an IGDB entry are the same game — the crosswalk that lets friends' copies from different providers match for co-op pacts, ownership and dedup.",
+      "Decide whether a RAWG entry and an IGDB entry are the same game — the crosswalk that lets friends' copies from different providers match for co-op pacts, ownership and dedup — and link a community catalog entry to the game database entry it duplicates.",
     group: "Submissions",
   },
   {

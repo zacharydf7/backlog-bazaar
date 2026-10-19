@@ -45,6 +45,7 @@ import type {
 } from "./types";
 import { PERMISSION_KEYS, type Permission } from "./lib/permissions";
 import type { CatalogFields, CatalogOverride, CommunityCatalogEntry } from "./lib/submissions";
+import { linkResultMessage, unlinkResultMessage, type CatalogLinkPreview, type LinkPrimary } from "./lib/catalogLink";
 import { revertResultMessage, normalizeCatalogFields, canonicalizeCatalogTerms } from "./lib/submissions";
 import { applyThemeId, getThemeId, setThemeId } from "./lib/theme";
 import { formatPlaytime, snapToMinute } from "./lib/playtime";
@@ -1800,6 +1801,19 @@ interface BazaarState {
     status: IdentityLinkStatus,
     note?: string,
   ) => Promise<boolean>;
+  // "Same game as…": tie a community catalog entry to its IGDB game (merged
+  // fields from lib/catalogLink) or take the link back (catalog.identity).
+  previewCatalogProviderLink: (
+    catalogId: string,
+    igdbId: number,
+  ) => Promise<CatalogLinkPreview | { error: string }>;
+  linkCatalogProvider: (
+    catalogId: string,
+    igdbId: number,
+    primary: LinkPrimary,
+    fields: CatalogFields,
+  ) => Promise<boolean>;
+  unlinkCatalogProvider: (catalogId: string) => Promise<boolean>;
   // Admin management of shared compilation templates (the catalog manager).
   fetchCompilationCatalog: () => Promise<CompilationTemplate[]>;
   // Ensure a RAWG game picked as a template parent has a catalog_games row
@@ -9775,6 +9789,70 @@ export const useStore = create<BazaarState>((set, get) => ({
           : "Link removed — back in the review queue.",
       Link2,
     );
+    return true;
+  },
+
+  // Admin: what a "Same game as…" link would touch, or why it can't be made.
+  // The server requires both catalog keys, like the Games tab that offers it.
+  previewCatalogProviderLink: async (catalogId, igdbId) => {
+    if (!supabase || !get().can("catalog.identity") || !get().can("catalog.manage")) {
+      return { error: "Linking needs the cloud and catalog permissions." };
+    }
+    const { data, error } = await supabase.rpc("preview_catalog_provider_link", {
+      p_catalog: catalogId,
+      p_igdb: igdbId,
+    });
+    if (error) {
+      set({ error: error.message });
+      return { error: error.message };
+    }
+    const d = (data ?? {}) as { community_copies?: number; igdb_copies_to_adopt?: number; conflict?: string | null };
+    return {
+      communityCopies: Number(d.community_copies ?? 0),
+      igdbCopiesToAdopt: Number(d.igdb_copies_to_adopt ?? 0),
+      conflict: d.conflict ?? null,
+    };
+  },
+
+  // Admin: tie a community entry to its IGDB game. The server stamps the igdb
+  // id, writes the merged fields, null-fills both sides' copies and logs it.
+  linkCatalogProvider: async (catalogId, igdbId, primary, fields) => {
+    if (!supabase || !get().can("catalog.identity") || !get().can("catalog.manage")) return false;
+    const f = normalizeCatalogFields(fields);
+    const { data, error } = await supabase.rpc("link_catalog_game_provider", {
+      p_catalog: catalogId,
+      p_igdb: igdbId,
+      p_primary: primary,
+      p_fields: {
+        title: f.title,
+        image: f.image || null,
+        platforms: f.platforms,
+        genres: f.genres,
+        developers: f.developers,
+        released: f.released || null,
+        hours: f.hours,
+      },
+    });
+    if (error) {
+      set({ error: error.message });
+      return false;
+    }
+    const r = (data ?? {}) as { adopted?: number; stamped?: number };
+    toast(linkResultMessage(Number(r.adopted ?? 0), Number(r.stamped ?? 0)), Link2);
+    return true;
+  },
+
+  // Admin: take a link back. Copies it touched return to how they were unless
+  // they've changed since; the merged fields stay on the entry.
+  unlinkCatalogProvider: async (catalogId) => {
+    if (!supabase || !get().can("catalog.identity") || !get().can("catalog.manage")) return false;
+    const { data, error } = await supabase.rpc("unlink_catalog_game_provider", { p_catalog: catalogId });
+    if (error) {
+      set({ error: error.message });
+      return false;
+    }
+    const r = (data ?? {}) as { reverted?: number; skipped?: number };
+    toast(unlinkResultMessage(Number(r.reverted ?? 0), Number(r.skipped ?? 0)), Unlink);
     return true;
   },
 

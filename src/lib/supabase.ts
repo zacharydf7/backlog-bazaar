@@ -1275,6 +1275,8 @@ export interface CommunityCatalogRow {
   owner_count: number | null;
   created_at: string;
   updated_at: string;
+  igdb_id: number | null;
+  link_primary: string | null; // set only while a live link exists
 }
 
 export function rowToCommunityCatalog(r: CommunityCatalogRow): CommunityCatalogEntry {
@@ -1292,6 +1294,8 @@ export function rowToCommunityCatalog(r: CommunityCatalogRow): CommunityCatalogE
     ownerCount: typeof r.owner_count === "number" ? r.owner_count : Number(r.owner_count ?? 0),
     createdAt: r.created_at ? Date.parse(r.created_at) : Date.now(),
     updatedAt: r.updated_at ? Date.parse(r.updated_at) : Date.now(),
+    igdbId: r.igdb_id ?? null,
+    linkPrimary: r.link_primary === "catalog" || r.link_primary === "provider" ? r.link_primary : null,
   };
 }
 

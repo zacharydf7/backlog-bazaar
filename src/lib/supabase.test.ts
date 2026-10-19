@@ -781,12 +781,16 @@ describe("rowToCommunityCatalog", () => {
       owner_count: 3,
       created_at: "2026-06-20T00:00:00Z",
       updated_at: "2026-06-23T00:00:00Z",
+      igdb_id: 119388,
+      link_primary: "provider",
     });
     expect(e).toMatchObject({
       id: "c1",
       title: "Xenoblade Chronicles",
       ownerCount: 3,
       platforms: ["Nintendo Switch 2"],
+      igdbId: 119388,
+      linkPrimary: "provider",
     });
     expect(e.createdAt).toBe(Date.parse("2026-06-20T00:00:00Z"));
     expect(e.updatedAt).toBe(Date.parse("2026-06-23T00:00:00Z"));
@@ -807,10 +811,14 @@ describe("rowToCommunityCatalog", () => {
       owner_count: null,
       created_at: "2026-06-20T00:00:00Z",
       updated_at: "2026-06-20T00:00:00Z",
+      igdb_id: null,
+      link_primary: null,
     });
     expect(e.title).toBe("");
     expect(e.platforms).toEqual([]);
     expect(e.ownerCount).toBe(0);
+    expect(e.igdbId).toBeNull();
+    expect(e.linkPrimary).toBeNull();
   });
 });
 

@@ -205,6 +205,26 @@ describe("searchGameSuggestions", () => {
     expect(out[0].igdbId).toBe(188946);
   });
 
+  it("folds a community entry linked to an IGDB game into that result (52f98b68)", async () => {
+    // "Same game as…" stamps the community row with the IGDB id; its tilde
+    // spelling would otherwise survive every title gate as a second result.
+    searchGamesMock.mockResolvedValue([
+      { title: "Kingdom Hearts Collection [I-III]", igdbId: 119388, released: "2019-03-29", genres: [] },
+    ]);
+    const community: GameMeta[] = [
+      { title: "Kingdom Hearts Collection [I~III]", igdbId: 119388, genres: [], catalogId: "kh" },
+    ];
+    const { results: out } = await searchGameSuggestions("kingdom hearts collection", {
+      searchCatalogGames: vi.fn(async () => community),
+      fetchCatalogOverrides: vi.fn(async () => ({
+        byRawg: {} as Record<number, CatalogOverride>,
+        byIgdb: { 119388: override({ catalogId: "kh", title: "Kingdom Hearts Collection [I~III]" }) },
+      })),
+    });
+    expect(out).toHaveLength(1);
+    expect(out[0]).toMatchObject({ igdbId: 119388, catalogId: "kh" });
+  });
+
   it("still returns RAWG results when the community search fails", async () => {
     searchGamesMock.mockResolvedValue([{ title: "Tetris", rawgId: 9, genres: [] }]);
     const { results: out } = await searchGameSuggestions("tetris", {

@@ -3927,6 +3927,55 @@ create index if not exists game_identity_link_events_created_idx
 alter table public.game_identity_link_events enable row level security;
 -- No policies: written by the matcher/definer RPCs, read through them.
 
+-- "Same game as…" (issue 52f98b68): a moderator ties a community catalog row
+-- (no provider id) to the IGDB game it duplicates by stamping the row's
+-- igdb_id, making it dual-keyed — search then folds the two results into one
+-- and game_identity_keys bridges 'c:' and 'i:'. This is the current state of
+-- each such tie; link_catalog_game_provider / unlink_catalog_game_provider
+-- are the only writers. One live link per catalog row and per provider id.
+create table if not exists public.catalog_provider_links (
+  id           uuid primary key default gen_random_uuid(),
+  catalog_id   uuid not null references public.catalog_games (id) on delete cascade,
+  provider     text not null check (provider = 'igdb'),
+  provider_id  integer not null,
+  primary_side text not null check (primary_side in ('catalog', 'provider')),
+  status       text not null default 'linked' check (status in ('linked', 'unlinked')),
+  decided_by   uuid references public.profiles (id) on delete set null,
+  decided_at   timestamptz,
+  created_at   timestamptz not null default now(),
+  unique (catalog_id, provider, provider_id)
+);
+create unique index if not exists catalog_provider_links_catalog_live
+  on public.catalog_provider_links (catalog_id) where status = 'linked';
+create unique index if not exists catalog_provider_links_provider_live
+  on public.catalog_provider_links (provider, provider_id) where status = 'linked';
+alter table public.catalog_provider_links enable row level security;
+-- No policies: read through list_community_catalog, written by the RPCs.
+revoke insert, update, delete on public.catalog_provider_links from authenticated, anon;
+
+-- Append-only history of every link and unlink. A 'linked' row's detail holds
+-- the catalog fields before/after and each copy the link touched
+-- ({id, set_catalog_id, set_igdb_id, prev_image, prev_stock_image, image,
+-- stock_image}), which is what lets an unlink revert exactly those copies.
+create table if not exists public.catalog_provider_link_events (
+  id            uuid primary key default gen_random_uuid(),
+  link_id       uuid references public.catalog_provider_links (id) on delete set null,
+  catalog_id    uuid references public.catalog_games (id) on delete set null,
+  catalog_title text,
+  provider      text not null,
+  provider_id   integer not null,
+  action        text not null check (action in ('linked', 'unlinked')),
+  primary_side  text,
+  actor         uuid references public.profiles (id) on delete set null,
+  detail        jsonb not null default '{}'::jsonb,
+  created_at    timestamptz not null default now()
+);
+create index if not exists catalog_provider_link_events_link_idx
+  on public.catalog_provider_link_events (link_id, created_at desc);
+alter table public.catalog_provider_link_events enable row level security;
+-- No policies: written and read only through the definer RPCs.
+revoke insert, update, delete on public.catalog_provider_link_events from authenticated, anon;
+
 -- Grow the crosswalk from the ids already in use. For each normalized title
 -- (or just one, which is how the triggers below call it):
 --   exactly one rawg id + exactly one igdb id → link them  (source 'auto')
@@ -4236,7 +4285,12 @@ update public.catalog_games c
     having count(distinct g.igdb_id) = 1
   ) x
  where c.id = x.catalog_id and c.igdb_id is null
-   and not exists (select 1 from public.catalog_games o where o.igdb_id = x.igdb_id);
+   and not exists (select 1 from public.catalog_games o where o.igdb_id = x.igdb_id)
+   -- A moderator unlinked this pair ("Same game as…"), so a copy the unlink
+   -- couldn't revert must not quietly re-link it.
+   and not exists (select 1 from public.catalog_provider_links l
+                    where l.catalog_id = c.id and l.provider = 'igdb'
+                      and l.provider_id = x.igdb_id and l.status = 'unlinked');
 
 update public.catalog_games c
    set rawg_id = x.rawg_id, updated_at = now()
@@ -4982,6 +5036,12 @@ begin
    limit 1;
   if not found then raise exception 'Nothing to revert — the catalog entry no longer exists'; end if;
   v_catalog := c.id;
+  -- A "Same game as…" link ties IGDB copies to this row, and a revert would
+  -- push the community values onto them too.
+  if exists (select 1 from public.catalog_provider_links
+              where catalog_id = v_catalog and status = 'linked') then
+    raise exception 'Unlink this entry from the game database first.';
+  end if;
 
   -- A field is revertable only if it was approved AND the catalog still holds the
   -- exact value this approval set (else a later edit superseded it — skip it).
@@ -5199,7 +5259,9 @@ returns table (
   is_live_service boolean,
   owner_count bigint,
   created_at  timestamptz,
-  updated_at  timestamptz
+  updated_at  timestamptz,
+  igdb_id     integer,
+  link_primary text
 )
 language sql
 security definer set search_path = public
@@ -5208,9 +5270,16 @@ as $$
     c.id, c.title, c.image, c.platforms, c.genres, c.developers,
     c.released, c.hours, c.screenshots, c.is_live_service,
     (select count(*) from public.games g where g.catalog_id = c.id) as owner_count,
-    c.created_at, c.updated_at
+    c.created_at, c.updated_at,
+    -- The live "Same game as…" link, if a moderator tied this row to IGDB.
+    c.igdb_id, l.primary_side
   from public.catalog_games c
-  where c.rawg_id is null and c.title is not null and btrim(c.title) <> ''
+  left join public.catalog_provider_links l
+    on l.catalog_id = c.id and l.status = 'linked'
+  -- A linked row stays listed even if a RAWG id reached it later, so it can
+  -- still be unlinked here.
+  where (c.rawg_id is null or l.id is not null)
+    and c.title is not null and btrim(c.title) <> ''
     and public.has_permission('catalog.manage')
   order by c.title asc;
 $$;
@@ -5326,6 +5395,9 @@ begin
   end if;
   if not exists (select 1 from public.catalog_games where id = p_id and rawg_id is null) then
     raise exception 'Community catalog entry not found';
+  end if;
+  if exists (select 1 from public.catalog_provider_links where catalog_id = p_id and status = 'linked') then
+    raise exception 'Linked to the game database, so it can''t be deleted — unlink it first.';
   end if;
   select count(*) into v_owners from public.games where catalog_id = p_id;
   if v_owners > 0 then
@@ -5457,6 +5529,292 @@ begin
     perform public.apply_game_identity_link(p_rawg, p_igdb);
   end if;
   return v_id;
+end;
+$$;
+
+-- "Same game as…" (issue 52f98b68, see catalog_provider_links): why a
+-- community row can't be tied to an IGDB id, or null when it can. Shared by
+-- the preview and the link so the two can never disagree.
+create or replace function public.catalog_provider_link_conflict(p_catalog uuid, p_igdb integer)
+returns text
+language sql
+stable
+set search_path = public
+as $$
+  select case
+    when p_igdb is null or p_igdb <= 0 then 'Pick an IGDB game to link'
+    when c.id is null then 'Community catalog entry not found'
+    when c.rawg_id is not null or c.igdb_id is not null
+      then 'This entry is already tied to the game database'
+    when exists (select 1 from public.catalog_games o where o.igdb_id = p_igdb)
+      then 'IGDB #' || p_igdb || ' already has its own catalog entry'
+    when exists (select 1 from public.game_identity_links l
+                  where l.igdb_id = p_igdb and l.status = 'linked')
+      then 'IGDB #' || p_igdb || ' is linked to a RAWG game (Catalog → Identity)'
+  end
+  from (select 1) one
+  left join public.catalog_games c on c.id = p_catalog;
+$$;
+
+-- What linking would touch, for the moderator's confirm step: the community
+-- row's copies (which gain the igdb id) and the IGDB copies it would adopt.
+create or replace function public.preview_catalog_provider_link(p_catalog uuid, p_igdb integer)
+returns jsonb
+language plpgsql
+security definer set search_path = public
+as $$
+begin
+  -- Linking rewrites catalog fields, so it takes both catalog keys (the
+  -- Games tab that offers it already needs catalog.manage).
+  if auth.uid() is null or not public.has_permission('catalog.identity')
+     or not public.has_permission('catalog.manage') then
+    raise exception 'Not authorized';
+  end if;
+  return jsonb_build_object(
+    'community_copies', (select count(*) from public.games
+                          where catalog_id = p_catalog and igdb_id is null),
+    'igdb_copies_to_adopt', (select count(*) from public.games
+                              where igdb_id = p_igdb and catalog_id is null and compilation_id is null),
+    'conflict', public.catalog_provider_link_conflict(p_catalog, p_igdb));
+end;
+$$;
+
+-- Tie a community catalog row to its IGDB game. The client merges the two
+-- sides' fields (src/lib/catalogLink.ts — the primary's non-empty values win);
+-- this writes them with the igdb id, then null-fills the copies on both sides:
+-- the IGDB copies join the catalog row, the row's copies gain the igdb id.
+-- Nothing personal is touched. Every touched copy is recorded on the event so
+-- an unlink can put back exactly what this did.
+drop function if exists public.link_catalog_game_provider(uuid, integer, text, jsonb, text);
+create or replace function public.link_catalog_game_provider(
+  p_catalog uuid, p_igdb integer, p_primary text, p_fields jsonb
+)
+returns jsonb
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  c          public.catalog_games%rowtype;
+  v_conflict text;
+  v_before   jsonb;
+  v_after    jsonb;
+  v_adopted  jsonb;
+  v_stamped  jsonb;
+  v_link     uuid;
+begin
+  -- Linking rewrites catalog fields, so it takes both catalog keys (the
+  -- Games tab that offers it already needs catalog.manage).
+  if auth.uid() is null or not public.has_permission('catalog.identity')
+     or not public.has_permission('catalog.manage') then
+    raise exception 'Not authorized';
+  end if;
+  if p_primary is null or p_primary not in ('catalog', 'provider') then
+    raise exception 'Pick which side is primary';
+  end if;
+  if jsonb_typeof(p_fields) is distinct from 'object'
+     or jsonb_typeof(p_fields->'title') is distinct from 'string'
+     or btrim(p_fields->>'title') = ''
+     or coalesce(jsonb_typeof(p_fields->'image'), 'null') not in ('string', 'null')
+     or jsonb_typeof(p_fields->'platforms') is distinct from 'array'
+     or jsonb_typeof(p_fields->'genres') is distinct from 'array'
+     or jsonb_typeof(p_fields->'developers') is distinct from 'array'
+     or coalesce(jsonb_typeof(p_fields->'released'), 'null') not in ('string', 'null')
+     or coalesce(jsonb_typeof(p_fields->'hours'), 'null') not in ('number', 'null') then
+    raise exception 'The merged fields are malformed';
+  end if;
+  if (p_fields->>'hours')::real < 0 then
+    raise exception 'The merged fields are malformed';
+  end if;
+
+  select * into c from public.catalog_games where id = p_catalog for update;
+  v_conflict := public.catalog_provider_link_conflict(p_catalog, p_igdb);
+  if v_conflict is not null then raise exception '%', v_conflict; end if;
+
+  v_before := jsonb_build_object(
+    'title', c.title, 'image', c.image, 'platforms', c.platforms, 'genres', c.genres,
+    'developers', c.developers, 'released', c.released, 'hours', c.hours,
+    'screenshots', c.screenshots, 'is_live_service', c.is_live_service
+  );
+
+  -- The merged fields land BEFORE any copy moves, so the cover-convergence
+  -- trigger hands adopted copies the merged cover. The row's own copies pick
+  -- up the merged cover at the next apply's cover heal. Pushing the other
+  -- merged fields onto copies is skipped on purpose (an owner decision): they
+  -- arrive with the next catalog edit, unlike other catalog changes.
+  update public.catalog_games set
+    igdb_id    = p_igdb,
+    title      = btrim(p_fields->>'title'),
+    image      = nullif(btrim(coalesce(p_fields->>'image', '')), ''),
+    platforms  = p_fields->'platforms',
+    genres     = p_fields->'genres',
+    developers = p_fields->'developers',
+    released   = nullif(p_fields->>'released', '')::date,
+    hours      = (p_fields->>'hours')::real,
+    updated_at = now()
+  where id = p_catalog
+  returning * into c;
+
+  v_after := jsonb_build_object(
+    'title', c.title, 'image', c.image, 'platforms', c.platforms, 'genres', c.genres,
+    'developers', c.developers, 'released', c.released, 'hours', c.hours
+  );
+
+  -- The IGDB copies nobody linked yet join the row. A compilation's games
+  -- follow their bundle, not the catalog (issue 86fc0b4b).
+  with t as (
+    select g.id, g.image, g.stock_image from public.games g
+     where g.igdb_id = p_igdb and g.catalog_id is null and g.compilation_id is null
+  ), u as (
+    update public.games g set catalog_id = p_catalog
+      from t
+     where g.id = t.id
+    returning g.id, t.image as prev_image, t.stock_image as prev_stock_image, g.image, g.stock_image
+  )
+  select coalesce(jsonb_agg(jsonb_build_object(
+           'id', u.id, 'set_catalog_id', true, 'set_igdb_id', false,
+           'prev_image', u.prev_image, 'prev_stock_image', u.prev_stock_image,
+           'image', u.image, 'stock_image', u.stock_image)), '[]'::jsonb)
+    into v_adopted from u;
+
+  -- The row's own copies gain the igdb id (null-fill only).
+  with u as (
+    update public.games g set igdb_id = p_igdb
+     where g.catalog_id = p_catalog and g.igdb_id is null
+    returning g.id, g.image, g.stock_image
+  )
+  select coalesce(jsonb_agg(jsonb_build_object(
+           'id', u.id, 'set_catalog_id', false, 'set_igdb_id', true,
+           'prev_image', u.image, 'prev_stock_image', u.stock_image,
+           'image', u.image, 'stock_image', u.stock_image)), '[]'::jsonb)
+    into v_stamped from u;
+
+  -- Logged as an approved edit exactly like admin_edit_catalog_game, so the
+  -- field change shows in the audit trail and reverts with the existing tools.
+  insert into public.game_submissions (
+    submitter, kind, catalog_id, title, image, platforms, genres, developers,
+    released, hours, screenshots, is_live_service, before, status, reviewer, reviewed_at,
+    review_note, reward, approved_fields
+  ) values (
+    auth.uid(), 'edit', p_catalog, c.title, c.image, c.platforms, c.genres, c.developers,
+    c.released, c.hours, c.screenshots, c.is_live_service, v_before, 'approved', auth.uid(), now(),
+    'Linked to IGDB #' || p_igdb || ' (primary: ' || p_primary || ')', 0,
+    array['title', 'image', 'platforms', 'genres', 'developers', 'released', 'hours']
+  );
+
+  perform public.refresh_compilation_templates_for_catalog(p_catalog);
+
+  -- The igdb stamps above re-run the RAWG crosswalk matcher, which may have
+  -- tied this game to a same-titled RAWG entry and adopted its copies, none of
+  -- it recorded for an unlink. Refuse, rolling everything back.
+  if (select rawg_id from public.catalog_games where id = p_catalog) is not null
+     or exists (select 1 from public.game_identity_links
+                 where igdb_id = p_igdb and status = 'linked') then
+    raise exception 'That game is also matched to a RAWG entry. Rule on it in Catalog → Identity first, then link.';
+  end if;
+
+  insert into public.catalog_provider_links as l
+    (catalog_id, provider, provider_id, primary_side, status, decided_by, decided_at)
+  values (p_catalog, 'igdb', p_igdb, p_primary, 'linked', auth.uid(), now())
+  on conflict (catalog_id, provider, provider_id) do update
+    set primary_side = excluded.primary_side, status = 'linked',
+        decided_by = excluded.decided_by, decided_at = excluded.decided_at
+  returning l.id into v_link;
+
+  insert into public.catalog_provider_link_events
+    (link_id, catalog_id, catalog_title, provider, provider_id, action, primary_side, actor, detail)
+  values (v_link, p_catalog, c.title, 'igdb', p_igdb, 'linked', p_primary, auth.uid(),
+          jsonb_build_object('before', v_before, 'after', v_after,
+                             'copies', v_adopted || v_stamped));
+
+  return jsonb_build_object('adopted', jsonb_array_length(v_adopted),
+                            'stamped', jsonb_array_length(v_stamped));
+end;
+$$;
+
+-- Take a "Same game as…" link back. The catalog row keeps its merged fields
+-- (revert the logged edit for those); the igdb id comes off and the copies
+-- the link touched are put back — but only where they still hold what the
+-- link set (the revert_game_submission rule), so nothing changed since is
+-- clobbered.
+drop function if exists public.unlink_catalog_game_provider(uuid, text);
+create or replace function public.unlink_catalog_game_provider(p_catalog uuid)
+returns jsonb
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  l          public.catalog_provider_links%rowtype;
+  v_copies   jsonb;
+  v_title    text;
+  v_rawg     integer;
+  v_reverted integer;
+begin
+  -- Linking rewrites catalog fields, so it takes both catalog keys (the
+  -- Games tab that offers it already needs catalog.manage).
+  if auth.uid() is null or not public.has_permission('catalog.identity')
+     or not public.has_permission('catalog.manage') then
+    raise exception 'Not authorized';
+  end if;
+  select * into l from public.catalog_provider_links
+   where catalog_id = p_catalog and status = 'linked'
+   for update;
+  if not found then raise exception 'This entry isn''t linked to the game database'; end if;
+  select e.detail->'copies' into v_copies
+    from public.catalog_provider_link_events e
+   where e.link_id = l.id and e.action = 'linked'
+   order by e.created_at desc
+   limit 1;
+  v_copies := coalesce(v_copies, '[]'::jsonb);
+
+  select title, rawg_id into v_title, v_rawg from public.catalog_games where id = p_catalog for update;
+  if v_rawg is not null then
+    raise exception 'This entry has since been merged with RAWG #% too, so it''s fully the same game now and can''t be unlinked.', v_rawg;
+  end if;
+  begin
+    update public.catalog_games set igdb_id = null, updated_at = now()
+     where id = p_catalog and igdb_id = l.provider_id;
+  exception when unique_violation then
+    raise exception 'Another community entry is already titled "%" — rename one before unlinking', v_title;
+  end;
+
+  with r as (
+    select (x->>'id')::uuid as id,
+           coalesce((x->>'set_catalog_id')::boolean, false) as set_cat,
+           coalesce((x->>'set_igdb_id')::boolean, false) as set_igdb,
+           x->>'prev_image' as prev_image, x->>'prev_stock_image' as prev_stock,
+           x->>'image' as left_image, x->>'stock_image' as left_stock
+      from jsonb_array_elements(v_copies) x
+  ), u as (
+    update public.games g set
+      catalog_id  = case when r.set_cat and g.catalog_id = p_catalog then null else g.catalog_id end,
+      igdb_id     = case when r.set_igdb and g.igdb_id = l.provider_id then null else g.igdb_id end,
+      -- An adopted copy leaving the row gets its own cover back, unless it
+      -- has moved on from the one the link left it.
+      image       = case when r.set_cat and g.catalog_id = p_catalog
+                           and g.image is not distinct from r.left_image
+                         then r.prev_image else g.image end,
+      stock_image = case when r.set_cat and g.catalog_id = p_catalog
+                           and g.stock_image is not distinct from r.left_stock
+                         then r.prev_stock else g.stock_image end
+      from r
+     where g.id = r.id
+       and ((r.set_cat and g.catalog_id = p_catalog) or (r.set_igdb and g.igdb_id = l.provider_id))
+    returning g.id
+  )
+  select count(*) into v_reverted from u;
+
+  update public.catalog_provider_links
+     set status = 'unlinked', decided_by = auth.uid(), decided_at = now()
+   where id = l.id;
+
+  insert into public.catalog_provider_link_events
+    (link_id, catalog_id, catalog_title, provider, provider_id, action, primary_side, actor, detail)
+  values (l.id, p_catalog, v_title, l.provider, l.provider_id, 'unlinked', l.primary_side, auth.uid(),
+          jsonb_build_object('reverted', v_reverted,
+                             'skipped', jsonb_array_length(v_copies) - v_reverted));
+
+  return jsonb_build_object('reverted', v_reverted,
+                            'skipped', jsonb_array_length(v_copies) - v_reverted);
 end;
 $$;
 
@@ -15854,6 +16212,11 @@ revoke execute on function public.admin_edit_catalog_game(uuid, text, text, json
 revoke execute on function public.admin_delete_catalog_game(uuid) from public, anon;
 revoke execute on function public.list_game_identity_links()    from public, anon;
 revoke execute on function public.set_game_identity_link(integer, integer, text, text) from public, anon;
+revoke execute on function public.preview_catalog_provider_link(uuid, integer) from public, anon;
+revoke execute on function public.link_catalog_game_provider(uuid, integer, text, jsonb) from public, anon;
+revoke execute on function public.unlink_catalog_game_provider(uuid) from public, anon;
+-- Internal check shared by the preview and the link (which authorize).
+revoke execute on function public.catalog_provider_link_conflict(uuid, integer) from public, anon, authenticated;
 -- Shared identity helpers: the two key functions stay callable by signed-in
 -- players (they read only the live crosswalk, which the client mirrors), and
 -- game_title_key must be, because it's an index expression every games insert
@@ -15967,6 +16330,9 @@ grant execute on function public.list_community_catalog()      to authenticated;
 grant execute on function public.admin_edit_catalog_game(uuid, text, text, jsonb, jsonb, jsonb, date, real, jsonb, boolean) to authenticated;
 grant execute on function public.list_game_identity_links()     to authenticated;
 grant execute on function public.set_game_identity_link(integer, integer, text, text) to authenticated;
+grant execute on function public.preview_catalog_provider_link(uuid, integer) to authenticated;
+grant execute on function public.link_catalog_game_provider(uuid, integer, text, jsonb) to authenticated;
+grant execute on function public.unlink_catalog_game_provider(uuid) to authenticated;
 grant execute on function public.game_identity_key(integer, integer, uuid)  to authenticated;
 grant execute on function public.game_identity_keys(integer, integer, uuid) to authenticated;
 grant execute on function public.game_title_key(text)           to authenticated;

@@ -3,6 +3,7 @@
 // React/Supabase so it's directly unit-tested.
 import { mergePlatforms } from "./platforms";
 import { canonicalizeTerms } from "./taxonomy";
+import type { LinkPrimary } from "./catalogLink";
 import type { GameMeta, GameSubmission } from "../types";
 
 /** The catalog metadata a user can propose changing (edit) or filling in (new).
@@ -239,6 +240,9 @@ export interface CommunityCatalogEntry extends CatalogFields {
   ownerCount: number;
   createdAt: number;
   updatedAt: number;
+  igdbId: number | null;
+  /** Set while a "Same game as…" link ties this entry to its IGDB game. */
+  linkPrimary: LinkPrimary | null;
 }
 
 /** True when an approved catalog *edit* can still be rolled back to its
