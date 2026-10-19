@@ -133,6 +133,15 @@ describe("Value played on the spend rollup (6c60c213 follow-up)", () => {
     act(() => useStore.setState({ gameDlc: [] }));
   });
 
+  it("shows a game recorded at $0 as Free, with no value judgement (c6043d83)", () => {
+    const g = game({ copies: [{ id: "c1", platform: "PC", cost: 0 }], playedHours: 120 });
+    render(<OverviewTab game={g} screenshots={[]} />);
+    // The total and the copy's own line both read Free.
+    expect(screen.getAllByText("Free")).toHaveLength(2);
+    expect(screen.queryByText(/Spent/)).toBeNull();
+    expect(screen.queryByText(/value played/)).toBeNull();
+  });
+
   it("stays silent with no target set (feature off)", () => {
     act(() => useStore.setState({ targetCostPerHour: null }));
     const g = game({ copies: [{ id: "c1", platform: "PC", cost: 60 }], playedHours: 40 });

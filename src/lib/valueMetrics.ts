@@ -10,7 +10,7 @@
 // offline; the badge/stat components just render what these return.
 
 import type { Game } from "../types";
-import { totalCost } from "./copies";
+import { isFree, totalCost } from "./copies";
 
 /** A game's value verdict against the player's target, or null when the logic
  *  doesn't apply (no target set, or a zero-cost game — free-to-play, Player 2
@@ -112,9 +112,10 @@ function roundHours(h: number): number {
 export interface ValueFinancials {
   /** Cumulative USD purchase cost across the games in view. */
   totalSpent: number;
-  /** Spend ÷ hours across PAID games only — zero-cost games are excluded from
-   *  the denominator too, so a free game's hours can't flatter the rate. Null
-   *  until there's both spend and playtime to divide. */
+  /** Spend ÷ hours across games with a recorded cost, free ones included (a
+   *  game you got for $0 really does lower what your play costs; issue
+   *  c6043d83). A game with no cost recorded stays out. Null until there's
+   *  both spend and playtime to divide. */
   costPerHour: number | null;
   /** Games in view whose "Money Well Spent" goal is met. */
   wellSpent: number;
@@ -134,14 +135,19 @@ export function valueFinancials(
   dlcSpendOf: (game: Game) => number = () => 0,
 ): ValueFinancials {
   let totalSpent = 0;
-  let paidHours = 0;
+  let costedHours = 0;
   let wellSpent = 0;
   let eligible = 0;
   for (const g of games) {
     const spend = totalCost(g.copies) + dlcSpendOf(g);
-    if (!(spend > 0)) continue; // zero-cost: bypass everything (never skews)
+    if (!(spend > 0)) {
+      // A free game counts toward the rate but is never judged well spent
+      // (the requester's pick); one with no cost recorded is bypassed.
+      if (isFree(g.copies)) costedHours += Math.max(0, g.playedHours ?? 0);
+      continue;
+    }
     totalSpent += spend;
-    paidHours += Math.max(0, g.playedHours ?? 0);
+    costedHours += Math.max(0, g.playedHours ?? 0);
     if (hasValueTarget(target)) {
       eligible++;
       if ((g.playedHours ?? 0) >= spend / target) wellSpent++;
@@ -149,7 +155,7 @@ export function valueFinancials(
   }
   return {
     totalSpent,
-    costPerHour: totalSpent > 0 && paidHours > 0 ? totalSpent / paidHours : null,
+    costPerHour: totalSpent > 0 && costedHours > 0 ? totalSpent / costedHours : null,
     wellSpent,
     eligible,
     wellSpentPct: eligible === 0 ? 0 : Math.round((wellSpent / eligible) * 100),

@@ -5403,11 +5403,13 @@ export const useStore = create<BazaarState>((set, get) => ({
       ? provided.map((c) => toCents(c as number))
       : splitEvenly(totalCents, named.length);
     const matrix = distributeAcrossCopies(copyCents, shares);
+    // A bundle copy with no price gives its games no price either: a blank
+    // cost is "not recorded", while 0 means free (issue c6043d83).
     const childCopies = (i: number) =>
       copies.map((cp, k) => ({
         platform: cp.platform,
         format: cp.format,
-        cost: fromCents(matrix[k][i]),
+        cost: cp.cost == null ? undefined : fromCents(matrix[k][i]),
       }));
 
     if (!cloud) {
@@ -5535,11 +5537,13 @@ export const useStore = create<BazaarState>((set, get) => ({
       ? provided.map((c) => toCents(c as number))
       : splitEvenly(totalCents, named.length);
     const matrix = distributeAcrossCopies(copyCents, shares);
+    // A bundle copy with no price gives its games no price either: a blank
+    // cost is "not recorded", while 0 means free (issue c6043d83).
     const childCopies = (i: number) =>
       copies.map((cp, k) => ({
         platform: cp.platform,
         format: cp.format,
-        cost: fromCents(matrix[k][i]),
+        cost: cp.cost == null ? undefined : fromCents(matrix[k][i]),
       }));
     const title = container.title.trim();
 
@@ -5891,7 +5895,7 @@ export const useStore = create<BazaarState>((set, get) => ({
               id: uid(),
               platform: cp.platform || "",
               format: cp.format,
-              cost: fromCents(perCopyShares[k][i]),
+              cost: cp.cost == null ? undefined : fromCents(perCopyShares[k][i]),
             }))
           : [{ id: uid(), platform: "" }],
         compilationId: compId,

@@ -132,8 +132,8 @@ describe("valueFinancials", () => {
   const lib = [
     game({ id: "a", copies: [copy(60)], playedHours: 40 }), // met at $2/hr (needs 30h)
     game({ id: "b", copies: [copy(30)], playedHours: 5 }), // not met (needs 15h)
-    game({ id: "c", copies: [], playedHours: 100 }), // free: bypassed entirely
-    game({ id: "d", copies: [copy(0)], playedHours: 50 }), // $0 cost: bypassed too
+    game({ id: "c", copies: [], playedHours: 100 }), // no cost recorded: bypassed entirely
+    game({ id: "d", copies: [copy(0)], playedHours: 45 }), // free ($0): its hours count, never judged
   ];
 
   it("counts each game's DLC in what it cost", () => {
@@ -143,11 +143,12 @@ describe("valueFinancials", () => {
     expect(f.wellSpent).toBe(1);
   });
 
-  it("sums spend and computes cost-per-hour over PAID games only", () => {
+  it("sums spend and computes cost-per-hour over games with a recorded cost, free ones included", () => {
     const f = valueFinancials(lib, 2);
     expect(f.totalSpent).toBe(90);
-    // 90 ÷ (40 + 5) — the free games' 150h never flatter the rate.
-    expect(f.costPerHour).toBe(2);
+    // 90 ÷ (40 + 5 + 45): the free game's hours count (issue c6043d83); the
+    // one with no cost recorded stays out.
+    expect(f.costPerHour).toBe(1);
   });
 
   it("counts well-spent games against the eligible (paid) base", () => {
@@ -165,7 +166,7 @@ describe("valueFinancials", () => {
   it("still totals spend + rate with no target set (judgement off)", () => {
     const f = valueFinancials(lib, null);
     expect(f.totalSpent).toBe(90);
-    expect(f.costPerHour).toBe(2);
+    expect(f.costPerHour).toBe(1);
     expect(f.eligible).toBe(0);
     expect(f.wellSpentPct).toBe(0);
   });
@@ -179,5 +180,7 @@ describe("valueFinancials", () => {
       wellSpentPct: 0,
     });
     expect(valueFinancials([lib[2]], 2).costPerHour).toBeNull();
+    // Free games alone have hours but nothing spent: no rate, not "$0/hr".
+    expect(valueFinancials([lib[3]], 2)).toMatchObject({ totalSpent: 0, costPerHour: null, eligible: 0 });
   });
 });

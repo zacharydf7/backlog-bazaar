@@ -13,6 +13,8 @@ import {
   totalCost,
   hasAnyCost,
   formatUsd,
+  formatCost,
+  spendLabel,
   spendRowGroups,
 } from "../../lib/copies";
 import { valueStatusOf } from "../../lib/valueMetrics";
@@ -309,7 +311,7 @@ function OwnershipRollup({ members, hideSpend }: { members: Game[]; hideSpend: b
         <div className="rounded-lg bg-panel p-2 text-[11px] text-muted">
           <div className="mb-1 flex flex-wrap items-center justify-between gap-x-2 gap-y-0.5">
             <span className="inline-flex items-center gap-1 text-accent">
-              <Banknote size={12} /> Spent {formatUsd(spend)}
+              <Banknote size={12} /> {spendLabel(spend)}
             </span>
             {value != null && <ValuePlayedNote status={value} target={target!} />}
           </div>
@@ -335,7 +337,7 @@ function OwnershipRollup({ members, hideSpend }: { members: Game[]; hideSpend: b
                     {c.format ? ` (${formatLabel(c.format)})` : ""}
                     {c.note ? ` · ${c.note}` : ""}
                   </span>
-                  <span className="shrink-0">{c.cost ? formatUsd(c.cost) : "—"}</span>
+                  <span className="shrink-0">{c.cost != null ? formatCost(c.cost) : "—"}</span>
                 </div>
               ))}
             </div>

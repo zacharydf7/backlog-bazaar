@@ -77,6 +77,25 @@ describe("LedgerCard", () => {
     expect(screen.getByRole("button", { name: /Open Hollow Knight/i })).toBeTruthy();
   });
 
+  it("shows a game recorded at $0 as Free, and nothing for a blank cost (c6043d83)", () => {
+    const free = { ...game, copies: [{ id: "c1", platform: "PC", cost: 0 }] };
+    const { unmount } = render(
+      <ViewingProvider value={{ readOnly: false, hideSpend: false }}>
+        <LedgerCard game={free} />
+      </ViewingProvider>,
+    );
+    expect(screen.getByText("Free")).toBeTruthy();
+    expect(screen.queryByText(/Spent/)).toBeNull();
+    unmount();
+    render(
+      <ViewingProvider value={{ readOnly: false, hideSpend: false }}>
+        <LedgerCard game={{ ...game, copies: [{ id: "c1", platform: "PC" }] }} />
+      </ViewingProvider>,
+    );
+    expect(screen.queryByText("Free")).toBeNull();
+    expect(screen.queryByText(/Spent/)).toBeNull();
+  });
+
   it("hides money spent when the visited player hid it", () => {
     renderCard(true);
     expect(screen.queryByText(/Spent/)).toBeNull();

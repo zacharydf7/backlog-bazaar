@@ -15,8 +15,8 @@ import { isInRotation } from "../../lib/status";
 import { copyPlatformOptions, canonicalizeTerms, newlyMissingPlatforms } from "../../lib/taxonomy";
 import {
   copyCountSummary,
+  formatCost,
   formatLabel,
-  formatUsd,
   isModifierAcquisition,
   ownedPlatformSummary,
   ownershipLabel,
@@ -508,7 +508,7 @@ function InstanceCopies({
                 )}
               </span>
               <span className="shrink-0 text-accent">
-                {c.cost != null ? formatUsd(c.cost) : "—"}
+                {c.cost != null ? formatCost(c.cost) : "—"}
               </span>
             </div>
           ))}

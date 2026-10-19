@@ -11032,7 +11032,9 @@ begin
           'id', gen_random_uuid()::text,
           'platform', nullif(btrim(coalesce(pc.copy->>'platform', '')), ''),
           'format', nullif(btrim(coalesce(pc.copy->>'format', '')), ''),
-          'cost', case when pc.cents > 0
+          -- No cost on the parent copy gives no cost; $0 (free) stays $0
+          -- (issue c6043d83).
+          'cost', case when pc.priced
                        then ((pc.cents / v_n)
                              + case when v_tpl.ord <= (pc.cents - (pc.cents / v_n) * v_n)
                                     then 1 else 0 end) / 100.0
@@ -11040,6 +11042,7 @@ begin
         )) order by pc.k)
         from (
           select raw.copy, raw.k,
+                 nullif(raw.copy->>'cost', '') is not null as priced,
                  coalesce(round(nullif(raw.copy->>'cost', '')::numeric * 100), 0)::bigint as cents
           from jsonb_array_elements(g.copies) with ordinality as raw(copy, k)
         ) pc

@@ -34,7 +34,7 @@ import {
   orderCompilationChildren,
 } from "../../lib/compilationGrouping";
 import { compilationCopiesOf } from "../../lib/compilations";
-import { formatLabel, formatUsd, ownedPlatformSummary, totalCost } from "../../lib/copies";
+import { formatCost, formatLabel, formatUsd, hasAnyCost, ownedPlatformSummary, spendLabel, totalCost } from "../../lib/copies";
 import { formatPlaytime } from "../../lib/playtime";
 import { effectiveLength } from "../../lib/personalLength";
 import { StatusBadge } from "../StatusBadge";
@@ -706,7 +706,7 @@ function LibraryPane({
         <div className="rounded-lg bg-panel p-2 text-[11px] text-muted">
           <div className="mb-1 flex flex-wrap items-center justify-between gap-x-2 gap-y-0.5">
             <span className="inline-flex items-center gap-1 text-accent">
-              <Banknote size={12} /> Spent {formatUsd(compilation.totalCost)}
+              <Banknote size={12} /> {hasAnyCost(copies) ? spendLabel(compilation.totalCost) : "Spent —"}
               <span className="text-subtle">· {formatPlaytime(totalPlayed)} played</span>
             </span>
             {value && <ValuePlayedNote status={value} target={target!} />}
@@ -718,7 +718,7 @@ function LibraryPane({
                 {c.format ? ` (${formatLabel(c.format)})` : ""}
                 {c.note ? ` · ${c.note}` : ""}
               </span>
-              <span className="shrink-0">{c.cost ? formatUsd(c.cost) : "—"}</span>
+              <span className="shrink-0">{c.cost != null ? formatCost(c.cost) : "—"}</span>
             </div>
           ))}
         </div>

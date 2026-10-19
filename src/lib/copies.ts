@@ -286,10 +286,17 @@ export function totalCost(copies: GameCopy[] | undefined): number {
   return (copies ?? []).reduce((sum, c) => sum + (c.cost ?? 0), 0);
 }
 
-/** True if any copy has a recorded cost (used to decide whether to show the
- *  spend breakdown at all). */
+/** True if any copy has a recorded cost, a free (0) one included (used to
+ *  decide whether to show the spend breakdown at all). A blank cost is "not
+ *  recorded", not free. */
 export function hasAnyCost(copies: GameCopy[] | undefined): boolean {
-  return (copies ?? []).some((c) => typeof c.cost === "number" && c.cost > 0);
+  return (copies ?? []).some((c) => typeof c.cost === "number" && c.cost >= 0);
+}
+
+/** A game recorded as free: a cost of 0 entered, and nothing paid on any copy
+ *  (issue c6043d83). */
+export function isFree(copies: GameCopy[] | undefined): boolean {
+  return hasAnyCost(copies) && totalCost(copies) === 0;
 }
 
 /** One line of the per-copy spend breakdown: a copy plus a stable key (the
@@ -364,4 +371,15 @@ export function formatUsd(amount: number): string {
     maximumFractionDigits: 2,
   });
   return `$${s.replace(/\.00$/, "")}`;
+}
+
+/** A recorded cost for display: "Free" for 0, else formatUsd. */
+export function formatCost(amount: number): string {
+  return amount === 0 ? "Free" : formatUsd(amount);
+}
+
+/** The headline of a spend breakdown with a cost recorded: "Free" for 0,
+ *  else "Spent $X". */
+export function spendLabel(spend: number): string {
+  return spend === 0 ? "Free" : `Spent ${formatUsd(spend)}`;
 }

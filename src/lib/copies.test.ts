@@ -13,6 +13,8 @@ import {
   copyCountSummary,
   totalCost,
   hasAnyCost,
+  isFree,
+  formatCost,
   formatUsd,
   coerceAcquisition,
   acquisitionLabel,
@@ -261,9 +263,25 @@ describe("totalCost", () => {
 });
 
 describe("hasAnyCost", () => {
-  it("is true only when a copy has a positive cost", () => {
-    expect(hasAnyCost([copy({}), copy({ cost: 0 })])).toBe(false);
+  it("is true once a copy has a cost recorded, a free (0) one included", () => {
+    expect(hasAnyCost([copy({}), copy({})])).toBe(false);
+    expect(hasAnyCost([copy({}), copy({ cost: 0 })])).toBe(true);
     expect(hasAnyCost([copy({}), copy({ cost: 20 })])).toBe(true);
+  });
+});
+
+describe("isFree (issue c6043d83)", () => {
+  it("is a game with a $0 cost entered and nothing paid; a blank cost isn't free", () => {
+    expect(isFree([copy({ cost: 0 })])).toBe(true);
+    expect(isFree([copy({ cost: 0 }), copy({})])).toBe(true);
+    expect(isFree([copy({ cost: 0 }), copy({ cost: 20 })])).toBe(false);
+    expect(isFree([copy({})])).toBe(false);
+    expect(isFree(undefined)).toBe(false);
+  });
+
+  it("formats a $0 cost as Free", () => {
+    expect(formatCost(0)).toBe("Free");
+    expect(formatCost(20)).toBe("$20");
   });
 });
 

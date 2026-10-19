@@ -1123,6 +1123,18 @@ describe("compilations (offline)", () => {
     expect(games.every((g) => g.copies?.[0]?.platform === "Nintendo Switch")).toBe(true);
   });
 
+  it("leaves a bundle's games unpriced when the bundle has no price, and free when it cost $0 (c6043d83)", async () => {
+    await store().addCompilation(
+      { title: "Unpriced", totalCost: 0, copies: [{ platform: "PC" }] },
+      [{ name: "A" }, { name: "B" }],
+      "backlog",
+    );
+    expect(store().games.map((g) => g.copies?.[0]?.cost)).toEqual([undefined, undefined]);
+    useStore.setState({ games: [], compilations: [] });
+    await store().addCompilation(bundle(0, { platform: "PC" }), [{ name: "A" }, { name: "B" }], "backlog");
+    expect(store().games.map((g) => g.copies?.[0]?.cost)).toEqual([0, 0]);
+  });
+
   it("applies per-game status, overriding the container destination", async () => {
     await store().addCompilation(
       bundle(20),
@@ -1592,6 +1604,15 @@ describe("expandGameToCompilation (offline)", () => {
 
   beforeEach(() => {
     useStore.setState({ games: [], compilations: [] });
+  });
+
+  it("keeps a free game's games free, and an unpriced one's unpriced (c6043d83)", async () => {
+    useStore.setState({ games: [parent({ copies: [{ id: "c1", platform: "PC", cost: 0 }] })] });
+    await store().expandGameToCompilation("P", template);
+    expect(store().games.map((g) => g.copies?.[0]?.cost)).toEqual([0, 0, 0]);
+    useStore.setState({ games: [parent({ copies: [{ id: "c1", platform: "PC" }] })], compilations: [] });
+    await store().expandGameToCompilation("P", template);
+    expect(store().games.map((g) => g.copies?.[0]?.cost)).toEqual([undefined, undefined, undefined]);
   });
 
   it("converts the parent card into a compilation with an even cent split", async () => {
