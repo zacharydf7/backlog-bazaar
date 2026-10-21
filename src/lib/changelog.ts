@@ -41,6 +41,21 @@ export interface Release {
 export const RELEASES: Release[] = [
   // ── October 2026 ──────────────────────────────────────────────────────────
   {
+    id: "2026-10-21-friends-activity",
+    date: "2026-10-21",
+    title: "See what your friends are playing",
+    summary:
+      "Your friends' Activity feed now shows the games they start, the time they play, their notes and the medals they earn.",
+    tag: "feature",
+    items: [
+      "A day's play on a game shows as one line that keeps updating.",
+      "Progress notes on Now Playing cards appear with that day's play.",
+      "Medals earned on the same day share one line.",
+      "Rather keep play time and notes private? Switch them off under Privacy in your account.",
+    ],
+    link: { label: "Open Activity", view: "community-activity" },
+  },
+  {
     id: "2026-10-18-dlc",
     date: "2026-10-18",
     title: "Track your DLC and expansions",

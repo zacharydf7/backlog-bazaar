@@ -17,6 +17,7 @@ import {
   Gamepad2,
   Minus,
   Plus,
+  Timer,
 } from "lucide-react";
 import { useStore } from "../store";
 import { buildLibraryExport, serializeExport, exportFilename } from "../lib/dataExport";
@@ -31,6 +32,7 @@ import {
   isFinancialFeedHidden,
   isCustomCoversHidden,
   isHiddenFromSquare,
+  isPlayActivityHidden,
   PRIVACY_KEYS,
 } from "../lib/privacy";
 import { sortBadges } from "../lib/badges";
@@ -563,6 +565,24 @@ export function AccountModal() {
                 <p className="mt-1.5 text-[11px] text-subtle">
                   When on, the coins you earn finishing a game are hidden from your friends&apos;
                   activity feed (the milestone still shows). On by default.
+                </p>
+
+                <label className="mt-2 flex cursor-pointer items-center justify-between gap-3 rounded-xl border border-line bg-panel px-3 py-2.5 text-sm text-ink">
+                  <span className="inline-flex items-center gap-2">
+                    <Timer size={15} className="text-accent" />
+                    Hide my play sessions and notes from friends
+                  </span>
+                  <input
+                    type="checkbox"
+                    checked={isPlayActivityHidden(privacy)}
+                    onChange={(e) => setPrivacy(PRIVACY_KEYS.hidePlayActivity, e.target.checked)}
+                    className="h-4 w-4 accent-[var(--brand)]"
+                  />
+                </label>
+                <p className="mt-1.5 text-[11px] text-subtle">
+                  When on, your friends&apos; activity feed won&apos;t show your play sessions
+                  (including going back to a finished game) or your progress notes. Starting and
+                  finishing games and earning medals still show.
                 </p>
 
                 <label className="mt-2 flex cursor-pointer items-center justify-between gap-3 rounded-xl border border-line bg-panel px-3 py-2.5 text-sm text-ink">

@@ -391,7 +391,11 @@ export type ActivityKind =
   | "family_created"
   | "bounty_claimed"
   | "co_op_completed"
-  | "drop_in";
+  | "drop_in"
+  | "game_started"
+  | "played"
+  | "note"
+  | "medal_earned";
 
 /** One post in the activity feed: a friend's milestone, with cheer state. The
  *  coin amount in `detail` is omitted for friends who hide financial milestones;
@@ -399,7 +403,10 @@ export type ActivityKind =
  *  snapshots the finish tag it earned, so the headline can say "beat" vs
  *  "completed" (absent on events recorded before that was captured). An import
  *  snapshots how the game is held (acquisition + provider), so a Game Pass
- *  pickup never reads like a purchase (absent = plainly owned / older event). */
+ *  pickup never reads like a purchase (absent = plainly owned / older event).
+ *  The server rolls a day of play into one `played` post (hours summed, with
+ *  that day's latest progress note), and a day's medals into one
+ *  `medal_earned` post (names oldest first). */
 export interface ActivityEvent {
   id: string;
   actor: string;
@@ -413,6 +420,9 @@ export interface ActivityEvent {
     finish_tag?: FinishTag;
     acquisition?: ModifierAcquisition;
     provider?: string;
+    hours?: number;
+    note?: string;
+    medals?: string[];
   };
   createdAt: number;
   cheerCount: number;

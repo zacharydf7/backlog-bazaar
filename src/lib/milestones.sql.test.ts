@@ -57,6 +57,7 @@ beforeAll(async () => {
       resumed     boolean not null default false,
       completionist boolean not null default false,
       in_rotation boolean not null default false,
+      private     boolean not null default false,
       stealth     boolean not null default false,
       reward      integer
     );

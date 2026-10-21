@@ -1038,6 +1038,25 @@ describe("social mappers", () => {
     expect(e.cheeredByMe).toBe(false);
   });
 
+  it("keeps the everyday kinds and their rolled-up detail", () => {
+    const row = {
+      id: "a4",
+      actor: "u9",
+      actor_name: "Sora",
+      actor_avatar: null,
+      game_title: "Hades",
+      created_at: "2026-10-21T00:00:00Z",
+      cheer_count: 0,
+      cheered_by_me: false,
+    };
+    const played = rowToActivityEvent({ ...row, kind: "played", detail: { hours: 1.5, note: "Beat it" } });
+    expect([played.kind, played.detail]).toEqual(["played", { hours: 1.5, note: "Beat it" }]);
+    const medals = rowToActivityEvent({ ...row, kind: "medal_earned", detail: { medals: ["Night Owl"] } });
+    expect([medals.kind, medals.detail]).toEqual(["medal_earned", { medals: ["Night Owl"] }]);
+    expect(rowToActivityEvent({ ...row, kind: "game_started", detail: {} }).kind).toBe("game_started");
+    expect(rowToActivityEvent({ ...row, kind: "note", detail: {} }).kind).toBe("note");
+  });
+
   it("keeps a clear's finish tag and drops an unrecognized one", () => {
     const row = {
       id: "a3",

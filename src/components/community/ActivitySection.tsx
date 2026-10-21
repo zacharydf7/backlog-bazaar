@@ -1,11 +1,39 @@
 import { useEffect, useRef } from "react";
-import { Loader2, Newspaper, PartyPopper, Users } from "lucide-react";
+import {
+  Clock,
+  Download,
+  Handshake,
+  Layers,
+  Loader2,
+  Medal,
+  Newspaper,
+  PartyPopper,
+  Play,
+  RotateCcw,
+  StickyNote,
+  Trophy,
+  Users,
+  type LucideIcon,
+} from "lucide-react";
 import { useStore } from "../../store";
 import { Avatar } from "../Avatar";
 import { CoinIcon } from "../CoinIcon";
 import { EmptyState } from "./EmptyState";
 import { timeAgo } from "../../lib/time";
 import { activityHeadline, activityCoins } from "../../lib/social";
+import type { ActivityKind } from "../../types";
+
+const KIND_ICONS: Record<ActivityKind, LucideIcon> = {
+  game_imported: Download,
+  family_created: Layers,
+  bounty_claimed: Trophy,
+  co_op_completed: Handshake,
+  drop_in: RotateCcw,
+  game_started: Play,
+  played: Clock,
+  note: StickyNote,
+  medal_earned: Medal,
+};
 
 /** The Activity section: your friends' feed as a full page. The old drawer
  *  paged on its own scrollbox; here the page itself scrolls, so older rows load
@@ -49,7 +77,7 @@ export function ActivitySection({ onFindFriends }: { onFindFriends: () => void }
         <EmptyState
           icon={Newspaper}
           title="No activity yet"
-          body="When your friends import games, start Game Families, or finish a game, it shows up here."
+          body="When your friends start, play or finish games, or earn medals, it shows up here."
           action={
             <button
               onClick={onFindFriends}
@@ -68,6 +96,7 @@ export function ActivitySection({ onFindFriends }: { onFindFriends: () => void }
       <ul className="divide-y divide-line">
         {feed.map((e) => {
           const coins = activityCoins(e);
+          const KindIcon = KIND_ICONS[e.kind];
           return (
             <li key={e.id} className="flex items-start gap-3 px-4 py-3">
               <Avatar url={e.actorAvatar} name={e.actorName} size={36} />
@@ -76,7 +105,13 @@ export function ActivitySection({ onFindFriends }: { onFindFriends: () => void }
                   <span className="font-semibold">{e.actorName}</span>{" "}
                   <span className="text-muted">{activityHeadline(e)}</span>
                 </p>
+                {e.detail.note && (
+                  <p className="mt-1 whitespace-pre-wrap break-words rounded-lg bg-panel px-2.5 py-1.5 text-xs text-muted">
+                    &ldquo;{e.detail.note}&rdquo;
+                  </p>
+                )}
                 <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-subtle">
+                  <KindIcon size={12} aria-hidden className="shrink-0" />
                   <span>{timeAgo(e.createdAt)}</span>
                   {coins != null && (
                     <span className="inline-flex items-center gap-1 text-accent">

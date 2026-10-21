@@ -214,6 +214,33 @@ describe("Activity section", () => {
     expect(cheer).toHaveBeenCalledWith("e1");
   });
 
+  it("renders a day of play with its note, and cheers the rolled-up line", () => {
+    const cheer = vi.fn(async () => {});
+    act(() =>
+      useStore.setState({
+        feed: [
+          ev({
+            id: "p1",
+            actorName: "Sora",
+            kind: "played",
+            gameTitle: "Monster Hunter Wilds",
+            detail: { hours: 1.5, note: "Beat Rathalos" },
+          }),
+          ev({ id: "m1", actorName: "Sora", kind: "medal_earned", gameTitle: null, detail: { medals: ["A", "B", "C", "D"] } }),
+          ev({ id: "s1", actorName: "Sora", kind: "game_started", gameTitle: "Hades", detail: {} }),
+        ],
+        cheerActivity: cheer,
+      }),
+    );
+    render(<CommunityPage view="community-activity" {...pageProps()} />);
+    expect(screen.getByText("played Monster Hunter Wilds for 1h 30m")).toBeTruthy();
+    expect(screen.getByText(/Beat Rathalos/)).toBeTruthy();
+    expect(screen.getByText("earned 4 medals: A, B, C +1 more")).toBeTruthy();
+    expect(screen.getByText("started playing Hades")).toBeTruthy();
+    fireEvent.click(screen.getAllByTitle("Cheer this")[0]);
+    expect(cheer).toHaveBeenCalledWith("p1");
+  });
+
   it("loads older activity via the Show more fallback button", () => {
     const more = vi.fn(async () => {});
     act(() => useStore.setState({ feed: [ev()], feedHasMore: true, loadMoreFeed: more }));

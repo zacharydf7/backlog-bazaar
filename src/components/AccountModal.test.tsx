@@ -58,6 +58,20 @@ describe("AccountModal Danger Zone", () => {
   });
 });
 
+describe("AccountModal privacy", () => {
+  it("toggles sharing play sessions and notes with friends (shared by default)", () => {
+    useStore.setState({ cloud: true });
+    render(<AccountModal />);
+    const box = screen.getByRole("checkbox", {
+      name: /Hide my play sessions and notes from friends/i,
+    }) as HTMLInputElement;
+    expect(box.checked).toBe(false);
+    fireEvent.click(box);
+    expect(useStore.getState().privacy).toEqual({ hide_play_activity: true });
+    expect(box.checked).toBe(true);
+  });
+});
+
 describe("AccountModal export", () => {
   it("downloads the collection as a JSON blob when Export is clicked", async () => {
     useStore.setState({

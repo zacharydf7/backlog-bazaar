@@ -4,6 +4,7 @@
 // the feed live in src/lib/privacy.ts; the data shapes live in src/types.ts.
 
 import type { ActivityEvent, FriendshipStatus, Game } from "../types";
+import { formatPlaytime } from "./playtime";
 
 /** Case-insensitive check that a game with this title is already in the library.
  *  Drives whether a game shared in a message shows a "Wishlist" action (you don't
@@ -74,6 +75,17 @@ export function activityHeadline(
       return `cleared ${title} in a Co-op Pact with ${e.detail?.partner_name ?? "a friend"}`;
     case "drop_in":
       return `dropped back into ${title}`;
+    case "game_started":
+      return `started playing ${title}`;
+    case "played":
+      // The server sums a day of play on the game into this one post.
+      return e.detail?.hours
+        ? `played ${title} for ${formatPlaytime(e.detail.hours)}`
+        : `played ${title}`;
+    case "note":
+      return `added a note on ${title}`;
+    case "medal_earned":
+      return medalsHeadline(e.detail?.medals ?? []);
     case "bounty_claimed":
     default:
       switch (e.detail?.finish_tag) {
@@ -87,6 +99,22 @@ export function activityHeadline(
           return `finished ${title}`;
       }
   }
+}
+
+/** How many medals a day's medal post names before "+N more". */
+const MEDALS_NAMED = 3;
+
+/** The predicate for a day's medals: "earned the Night Owl medal", "earned 3
+ *  medals: A, B and C", or "earned 5 medals: A, B, C +2 more". */
+export function medalsHeadline(names: string[]): string {
+  if (names.length === 0) return "earned a medal";
+  if (names.length === 1) return `earned the ${names[0]} medal`;
+  const more = names.length - MEDALS_NAMED;
+  const list =
+    more > 0
+      ? `${names.slice(0, MEDALS_NAMED).join(", ")} +${more} more`
+      : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+  return `earned ${names.length} medals: ${list}`;
 }
 
 /** The coin reward to surface on a feed event, or null when there's none to show.

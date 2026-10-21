@@ -16367,7 +16367,10 @@ grant execute on function public.admin_replace_genre(text, text)    to authentic
 -- the Market Square's Fresh Clears can say "beat" vs "completed" instead of a flat
 -- "finished". A Retire It also lands on status='finished', but it is explicitly NOT
 -- a clear (see apply_retire) — it broadcasts nothing; the retirement still lives in
--- game_status_events and the game's milestones.
+-- game_status_events and the game's milestones. A start from the Bazaar
+-- (apply_purchase, a voucher, a Rotation cold start) posts game_started (issue
+-- d170a677): once a day per game, so shelving and restarting can't spam it, and
+-- never for a private game (like a drop-in).
 create or replace function public.emit_game_activity()
 returns trigger
 language plpgsql security definer set search_path = public
@@ -16399,6 +16402,13 @@ begin
             jsonb_strip_nulls(jsonb_build_object(
               'coins', coalesce(new.reward, 0),
               'finish_tag', new.finish_tag)));
+  elsif old.status = 'backlog' and new.status = 'playing' and not new.private
+        and not exists (
+          select 1 from public.activity_events a
+           where a.actor = new.user_id and a.game_id = new.id and a.kind = 'game_started'
+             and a.created_at > now() - interval '1 day') then
+    insert into public.activity_events (actor, kind, game_id, game_title)
+    values (new.user_id, 'game_started', new.id, new.title);
   end if;
   return new;
 end;
@@ -16672,6 +16682,112 @@ $$;
 -- dropped entirely, and the coin amount is stripped from friends who hide their
 -- financial milestones (default hidden). Each row carries its cheer count + whether
 -- the caller has cheered.
+--
+-- Everyday activity (issue d170a677) is rolled up here, since the event rows
+-- stay append-only. A friend's 'played' and 'note' rows for one game on one
+-- of THEIR days (player_tz) become one line: 'played' with the day's net hours
+-- (a correction down nets out against play on the same local day; a net of
+-- zero or less shows no play) and the day's latest note riding along
+-- (detail.note), or 'note' alone when the day has no play to show. Same-day
+-- medals read as one line (detail.medals, oldest first). A rolled line is
+-- timestamped by its newest play or note (a correction down doesn't count),
+-- so more play bumps it back to the top, and is identified by the
+-- EARLIEST row it rolls up (play or note), which never changes as the day
+-- grows, so a cheer keeps counting. Play (including drop-ins) and notes are
+-- shared unless the friend turned on hide_play_activity; a start, session or
+-- note on a game that is private, stealth or deleted stays hidden.
+--
+-- activity_feed_lines builds the lines whose timestamp falls in [p_from,
+-- p_before). Every row of a line lies within one local day (25 hours at
+-- most), so it reads only raw rows within 26 hours of that range: a line is
+-- either entirely inside the scan or left out, never partial.
+create or replace function public.activity_feed_lines(
+  p_viewer uuid, p_from timestamptz, p_before timestamptz
+)
+returns table (
+  id uuid, actor uuid, kind text, game_title text, detail jsonb, created_at timestamptz
+)
+language plpgsql stable security definer set search_path = public
+as $$
+#variable_conflict use_column
+begin
+  return query
+  with friends as (
+    select f.fid, public.player_tz(f.fid) as tz
+      from (select case when requester = p_viewer then addressee else requester end as fid
+              from public.friendships
+             where status = 'accepted' and p_viewer in (requester, addressee)) f
+  ),
+  visible as (
+    select a.id, a.actor, a.kind, a.game_title, a.created_at,
+      case when coalesce((p.privacy->>'hide_financial_feed')::boolean, true)
+           then a.detail - 'coins' else a.detail end as detail,
+      a.game_id,
+      (a.created_at at time zone fr.tz)::date as day
+    from public.activity_events a
+    join friends fr on fr.fid = a.actor
+    join public.profiles p on p.id = a.actor
+    where a.created_at >= p_from - interval '26 hours'
+      and a.created_at < coalesce(p_before, now() + interval '1 day') + interval '26 hours'
+      and not coalesce((p.privacy->>'appear_offline')::boolean, false)
+      -- Hard privacy: a private profile broadcasts no milestones, even to
+      -- friends (issue e3242526).
+      and not coalesce((p.privacy->>'private_profile')::boolean, false)
+      -- The owner's milestones outrank the moment the status write happened: a
+      -- clear they date to last year is history, not news (issue f9b7b594).
+      -- Kinds about play right now aren't clears, so an old clear doesn't hide them.
+      and (a.kind in ('drop_in', 'game_started', 'played', 'note', 'medal_earned')
+           or public.clear_is_fresh(a.game_id, a.created_at))
+      and (a.kind not in ('played', 'note', 'drop_in')
+           or not coalesce((p.privacy->>'hide_play_activity')::boolean, false))
+      -- A deleted game nulls game_id, so its privacy can't be checked any
+      -- more: its starts, sessions and notes go with it.
+      and (a.kind not in ('game_started', 'played', 'note') or (a.game_id is not null and not exists (
+             select 1 from public.games g
+              where g.id = a.game_id and (g.private or g.stealth))))
+  ),
+  days as (
+    select v.actor, v.game_id, v.day,
+      (array_agg(v.id order by v.created_at, v.id))[1] as id,
+      (array_agg(v.game_title order by v.created_at desc, v.id desc))[1] as game_title,
+      sum((v.detail->>'hours')::numeric) filter (where v.kind = 'played') as hours,
+      -- Only actual play bumps the line; a correction down doesn't.
+      max(v.created_at) filter (where v.kind = 'played' and (v.detail->>'hours')::numeric > 0) as played_at,
+      (array_agg(v.detail->>'note' order by v.created_at desc, v.id desc)
+         filter (where v.kind = 'note'))[1] as note,
+      max(v.created_at) filter (where v.kind = 'note') as noted_at
+    from visible v where v.kind in ('played', 'note')
+    group by v.actor, v.game_id, v.day
+  ),
+  lines as (
+    select v.id, v.actor, v.kind, v.game_title, v.detail, v.created_at
+      from visible v where v.kind not in ('played', 'note', 'medal_earned')
+    union all
+    select d.id, d.actor, 'played', d.game_title,
+      jsonb_strip_nulls(jsonb_build_object('hours', d.hours, 'note', d.note)),
+      greatest(d.played_at, d.noted_at)
+      from days d where d.hours > 0
+    union all
+    select d.id, d.actor, 'note', d.game_title, jsonb_build_object('note', d.note), d.noted_at
+      from days d where coalesce(d.hours, 0) <= 0 and d.note is not null
+    union all
+    select (array_agg(v.id order by v.created_at, v.id))[1], v.actor, 'medal_earned', null::text,
+      jsonb_build_object('medals', jsonb_agg(v.detail->>'name' order by v.created_at, v.id)),
+      max(v.created_at)
+      from visible v where v.kind = 'medal_earned'
+     group by v.actor, v.day
+  )
+  select l.id, l.actor, l.kind, l.game_title, l.detail, l.created_at
+    from lines l
+   where l.created_at >= p_from and (p_before is null or l.created_at < p_before);
+end;
+$$;
+revoke execute on function public.activity_feed_lines(uuid, timestamptz, timestamptz) from public, anon, authenticated;
+
+-- The page scans a bounded window of history: the 7 days before p_before (or
+-- now), widened to 30 days, 180 days, then everything, until the window holds
+-- a full page or no friend has anything older. Paging stays exact because
+-- activity_feed_lines never splits a day across the window's edge.
 create or replace function public.list_activity_feed(
   p_before timestamptz default null,
   p_limit  integer default 30
@@ -16684,36 +16800,38 @@ returns table (
 language plpgsql security definer set search_path = public
 as $$
 #variable_conflict use_column
+declare
+  v_me    uuid := auth.uid();
+  v_limit integer := greatest(1, least(coalesce(p_limit, 30), 100));
+  v_top   timestamptz := coalesce(p_before, now());
+  v_span  interval;
+  v_from  timestamptz := '-infinity';
 begin
-  if auth.uid() is null then raise exception 'Not authenticated'; end if;
+  if v_me is null then raise exception 'Not authenticated'; end if;
+
+  foreach v_span in array array[interval '7 days', interval '30 days', interval '180 days'] loop
+    if (select count(*) from (select 1 from public.activity_feed_lines(v_me, v_top - v_span, p_before)
+                               limit v_limit) x) >= v_limit
+       or not exists (
+         select 1 from public.friendships f
+           join public.activity_events a
+             on a.actor = case when f.requester = v_me then f.addressee else f.requester end
+          where f.status = 'accepted' and v_me in (f.requester, f.addressee)
+            and a.created_at < v_top - v_span) then
+      v_from := v_top - v_span;
+      exit;
+    end if;
+  end loop;
 
   return query
-  with friends as (
-    select case when requester = auth.uid() then addressee else requester end as fid
-      from public.friendships
-     where status = 'accepted' and auth.uid() in (requester, addressee)
-  )
-  select a.id, a.actor, p.display_name, p.avatar_url,
-    a.kind, a.game_title,
-    case when coalesce((p.privacy->>'hide_financial_feed')::boolean, true)
-         then a.detail - 'coins' else a.detail end,
-    a.created_at,
-    (select count(*) from public.activity_cheers c where c.event_id = a.id),
-    exists (select 1 from public.activity_cheers c where c.event_id = a.id and c.user_id = auth.uid())
-  from public.activity_events a
-  join friends fr on fr.fid = a.actor
-  join public.profiles p on p.id = a.actor
-  where not coalesce((p.privacy->>'appear_offline')::boolean, false)
-    -- Hard privacy: a private profile broadcasts no milestones, even to
-    -- friends (issue e3242526).
-    and not coalesce((p.privacy->>'private_profile')::boolean, false)
-    -- The owner's milestones outrank the moment the status write happened: a
-    -- clear they date to last year is history, not news (issue f9b7b594). A
-    -- drop-in is about the session, so an old clear doesn't hide it.
-    and (a.kind = 'drop_in' or public.clear_is_fresh(a.game_id, a.created_at))
-    and (p_before is null or a.created_at < p_before)
-  order by a.created_at desc, a.id desc
-  limit greatest(1, least(coalesce(p_limit, 30), 100));
+  select l.id, l.actor, p.display_name, p.avatar_url,
+    l.kind, l.game_title, l.detail, l.created_at,
+    (select count(*) from public.activity_cheers c where c.event_id = l.id),
+    exists (select 1 from public.activity_cheers c where c.event_id = l.id and c.user_id = v_me)
+  from public.activity_feed_lines(v_me, v_from, p_before) l
+  join public.profiles p on p.id = l.actor
+  order by l.created_at desc, l.id desc
+  limit v_limit;
 end;
 $$;
 
@@ -17355,10 +17473,13 @@ alter table public.co_op_pact_events add constraint co_op_pact_events_action_che
                     'half_finished', 'completed', 'fee_offer', 'fee_shortfall'));
 
 -- A completed pact broadcasts to BOTH players' activity feeds — widen the feed
--- kinds (the inline check was created with this auto-generated name).
+-- kinds (the inline check was created with this auto-generated name). The
+-- everyday kinds (issue d170a677) are a start (game_started), time logged on
+-- a Playing game (played), a progress note (note) and a medal (medal_earned).
 alter table public.activity_events drop constraint if exists activity_events_kind_check;
 alter table public.activity_events add constraint activity_events_kind_check
-  check (kind in ('game_imported', 'family_created', 'bounty_claimed', 'co_op_completed', 'drop_in'));
+  check (kind in ('game_imported', 'family_created', 'bounty_claimed', 'co_op_completed', 'drop_in',
+                  'game_started', 'played', 'note', 'medal_earned'));
 
 -- Pact identity now comes from the shared game_identity_key/game_identity_keys
 -- pair defined with catalog_games (rawg → igdb → catalog, crosswalk applied).
@@ -20362,6 +20483,87 @@ revoke execute on function public.claim_achievement_rewards(uuid) from public, a
 grant execute on function public.evaluate_achievements()     to authenticated;
 grant execute on function public.list_achievements(uuid)     to authenticated;
 grant execute on function public.claim_achievement_rewards(uuid) to authenticated;
+
+-- ---------------------------------------------------------------------------
+-- Everyday activity on the friends feed (issue d170a677, 2026-10-21): time
+-- logged, progress notes and medals, alongside the start posted by
+-- emit_game_activity. Each is an append-only activity_events row written by an
+-- AFTER trigger (never the client); list_activity_feed rolls them up per day
+-- and applies privacy at read time (hide_play_activity, private profiles,
+-- private, stealth or deleted games). Triggers fire on new events only: no
+-- backfill.
+-- ---------------------------------------------------------------------------
+
+-- Time logged on a Playing game: the Log button, the stopwatch, or a Played
+-- correction. A correction down posts its negative change too, which the feed
+-- nets against play on the same local day (it can't reach back into an
+-- earlier day's line). Only live play counts (is_live_play: no
+-- catch-up time). A demo (wishlist) or a drop-in (finished) isn't Playing, so
+-- its time never posts here; a drop-in has its own once-a-day post.
+create or replace function public.emit_play_activity()
+returns trigger
+language plpgsql security definer set search_path = public
+as $$
+begin
+  if new.hours <> 0 and public.is_live_play(new.source, new.hours) then
+    insert into public.activity_events (actor, kind, game_id, game_title, detail)
+    select new.user_id, 'played', g.id, g.title, jsonb_build_object('hours', new.hours)
+      from public.games g
+     where g.id = new.game_id and g.status = 'playing' and not g.private and not g.stealth;
+  end if;
+  return new;
+end;
+$$;
+revoke execute on function public.emit_play_activity() from public, anon, authenticated;
+drop trigger if exists playtime_events_emit_activity on public.playtime_events;
+create trigger playtime_events_emit_activity
+  after insert on public.playtime_events
+  for each row execute function public.emit_play_activity();
+
+-- A new progress note on a Playing game, snapshotted (trimmed, first 280
+-- characters) since the note itself is overwritten in place. Clearing a note
+-- posts nothing, and neither does the note a Retire It leaves (the game is
+-- Finished by then, and a retirement is never broadcast).
+create or replace function public.emit_note_activity()
+returns trigger
+language plpgsql security definer set search_path = public
+as $$
+declare
+  v_note text := left(btrim(coalesce(new.progress_note, '')), 280);
+begin
+  if v_note <> '' and v_note is distinct from left(btrim(coalesce(old.progress_note, '')), 280)
+     and new.status = 'playing' and not new.private and not new.stealth then
+    insert into public.activity_events (actor, kind, game_id, game_title, detail)
+    values (new.user_id, 'note', new.id, new.title, jsonb_build_object('note', v_note));
+  end if;
+  return new;
+end;
+$$;
+revoke execute on function public.emit_note_activity() from public, anon, authenticated;
+drop trigger if exists games_emit_note_activity on public.games;
+create trigger games_emit_note_activity
+  after update of progress_note on public.games
+  for each row execute function public.emit_note_activity();
+
+-- A medal earned (evaluate_achievements is the only writer of
+-- user_achievements), with its name snapshotted for the feed's medal line.
+create or replace function public.emit_medal_activity()
+returns trigger
+language plpgsql security definer set search_path = public
+as $$
+begin
+  insert into public.activity_events (actor, kind, detail)
+  select new.user_id, 'medal_earned', jsonb_build_object('name', a.name)
+    from public.achievements a
+   where a.id = new.achievement_id;
+  return new;
+end;
+$$;
+revoke execute on function public.emit_medal_activity() from public, anon, authenticated;
+drop trigger if exists user_achievements_emit_activity on public.user_achievements;
+create trigger user_achievements_emit_activity
+  after insert on public.user_achievements
+  for each row execute function public.emit_medal_activity();
 
 -- ---------------------------------------------------------------------------
 -- Challenges (2026-10-17): monthly goals + seasonal events.

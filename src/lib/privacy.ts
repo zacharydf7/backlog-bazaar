@@ -13,6 +13,7 @@ export const PRIVACY_KEYS = {
   hideFinancialFeed: "hide_financial_feed",
   hideCustomCovers: "hide_custom_covers",
   hideFromSquare: "hide_from_square",
+  hidePlayActivity: "hide_play_activity",
 } as const;
 
 /** True if the user has hidden their real-world money spent from visitors.
@@ -60,4 +61,11 @@ export function isCustomCoversHidden(privacy: Privacy | null | undefined): boole
  *  square_spotlight / cheer_activity. */
 export function isHiddenFromSquare(privacy: Privacy | null | undefined): boolean {
   return Boolean(privacy?.[PRIVACY_KEYS.hideFromSquare]);
+}
+
+/** True if the user keeps their play sessions (drop-ins included) and progress
+ *  notes off their friends' activity feed (starts, finishes and medals still show). Default:
+ *  SHARED (owner, 2026-10-21). Enforced server-side in list_activity_feed. */
+export function isPlayActivityHidden(privacy: Privacy | null | undefined): boolean {
+  return Boolean(privacy?.[PRIVACY_KEYS.hidePlayActivity]);
 }

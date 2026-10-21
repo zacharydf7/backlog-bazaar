@@ -4,6 +4,7 @@ import {
   activityHeadline,
   activityCoins,
   isCongratulatoryEvent,
+  medalsHeadline,
   validateMessageBody,
   findMentionQuery,
   libraryHasTitle,
@@ -124,10 +125,43 @@ describe("activityHeadline", () => {
     ).toBe("wrapped up Vampire Survivors");
   });
 
+  it("describes a start, a day of play and a note", () => {
+    expect(activityHeadline({ kind: "game_started", gameTitle: "Hades" })).toBe("started playing Hades");
+    expect(
+      activityHeadline({ kind: "played", gameTitle: "Monster Hunter Wilds", detail: { hours: 1.5 } }),
+    ).toBe("played Monster Hunter Wilds for 1h 30m");
+    expect(activityHeadline({ kind: "played", gameTitle: "Hades" })).toBe("played Hades");
+    expect(activityHeadline({ kind: "note", gameTitle: "Hades", detail: { note: "Beat Hades" } })).toBe(
+      "added a note on Hades",
+    );
+  });
+
+  it("names a day's medals", () => {
+    expect(activityHeadline({ kind: "medal_earned", gameTitle: null, detail: { medals: ["Night Owl"] } })).toBe(
+      "earned the Night Owl medal",
+    );
+  });
+
   it("keeps the generic verb for clears recorded before the tag was captured", () => {
     expect(
       activityHeadline({ kind: "bounty_claimed", gameTitle: "Celeste", detail: { coins: 40 } }),
     ).toBe("finished Celeste");
+  });
+});
+
+describe("medalsHeadline", () => {
+  it("names one medal, or up to three joined with and", () => {
+    expect(medalsHeadline(["Night Owl"])).toBe("earned the Night Owl medal");
+    expect(medalsHeadline(["A", "B"])).toBe("earned 2 medals: A and B");
+    expect(medalsHeadline(["A", "B", "C"])).toBe("earned 3 medals: A, B and C");
+  });
+
+  it("names three, then counts the rest", () => {
+    expect(medalsHeadline(["A", "B", "C", "D", "E"])).toBe("earned 5 medals: A, B, C +2 more");
+  });
+
+  it("falls back when no names came through", () => {
+    expect(medalsHeadline([])).toBe("earned a medal");
   });
 });
 

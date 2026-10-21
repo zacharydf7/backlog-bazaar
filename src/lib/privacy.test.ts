@@ -4,6 +4,7 @@ import {
   isProfilePrivate,
   isFinancialFeedHidden,
   isCustomCoversHidden,
+  isPlayActivityHidden,
   PRIVACY_KEYS,
 } from "./privacy";
 
@@ -46,6 +47,18 @@ describe("isFinancialFeedHidden", () => {
   it("reveals only on an explicit false", () => {
     expect(isFinancialFeedHidden({ [PRIVACY_KEYS.hideFinancialFeed]: false })).toBe(false);
     expect(isFinancialFeedHidden({ [PRIVACY_KEYS.hideFinancialFeed]: true })).toBe(true);
+  });
+});
+
+describe("isPlayActivityHidden", () => {
+  it("defaults to false (shared) when unset", () => {
+    expect(isPlayActivityHidden(null)).toBe(false);
+    expect(isPlayActivityHidden({})).toBe(false);
+  });
+
+  it("reads the hide_play_activity flag", () => {
+    expect(isPlayActivityHidden({ [PRIVACY_KEYS.hidePlayActivity]: true })).toBe(true);
+    expect(isPlayActivityHidden({ [PRIVACY_KEYS.hidePlayActivity]: false })).toBe(false);
   });
 });
 

@@ -991,7 +991,14 @@ export interface ActivityEventRow {
   actor_avatar: string | null;
   kind: string;
   game_title: string | null;
-  detail: { coins?: number; partner_name?: string; finish_tag?: string } | null;
+  detail: {
+    coins?: number;
+    partner_name?: string;
+    finish_tag?: string;
+    hours?: number;
+    note?: string;
+    medals?: string[];
+  } | null;
   created_at: string;
   cheer_count: number | string | null;
   cheered_by_me: boolean | null;
@@ -1015,7 +1022,17 @@ export function coerceBountyBasis(raw: unknown): BountyBasis | null {
 
 export function rowToActivityEvent(r: ActivityEventRow): ActivityEvent {
   const kind = (
-    ["game_imported", "family_created", "bounty_claimed", "co_op_completed", "drop_in"] as const
+    [
+      "game_imported",
+      "family_created",
+      "bounty_claimed",
+      "co_op_completed",
+      "drop_in",
+      "game_started",
+      "played",
+      "note",
+      "medal_earned",
+    ] as const
   ).includes(r.kind as ActivityKind)
     ? (r.kind as ActivityKind)
     : "game_imported";
