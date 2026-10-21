@@ -17,9 +17,11 @@ import {
   spendLabel,
   spendRowGroups,
 } from "../../lib/copies";
-import { valueStatusOf } from "../../lib/valueMetrics";
+import { unpaidValuePlayed, valueStatusOf } from "../../lib/valueMetrics";
+import { isDemo } from "../../lib/demos";
+import { useViewing } from "../../lib/viewContext";
 import { familyMemberLabel, ownedTitleGroups } from "../../lib/gameHub";
-import { ValuePlayedNote } from "../ValueBadge";
+import { UnpaidValueNote, ValuePlayedNote } from "../ValueBadge";
 import { SuggestEditButton } from "../GameSubmissionForm";
 import { ScreenshotGallery } from "../ScreenshotGallery";
 import { PlatformBadge } from "../PlatformBadge";
@@ -228,9 +230,12 @@ function OwnershipRollup({ members, hideSpend }: { members: Game[]; hideSpend: b
   // "Value played" (issue 6c60c213): the dollars of play extracted so far at
   // YOUR target rate — target $/hr × logged hours across the hub. Judged only
   // on your own library (a visitor's target never prices someone else's games)
-  // and only when a target is set and money was actually spent.
+  // and only when a target is set. The well-spent judgement needs money spent;
+  // with none (a demo, a free game, no cost recorded) the value still shows.
   const target = useStore((s) => s.targetCostPerHour);
   const viewing = useStore((s) => s.viewing);
+  // A chat share previews someone else's game read-only without "visiting".
+  const { readOnly } = useViewing();
   const ownedGames = members.filter((m) => m.status !== "wishlist");
   const ownedCopies = ownedGames.flatMap((m) => m.copies ?? []);
   const wantedCopies = members
@@ -258,7 +263,14 @@ function OwnershipRollup({ members, hideSpend }: { members: Game[]; hideSpend: b
   const spend = totalCost(ownedCopies) + dlcSpend(dlcRows);
   const playedHours = ownedGames.reduce((sum, m) => sum + (m.playedHours ?? 0), 0);
   const value = viewing ? null : valueStatusOf(spend, playedHours, target);
-  if (owned.length === 0 && wanted.length === 0 && !showSpend) return null;
+  // With nothing spent to judge (a demo, a free game, no cost recorded), the
+  // value of the time played still shows (issue 40fadb8d). A demo's own hours
+  // count here.
+  const unpaidHours = members
+    .filter((m) => m.status !== "wishlist" || isDemo(m))
+    .reduce((sum, m) => sum + (m.playedHours ?? 0), 0);
+  const unpaidValue = viewing || readOnly || value != null ? null : unpaidValuePlayed(unpaidHours, target);
+  if (owned.length === 0 && wanted.length === 0 && !showSpend && unpaidValue == null) return null;
 
   return (
     <div className="flex flex-col gap-2">
@@ -307,6 +319,11 @@ function OwnershipRollup({ members, hideSpend }: { members: Game[]; hideSpend: b
           </div>
         </div>
       )}
+      {!showSpend && unpaidValue != null && (
+        <div className="rounded-lg bg-panel p-2 text-[11px] text-muted">
+          <UnpaidValueNote value={unpaidValue} hours={unpaidHours} target={target!} />
+        </div>
+      )}
       {showSpend && (
         <div className="rounded-lg bg-panel p-2 text-[11px] text-muted">
           <div className="mb-1 flex flex-wrap items-center justify-between gap-x-2 gap-y-0.5">
@@ -314,6 +331,7 @@ function OwnershipRollup({ members, hideSpend }: { members: Game[]; hideSpend: b
               <Banknote size={12} /> {spendLabel(spend)}
             </span>
             {value != null && <ValuePlayedNote status={value} target={target!} />}
+            {unpaidValue != null && <UnpaidValueNote value={unpaidValue} hours={unpaidHours} target={target!} />}
           </div>
           {/* Copies grouped by source — standalone purchases first, then each
               bundle under its own header — so two same-platform rows read

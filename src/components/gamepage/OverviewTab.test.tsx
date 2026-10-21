@@ -3,6 +3,7 @@ import { act, render, screen, within, fireEvent } from "@testing-library/react";
 import { OverviewTab, ReadOnlyOverview } from "./OverviewTab";
 import { useStore } from "../../store";
 import type { Game } from "../../types";
+import { ViewingProvider } from "../../lib/viewContext";
 
 function game(over: Partial<Game> = {}): Game {
   return {
@@ -139,6 +140,39 @@ describe("Value played on the spend rollup (6c60c213 follow-up)", () => {
     // The total and the copy's own line both read Free.
     expect(screen.getAllByText("Free")).toHaveLength(2);
     expect(screen.queryByText(/Spent/)).toBeNull();
+    // No well-spent goal to chase, but the value of the time still shows (40fadb8d).
+    expect(screen.queryByText(/to well spent/)).toBeNull();
+    expect(screen.getByText(/\$900 value played/)).toBeTruthy();
+  });
+
+  it("shows value played on a game with nothing spent: a demo, a free game, no cost (40fadb8d)", () => {
+    const demo = game({ status: "wishlist", demo: true, copies: [{ id: "c1", platform: "PC" }], playedHours: 4 });
+    const { unmount } = render(<OverviewTab game={demo} screenshots={[]} />);
+    // $7.50/hr target × 4h = $30, with no well-spent goal to chase.
+    const value = screen.getByText(/\$30 value played/);
+    expect(value.closest("span")?.getAttribute("title")).toBe("Value played: $7.50/hr target × 4h played = $30.00");
+    expect(screen.queryByText(/to well spent/)).toBeNull();
+    unmount();
+    const free = game({ copies: [{ id: "c1", platform: "PC", cost: 0 }], playedHours: 2 });
+    const { unmount: unmountFree } = render(<OverviewTab game={free} screenshots={[]} />);
+    expect(screen.getAllByText("Free").length).toBeGreaterThan(0);
+    expect(screen.getByText(/\$15 value played/)).toBeTruthy();
+    unmountFree();
+    render(<OverviewTab game={game({ copies: [{ id: "c1", platform: "PC" }], playedHours: 2 })} screenshots={[]} />);
+    expect(screen.getByText(/\$15 value played/)).toBeTruthy();
+  });
+
+  it("never prices someone else's unpaid game: a chat preview or a visited library", () => {
+    const g = game({ copies: [{ id: "c1", platform: "PC" }], playedHours: 4 });
+    const { unmount } = render(
+      <ViewingProvider value={{ readOnly: true, hideSpend: true }}>
+        <ReadOnlyOverview game={g} hideSpend />
+      </ViewingProvider>,
+    );
+    expect(screen.queryByText(/value played/)).toBeNull();
+    unmount();
+    act(() => useStore.setState({ viewing: { userId: "u2" } as never }));
+    render(<OverviewTab game={game({ copies: [{ id: "c1", platform: "PC", cost: 0 }], playedHours: 4 })} screenshots={[]} />);
     expect(screen.queryByText(/value played/)).toBeNull();
   });
 

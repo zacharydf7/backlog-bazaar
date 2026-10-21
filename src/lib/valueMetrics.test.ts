@@ -5,6 +5,7 @@ import {
   gameValueStatus,
   valueTooltip,
   valuePlayedTooltip,
+  unpaidValuePlayed,
   formatRate,
   usd,
   valueFinancials,
@@ -182,5 +183,17 @@ describe("valueFinancials", () => {
     expect(valueFinancials([lib[2]], 2).costPerHour).toBeNull();
     // Free games alone have hours but nothing spent: no rate, not "$0/hr".
     expect(valueFinancials([lib[3]], 2)).toMatchObject({ totalSpent: 0, costPerHour: null, eligible: 0 });
+  });
+});
+
+describe("unpaidValuePlayed (40fadb8d)", () => {
+  it("values time on a game with nothing spent at the target rate", () => {
+    expect(unpaidValuePlayed(12, 2)).toBe(24);
+  });
+
+  it("is null without a target or without time played", () => {
+    expect(unpaidValuePlayed(12, null)).toBeNull();
+    expect(unpaidValuePlayed(12, 0)).toBeNull();
+    expect(unpaidValuePlayed(0, 2)).toBeNull();
   });
 });

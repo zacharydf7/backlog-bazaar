@@ -96,7 +96,20 @@ export function valueTooltip(v: ValueStatus, target: number): string {
 /** The Value Played breakdown shown on the game page's spend rollup, e.g.
  *  "Value played: $7.50/hr target × 10.65h played = $79.88". */
 export function valuePlayedTooltip(v: ValueStatus, target: number): string {
-  return `Value played: ${formatRate(target)} target × ${roundHours(v.hours)}h played = ${usd(v.valuePlayed)}`;
+  return valuePlayedBreakdown(v.hours, target);
+}
+
+/** "Value played: $T/hr target × Hh played = $X", for any hours. */
+export function valuePlayedBreakdown(hours: number, target: number): string {
+  return `Value played: ${formatRate(target)} target × ${roundHours(hours)}h played = ${usd(hours * target)}`;
+}
+
+/** Value played with nothing spent to judge it against (a demo, a free game,
+ *  or no cost recorded; issue 40fadb8d): hours × the target rate, or null
+ *  without a target or any time played. */
+export function unpaidValuePlayed(hours: number, target: number | null | undefined): number | null {
+  if (!hasValueTarget(target) || !(hours > 0)) return null;
+  return hours * target;
 }
 
 /** Hours shown in the tooltip: whole numbers stay whole, fractions keep one

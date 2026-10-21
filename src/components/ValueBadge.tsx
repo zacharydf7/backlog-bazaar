@@ -5,6 +5,7 @@ import { formatUsd, totalCost } from "../lib/copies";
 import { formatPlaytime } from "../lib/playtime";
 import {
   gameValueStatus,
+  valuePlayedBreakdown,
   valuePlayedTooltip,
   valueStatusOf,
   valueTooltip,
@@ -67,6 +68,17 @@ export function ValuePlayedNote({ status, target }: { status: ValueStatus; targe
     >
       {status.met && <Gem size={11} />} {formatUsd(status.valuePlayed)} value played
       {!status.met && <> · {formatPlaytime(status.remainingHours)} to well spent</>}
+    </span>
+  );
+}
+
+/** Value played on a game with nothing spent to judge it against (issue
+ *  40fadb8d): the dollars of play at the target rate, with no "well spent"
+ *  goal since there's nothing to pay off. */
+export function UnpaidValueNote({ value, hours, target }: { value: number; hours: number; target: number }) {
+  return (
+    <span title={valuePlayedBreakdown(hours, target)} className="inline-flex items-center gap-1 text-subtle">
+      {formatUsd(value)} value played
     </span>
   );
 }
