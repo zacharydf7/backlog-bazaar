@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { beforeEach, describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { AddGameModal, destinationNoun, showAddMissingPrompt, sortByRelevance } from "./AddGameModal";
 import { SHOW_ALL_PLATFORMS } from "./CopyRowsEditor";
@@ -242,6 +242,56 @@ function addCopyOn(platform: string) {
   const selects = screen.getAllByLabelText("Platform");
   fireEvent.change(selects[selects.length - 1], { target: { value: platform } });
 }
+
+describe("AddGameModal pre-order on a game already out elsewhere (8d66b691)", () => {
+  // A fresh library, so each add makes a new card (no attach to a Zelda left by another test).
+  beforeEach(() => useStore.setState({ games: [] }));
+
+  it("tucks the pre-order option behind a link, then offers it with no release date seeded", async () => {
+    render(<AddGameModal onClose={() => {}} />);
+    await pickZelda(); // released 2023, already out on other platforms
+    expect(screen.queryByText(/This is a pre-order/)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /Coming out later on your platform/ }));
+    fireEvent.click(screen.getByRole("checkbox", { name: /This is a pre-order/ }));
+    // The catalog's date is another platform's past release, so none is seeded.
+    expect((screen.getByLabelText(/Expected release/) as HTMLInputElement).value).toBe("");
+  });
+
+  it("adds it as a pre-order with the date given", async () => {
+    const addSpy = vi.spyOn(useStore.getState(), "addGame").mockResolvedValue(null);
+    render(<AddGameModal onClose={() => {}} />);
+    await pickZelda();
+    fireEvent.click(screen.getByRole("button", { name: /Coming out later on your platform/ }));
+    fireEvent.click(screen.getByRole("checkbox", { name: /This is a pre-order/ }));
+    fireEvent.change(screen.getByLabelText(/Expected release/), { target: { value: "2027-03-01" } });
+    addCopyOn("PC");
+    fireEvent.click(screen.getByRole("button", { name: /Add to Bazaar/i }));
+    await waitFor(() => expect(addSpy).toHaveBeenCalled());
+    expect(addSpy.mock.calls[0][3]).toMatchObject({ preorder: { expectedOn: "2027-03-01" } });
+    addSpy.mockRestore();
+  });
+
+  it("drops a stale pre-order tick once a different released game is picked", async () => {
+    const addSpy = vi.spyOn(useStore.getState(), "addGame").mockResolvedValue(null);
+    render(<AddGameModal onClose={() => {}} />);
+    await pickZelda();
+    fireEvent.click(screen.getByRole("button", { name: /Coming out later on your platform/ }));
+    fireEvent.click(screen.getByRole("checkbox", { name: /This is a pre-order/ }));
+    const gd = await import("../lib/gamedata");
+    vi.mocked(gd.searchGames).mockResolvedValueOnce([
+      { title: "Octopath Traveler", genres: [], rawgId: 7, released: "2018-07-13", hours: 60, platforms: ["PC"] } as never,
+    ]);
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "Octopath" } });
+    fireEvent.mouseDown(await screen.findByText("Octopath Traveler"));
+    // The link is back, tucked away again for the new pick.
+    expect(await screen.findByRole("button", { name: /Coming out later on your platform/ })).toBeTruthy();
+    addCopyOn("PC");
+    fireEvent.click(screen.getByRole("button", { name: /Add to Bazaar/i }));
+    await waitFor(() => expect(addSpy).toHaveBeenCalled());
+    expect(addSpy.mock.calls[0][3]?.preorder).toBeUndefined();
+    addSpy.mockRestore();
+  });
+});
 
 describe("AddGameModal field locking (verified data)", () => {
   it("offers no release-date input — a recognized pick carries its date silently", async () => {

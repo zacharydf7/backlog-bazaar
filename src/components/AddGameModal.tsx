@@ -232,6 +232,9 @@ export function AddGameModal({
   // A Wishlist add the player is trying as a demo (issue 02759349).
   const [demoOn, setDemoOn] = useState(false);
   const [preorderDate, setPreorderDate] = useState("");
+  // An already-released game can still be a pre-order on a platform it comes
+  // to later (issue 8d66b691): the catalog keeps one release date per game.
+  const [laterPlatform, setLaterPlatform] = useState(false);
   // Extra metadata captured from a selected suggestion (cover art, id, genres).
   const [picked, setPicked] = useState<
     Pick<
@@ -481,6 +484,8 @@ export function AddGameModal({
     ongoing,
     lengthTiers: hltb ?? undefined,
   };
+  const releasedAlready = !canOfferPreorder(meta.released);
+  useEffect(() => setLaterPlatform(false), [meta.released]);
 
   // The game's verified release platforms (canonicalized). When known, owned-copy
   // choices are restricted to these — unless the user opens "Missing platform?",
@@ -619,11 +624,11 @@ export function AddGameModal({
     const hours = ownsGame ? versionHoursFromRows(playedRows, playedDrafts) : [];
     // "This is a pre-order" (Bazaar adds only): new rows land marked — locked
     // until release; a version attaching to an EXISTING Bazaar card marks
-    // that card too. canOfferPreorder re-guards a stale tick left from before
+    // that card too. The release check re-guards a stale tick left from before
     // the picker switched to an already-released catalog game (the checkbox
-    // itself is hidden for those).
+    // stays tucked behind "Coming out later on your platform?" for those).
     const preorderPlan =
-      effectiveDestination === "backlog" && preorderOn && canOfferPreorder(meta.released)
+      effectiveDestination === "backlog" && preorderOn && (!releasedAlready || laterPlatform)
         ? { expectedOn: preorderDate.trim() || null }
         : undefined;
     const demoPlan = effectiveDestination === "wishlist" && demoOn;
@@ -1242,9 +1247,21 @@ export function AddGameModal({
           {/* A pre-order goes in your BAZAAR — you bought it, it's part of
               your collection — locked from starting until release day, when
               it unlocks by itself. With a verified catalog release date that
-              has already PASSED the ask is just noise, so it's hidden; custom
-              entries and unknown dates keep it (issue a264d7d8). */}
-          {!ongoing && destination === "backlog" && canOfferPreorder(meta.released) && (
+              has already PASSED the ask is mostly noise (issue a264d7d8), so it
+              tucks behind a small "Coming out later on your platform?" link for
+              a staggered release (issue 8d66b691). Custom entries and unknown
+              dates keep it. */}
+          {!ongoing && destination === "backlog" && releasedAlready && !laterPlatform && (
+            <button
+              type="button"
+              onClick={() => setLaterPlatform(true)}
+              className="inline-flex items-center gap-1.5 self-start text-xs text-subtle transition hover:text-ink"
+            >
+              <CalendarClock size={13} className="text-accent" /> Coming out later on your platform? Mark it
+              as a pre-order
+            </button>
+          )}
+          {!ongoing && destination === "backlog" && (!releasedAlready || laterPlatform) && (
             <div className="flex flex-col gap-2 rounded-xl border border-accent/30 bg-accent/5 px-3 py-2.5">
               <label className="flex cursor-pointer items-start gap-2.5">
                 <input
@@ -1252,8 +1269,9 @@ export function AddGameModal({
                   checked={preorderOn}
                   onChange={(e) => {
                     setPreorderOn(e.target.checked);
-                    // First tick: seed the date from the catalog release.
-                    if (e.target.checked && !preorderDate) setPreorderDate(meta.released ?? "");
+                    // First tick: seed the date from the catalog release,
+                    // unless that date is another platform's, already past.
+                    if (e.target.checked && !preorderDate && !releasedAlready) setPreorderDate(meta.released ?? "");
                   }}
                   className="mt-0.5 h-4 w-4 shrink-0 accent-[var(--brand)]"
                 />
