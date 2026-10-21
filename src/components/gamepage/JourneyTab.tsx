@@ -7,10 +7,12 @@ import { PrerequisiteSection } from "./PrerequisiteSection";
 import { MilestonesSection } from "../MilestonesSection";
 import { DropInSessionsSection } from "./DropInSessionsSection";
 import { HeldBountyNote } from "../ClearLogChip";
+import { isDemo } from "../../lib/demos";
 
 /** Your play story: logged time (per version in the cloud, one field offline),
  *  the milestone timeline, and the story-order prerequisite. All immediate-
- *  write. A wishlist game hasn't been played, so it skips the time editor.
+ *  write. A wishlist game hasn't been played, so it skips the time editor,
+ *  unless it's a demo you're playing (issue 40fadb8d).
  *  Always ONE record's story: a Game Family member shows only its own time and
  *  milestones (the game page's member picker switches editions — issue
  *  eb767d6f retired the combined family timeline as confusing). */
@@ -21,7 +23,7 @@ export function JourneyTab({ game }: { game: Game }) {
   return (
     <div className="flex flex-col gap-4">
       <HeldBountyNote game={game} />
-      {!isWishlist && <PlayedField game={game} />}
+      {(!isWishlist || isDemo(game)) && <PlayedField game={game} />}
       {cloud && <MilestonesSection game={game} />}
       {cloud && <DropInSessionsSection game={game} />}
       {/* Changing the story lock of a game you're mid-way through is moot —

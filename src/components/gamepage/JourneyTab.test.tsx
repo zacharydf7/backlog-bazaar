@@ -57,6 +57,11 @@ describe("JourneyTab (offline)", () => {
     // The prerequisite picker still applies (story order matters pre-purchase).
     expect(screen.getByText(/Requires prior completion of/i)).toBeTruthy();
   });
+
+  it("keeps the time editor on a demo you're playing (40fadb8d)", () => {
+    render(<JourneyTab game={game({ status: "wishlist", demo: true, playedHours: 2 })} />);
+    expect(screen.getByLabelText(/Played/i)).toBeTruthy();
+  });
 });
 
 describe("JourneyTab for a family member (9f420872, eb767d6f)", () => {
