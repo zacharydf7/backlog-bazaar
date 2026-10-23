@@ -4,6 +4,7 @@ import { SponsorChip, BackGameButton } from "./Sponsor";
 import { useStore, type ViewingSession } from "../store";
 import type { Game } from "../types";
 import type { Sponsorship } from "../lib/sponsorships";
+import { ViewingProvider } from "../lib/viewContext";
 
 const NOW = Date.now();
 const DAY = 24 * 60 * 60 * 1000;
@@ -129,5 +130,17 @@ describe("BackGameButton (visitor side)", () => {
       fireEvent.click(submit);
     });
     expect(sponsorGame).toHaveBeenCalledWith("g1", 25);
+  });
+
+  it("shows your own balance in your coin skin on a visited board", () => {
+    act(() => useStore.setState({ viewing: friendVisit, coinSkin: "witchglass", defaultCoin: "chest" }));
+    render(
+      <ViewingProvider value={{ readOnly: true, hideSpend: false, ownerCoin: "opal" }}>
+        <BackGameButton game={game()} />
+      </ViewingProvider>,
+    );
+    fireEvent.click(screen.getByText("Back it"));
+    const balance = screen.getByText(/you have/).querySelector("img");
+    expect(balance?.getAttribute("src")).toBe("/coins/witchglass.svg");
   });
 });

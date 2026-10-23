@@ -20,7 +20,7 @@ import { JumpToTopButton } from "./JumpToTopButton";
 import { FilterChips } from "./FilterChips";
 import { StatusBadge } from "./StatusBadge";
 import { CoinIcon } from "./CoinIcon";
-import { ViewingProvider } from "../lib/viewContext";
+import { ViewingProvider, viewingValue } from "../lib/viewContext";
 import { filterByQuery } from "../lib/librarySearch";
 import { boardGameAnchor } from "../lib/pageNav";
 import { visibleLibrary } from "../lib/families";
@@ -335,137 +335,137 @@ export function MasterLedger({
   }
 
   return (
-    <div className="flex flex-col gap-5">
-      {heading}
+    // Visiting → the whole page is theirs: cards render read-only, honour
+    // their hidden real-world spend, and coins wear their mint, stats included.
+    <ViewingProvider value={viewingValue(viewing)}>
+      <div className="flex flex-col gap-5">
+        {heading}
 
-      {/* Controls come first (they dictate the data below) and stay pinned under
-          the app chrome so you can refine without scrolling back up — the larger
-          stat block deliberately is NOT pinned, freeing vertical space for cards
-          (issues 678e6574 + 9a7f6a3e). The divider/shadow lights up only once the
-          bar pins. */}
-      <div
-        ref={barRef}
-        // top offset clears the sticky app chrome so the bar isn't cut off. It's
-        // the live chrome height (--chrome-h): a 56px desktop TopBar, or the mobile
-        // header — which grows with the "You're visiting" banner, so a fixed offset
-        // clipped it (issues 9a7f6a3e, 7df3dd85).
-        style={{ top: "var(--chrome-h)" }}
-        className={
-          "sticky z-10 -mx-4 bg-canvas px-4 py-2 transition-shadow md:-mx-6 md:px-6 " +
-          (stuck ? "border-b border-line shadow-sm" : "")
-        }
-      >
-        <LedgerToolbar
-          groupBy={groupBy}
-          onGroupByChange={changeGroupBy}
-          filters={filters}
-          onFiltersChange={changeFilters}
-          open={filtersOpen}
-          onOpenChange={setFiltersOpen}
-          facets={facets}
-          total={owned.length}
-          shown={filtered.length}
-        />
-      </div>
-
-      {/* Account-wide library health — recalculated for the active filter, and
-          flagged as a subset when one is on. */}
-      <StatsBar
-        stats={stats}
-        financials={financials}
-        memberships={memberships}
-        judged={hasValueTarget(targetCostPerHour)}
-        filtered={filterActive || searching}
-        onClear={clearView}
-        // All-time best Clear Streak — a static, filter-independent lifetime record
-        // (issue 01cc7662). Only your own; a visited player's isn't loaded here.
-        highestStreak={viewing ? null : clearStreakBest}
-      />
-
-      {filtered.length === 0 ? (
-        <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-line py-16 text-center">
-          <p className="font-display text-xl text-ink">
-            {searching ? `No games match “${searchQuery.trim()}”` : "No games match your filters"}
-          </p>
-          <p className="max-w-md text-sm text-muted">
-            {searching
-              ? "Try a different search, or clear it to see your whole collection."
-              : "Try removing a filter to widen your search."}
-          </p>
-          {searching && onClearSearch ? (
-            <button
-              onClick={onClearSearch}
-              className="mt-1 rounded-xl border border-line px-4 py-2 text-sm font-medium text-ink transition hover:bg-panel"
-            >
-              Clear search
-            </button>
-          ) : (
-            <button
-              onClick={() => setFilters(EMPTY_LEDGER_FILTERS)}
-              className="mt-1 rounded-xl border border-line px-4 py-2 text-sm font-medium text-ink transition hover:bg-panel"
-            >
-              Clear filters
-            </button>
-          )}
-        </div>
-      ) : (
-        // Visiting → render the cards read-only and honour the player's hidden
-        // real-world spend, just like their boards do.
-        <ViewingProvider
-          value={{ readOnly: viewing != null, hideSpend: viewing?.hideSpend ?? false }}
+        {/* Controls come first (they dictate the data below) and stay pinned under
+            the app chrome so you can refine without scrolling back up — the larger
+            stat block deliberately is NOT pinned, freeing vertical space for cards
+            (issues 678e6574 + 9a7f6a3e). The divider/shadow lights up only once the
+            bar pins. */}
+        <div
+          ref={barRef}
+          // top offset clears the sticky app chrome so the bar isn't cut off. It's
+          // the live chrome height (--chrome-h): a 56px desktop TopBar, or the mobile
+          // header — which grows with the "You're visiting" banner, so a fixed offset
+          // clipped it (issues 9a7f6a3e, 7df3dd85).
+          style={{ top: "var(--chrome-h)" }}
+          className={
+            "sticky z-10 -mx-4 bg-canvas px-4 py-2 transition-shadow md:-mx-6 md:px-6 " +
+            (stuck ? "border-b border-line shadow-sm" : "")
+          }
         >
-          <div className="flex flex-col gap-6">
-            {visibleGroups.map((group) => (
-              <section key={group.key}>
-                {group.label && (
-                  <div className="mb-3 flex items-center gap-2">
-                    <h3 className="font-display text-lg text-ink">{group.label}</h3>
-                    {/* The group's true size — a partially revealed group still
-                        reports how many games it holds in total. */}
-                    <span className="rounded-full bg-line px-2 py-0.5 text-xs font-medium text-subtle">
-                      {groupSizes.get(group.key) ?? group.games.length}
-                    </span>
-                  </div>
-                )}
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                  {group.games.map((g) => {
-                    const rowKey = `${group.key}:${g.id}`;
-                    return (
-                      <div
-                        key={rowKey}
-                        id={anchorRowKeys.has(rowKey) ? boardGameAnchor(g.id) : undefined}
-                        className="h-full scroll-mt-24"
-                      >
-                        <LedgerCard
-                          game={g}
-                          family={g.familyId != null ? familyMembers.get(g.familyId) : undefined}
-                        />
-                      </div>
-                    );
-                  })}
-                </div>
-              </section>
-            ))}
-          </div>
-          {hasMore && (
-            // Doubles as the scroll sentinel (auto-loads via the observer
-            // above) and a manual affordance for anyone without one.
-            <div ref={sentinelRef} className="mt-6 flex justify-center">
+          <LedgerToolbar
+            groupBy={groupBy}
+            onGroupByChange={changeGroupBy}
+            filters={filters}
+            onFiltersChange={changeFilters}
+            open={filtersOpen}
+            onOpenChange={setFiltersOpen}
+            facets={facets}
+            total={owned.length}
+            shown={filtered.length}
+          />
+        </div>
+
+        {/* Account-wide library health — recalculated for the active filter, and
+            flagged as a subset when one is on. */}
+        <StatsBar
+          stats={stats}
+          financials={financials}
+          memberships={memberships}
+          judged={hasValueTarget(targetCostPerHour)}
+          filtered={filterActive || searching}
+          onClear={clearView}
+          // All-time best Clear Streak — a static, filter-independent lifetime record
+          // (issue 01cc7662). Only your own; a visited player's isn't loaded here.
+          highestStreak={viewing ? null : clearStreakBest}
+        />
+
+        {filtered.length === 0 ? (
+          <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-line py-16 text-center">
+            <p className="font-display text-xl text-ink">
+              {searching ? `No games match “${searchQuery.trim()}”` : "No games match your filters"}
+            </p>
+            <p className="max-w-md text-sm text-muted">
+              {searching
+                ? "Try a different search, or clear it to see your whole collection."
+                : "Try removing a filter to widen your search."}
+            </p>
+            {searching && onClearSearch ? (
               <button
-                type="button"
-                onClick={showMore}
-                className="rounded-xl border border-line bg-panel px-4 py-2.5 text-sm font-medium text-ink transition hover:border-brand/50"
+                onClick={onClearSearch}
+                className="mt-1 rounded-xl border border-line px-4 py-2 text-sm font-medium text-ink transition hover:bg-panel"
               >
-                Show more ({rowTotal - count} more)
+                Clear search
               </button>
+            ) : (
+              <button
+                onClick={() => setFilters(EMPTY_LEDGER_FILTERS)}
+                className="mt-1 rounded-xl border border-line px-4 py-2 text-sm font-medium text-ink transition hover:bg-panel"
+              >
+                Clear filters
+              </button>
+            )}
+          </div>
+        ) : (
+          <>
+            <div className="flex flex-col gap-6">
+              {visibleGroups.map((group) => (
+                <section key={group.key}>
+                  {group.label && (
+                    <div className="mb-3 flex items-center gap-2">
+                      <h3 className="font-display text-lg text-ink">{group.label}</h3>
+                      {/* The group's true size — a partially revealed group still
+                          reports how many games it holds in total. */}
+                      <span className="rounded-full bg-line px-2 py-0.5 text-xs font-medium text-subtle">
+                        {groupSizes.get(group.key) ?? group.games.length}
+                      </span>
+                    </div>
+                  )}
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                    {group.games.map((g) => {
+                      const rowKey = `${group.key}:${g.id}`;
+                      return (
+                        <div
+                          key={rowKey}
+                          id={anchorRowKeys.has(rowKey) ? boardGameAnchor(g.id) : undefined}
+                          className="h-full scroll-mt-24"
+                        >
+                          <LedgerCard
+                            game={g}
+                            family={g.familyId != null ? familyMembers.get(g.familyId) : undefined}
+                          />
+                        </div>
+                      );
+                    })}
+                  </div>
+                </section>
+              ))}
             </div>
-          )}
-        </ViewingProvider>
-      )}
-      {/* One-tap return to the top of a long ledger (issue 936d0ca7) —
-          self-hides until the page is a screenful deep. */}
-      <JumpToTopButton />
-    </div>
+            {hasMore && (
+              // Doubles as the scroll sentinel (auto-loads via the observer
+              // above) and a manual affordance for anyone without one.
+              <div ref={sentinelRef} className="mt-6 flex justify-center">
+                <button
+                  type="button"
+                  onClick={showMore}
+                  className="rounded-xl border border-line bg-panel px-4 py-2.5 text-sm font-medium text-ink transition hover:border-brand/50"
+                >
+                  Show more ({rowTotal - count} more)
+                </button>
+              </div>
+            )}
+          </>
+        )}
+        {/* One-tap return to the top of a long ledger (issue 936d0ca7) —
+            self-hides until the page is a screenful deep. */}
+        <JumpToTopButton />
+      </div>
+    </ViewingProvider>
   );
 }
 

@@ -77,6 +77,14 @@ describe("ProfileHub — visiting (read-only)", () => {
     expect(useStore.getState().viewing?.cosmetics.stall).toBe("marquee-lights");
   });
 
+  it("shows a visited player with no coin skin the default coin, not yours", () => {
+    useStore.setState({ coinSkin: "witchglass", defaultCoin: "chest", viewing: visit() });
+    const { container } = render(<ProfileHub onOpenTab={() => {}} />);
+    const header = container.querySelector("section")!;
+    expect(header.querySelector('img[src="/coins/chest.svg"]')).toBeTruthy();
+    expect(header.querySelector('img[src="/coins/witchglass.svg"]')).toBeNull();
+  });
+
   it("keeps an admin's own profile undecorated even without a banner", () => {
     useStore.setState({ can: (permission) => permission === "shop.manage", viewing: null,
       bannerUrl: null, equippedStallId: "stall", shopItems: [{

@@ -7,7 +7,7 @@ import { useStore } from "../../store";
 import { afterRemovalTarget, type PageNav, type PageNavStop } from "../../lib/pageNav";
 import { PageNavControls } from "./PageNavControls";
 import { CoOpPactBanner } from "../CoOpPact";
-import { ViewingProvider } from "../../lib/viewContext";
+import { ViewingProvider, viewingValue } from "../../lib/viewContext";
 import { compilationHash, gameHash } from "../../lib/route";
 import { gameToAddMeta } from "../../lib/addRouting";
 import { FamilyHub } from "../FamilyHub";
@@ -127,9 +127,7 @@ export function GamePage({
   }
 
   return (
-    <ViewingProvider
-      value={{ readOnly: viewing != null, hideSpend: viewing?.hideSpend ?? false }}
-    >
+    <ViewingProvider value={viewingValue(viewing)}>
       {/* Keyed by the routed game so tab choice, edition selection and section
           drafts reset when the page re-targets another game (sibling jump,
           search, a stack tag). */}

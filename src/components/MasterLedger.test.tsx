@@ -351,6 +351,22 @@ describe("MasterLedger", () => {
     act(() => useStore.setState({ targetCostPerHour: null }));
   });
 
+  it("shows a visited player's coins, stats included, never in your skin", () => {
+    act(() =>
+      useStore.setState({
+        coinSkin: "witchglass",
+        defaultCoin: "chest",
+        viewing: visit({ games: [game({ title: "Their Game" })] }),
+      }),
+    );
+    const { container } = render(<MasterLedger />);
+    expect(screen.getByText(/earned/).parentElement?.querySelector("img")?.getAttribute("src")).toBe(
+      "/coins/chest.svg",
+    );
+    expect(container.querySelector('img[src="/coins/witchglass.svg"]')).toBeNull();
+    act(() => useStore.setState({ viewing: null, coinSkin: null }));
+  });
+
   it("keeps financial judgement off your view of another player's ledger", () => {
     act(() =>
       useStore.setState({

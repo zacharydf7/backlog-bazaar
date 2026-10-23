@@ -164,7 +164,7 @@ function SponsorModal({ game, onClose }: { game: Game; onClose: () => void }) {
           <p className="text-[11px] text-subtle">
             Max {sponsorMaxStake} per stake · you have{" "}
             <span className="inline-flex items-center gap-0.5">
-              <CoinIcon size={11} /> {coins}
+              <CoinIcon size={11} mine /> {coins}
             </span>{" "}
             · {Math.max(0, sponsorMonthlyPairCap - pairUsed)} left on this friend&apos;s monthly
             limit

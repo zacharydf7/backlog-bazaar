@@ -21,7 +21,6 @@ import { KebabMenu } from "../KebabMenu";
 import { EmptyState } from "./EmptyState";
 import { isPresent } from "../../lib/presence";
 import { friendAction } from "../../lib/social";
-import { isCoinVariant } from "../../lib/coins";
 import {
   filterFriends,
   sortFriends,
@@ -400,10 +399,7 @@ function FriendRow({
             {friend.coins != null && (
               <span className="inline-flex items-center gap-1 text-subtle">
                 {/* Their balance wears their own mint. */}
-                <CoinIcon
-                  size={11}
-                  variant={isCoinVariant(friend.cosmetics.coin) ? friend.cosmetics.coin : undefined}
-                />{" "}
+                <CoinIcon size={11} ownerCoin={friend.cosmetics.coin} />{" "}
                 {friend.coins.toLocaleString()}
               </span>
             )}

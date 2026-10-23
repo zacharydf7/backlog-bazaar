@@ -220,9 +220,10 @@ function LoanModal({ game, need, onClose }: { game: Game; need: number; onClose:
 /** Lender-side strip on the Bazaar board: loan requests waiting on you.
  *  Grant moves the coins immediately; the borrower's app buys the game. */
 export function LoanRequestStrip() {
-  const { cloud, userId, coins, loans, respondLoan } = useStore();
+  const { cloud, userId, coins, loans, respondLoan, viewing } = useStore();
   const [busyId, setBusyId] = useState<string | null>(null);
-  if (!cloud || !userId) return null;
+  // Your requests, so not on a Bazaar you're visiting (as the sibling strips).
+  if (!cloud || !userId || viewing) return null;
   const pending = pendingLoansForLender(loans, userId);
   if (pending.length === 0) return null;
 

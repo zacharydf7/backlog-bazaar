@@ -22,7 +22,7 @@ import { useCosmeticEventVisit } from "./lib/useCosmeticEventVisit";
 import { useStore } from "./store";
 import { Avatar } from "./components/Avatar";
 import { CoinIcon } from "./components/CoinIcon";
-import { ViewingProvider } from "./lib/viewContext";
+import { ViewingProvider, viewingValue } from "./lib/viewContext";
 import { activityLabel, resolveActivity } from "./lib/presence";
 import {
   slotCapacity,
@@ -1397,9 +1397,7 @@ export default function App() {
         ) : view === "privacy" ? (
           <PrivacyPage />
         ) : (
-          <ViewingProvider
-            value={{ readOnly: viewing != null, hideSpend: viewing?.hideSpend ?? false }}
-          >
+          <ViewingProvider value={viewingValue(viewing)}>
             {view === "playing" && !viewing && (
               <NowPlayingSlots
                 generalSlots={generalSlots}

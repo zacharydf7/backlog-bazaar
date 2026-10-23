@@ -22,7 +22,6 @@ import { TitleBadge } from "../TitleBadge";
 import { EmptyState } from "./EmptyState";
 import { timeAgo } from "../../lib/time";
 import { activityHeadline, activityCoins } from "../../lib/social";
-import { isCoinVariant } from "../../lib/coins";
 import type { ActivityKind } from "../../types";
 
 const KIND_ICONS: Record<ActivityKind, LucideIcon> = {
@@ -125,12 +124,7 @@ export function ActivitySection({ onFindFriends }: { onFindFriends: () => void }
                   {coins != null && (
                     <span className="inline-flex items-center gap-1 text-accent">
                       {/* Their payout wears their own mint. */}
-                      <CoinIcon
-                        size={12}
-                        variant={
-                          isCoinVariant(e.actorCosmetics.coin) ? e.actorCosmetics.coin : undefined
-                        }
-                      />{" "}
+                      <CoinIcon size={12} ownerCoin={e.actorCosmetics.coin} />{" "}
                       {coins.toLocaleString()}
                     </span>
                   )}

@@ -50,7 +50,6 @@ import { gameHash, listHash } from "../lib/route";
 import type { GameListSummary } from "../lib/gameLists";
 import { VisibilityBadge } from "./lists/VisibilityBadge";
 import { resolveAccent, BIO_MAX } from "../lib/accent";
-import { isCoinVariant } from "../lib/coins";
 import { matchPreset, profileColorVars } from "../lib/profileColors";
 import { ProfileColorsModal } from "./ProfileColorsModal";
 import { validateBannerFile } from "../lib/banner";
@@ -326,9 +325,7 @@ export function ProfileHub({
                   {/* A visited player's balance wears THEIR equipped mint. */}
                   <CoinIcon
                     size={14}
-                    variant={
-                      isCoinVariant(profile.cosmetics.coin) ? profile.cosmetics.coin : undefined
-                    }
+                    ownerCoin={visiting ? profile.cosmetics.coin : undefined}
                   />{" "}
                   {profile.coins}
                 </span>
