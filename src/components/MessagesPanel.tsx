@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import { useStore } from "../store";
 import { Avatar } from "./Avatar";
+import { TitleBadge } from "./TitleBadge";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { EmptyState } from "./community/EmptyState";
 import { GamePreviewModal } from "./gamepage/GamePreviewModal";
@@ -32,14 +33,21 @@ import { isLocalCover } from "../lib/covers";
 import { REACTIONS } from "../lib/reactions";
 import { filesFromClipboard, mergeFiles, isImage, MAX_FILES } from "../lib/attachment";
 import { searchLibrary } from "../lib/librarySearch";
-import type { Conversation, Game, Message } from "../types";
+import type { Badge, Conversation, Game, Message } from "../types";
 import { useCoverOf } from "../lib/useCoverOf";
 
 /** A game attached to a message being composed. */
 type AttachedGame = { id: string; title: string; image: string | null };
 
-/** The person on the other end of an open thread. */
-type Other = { id: string; name: string; avatar: string | null };
+/** The person on the other end of an open thread, with the title and frame
+ *  they wear when known (null opening from a profile's Message button). */
+type Other = {
+  id: string;
+  name: string;
+  avatar: string | null;
+  title: Badge | null;
+  frame: string | null;
+};
 type Pane = { kind: "list" } | { kind: "thread"; other: Other } | { kind: "pick" };
 
 /** The chat inbox, chat-style. The list groups messages into per-friend
@@ -54,7 +62,10 @@ export function MessagesPanel({
   const { fetchConversations, fetchUnreadMessageCount, fetchFriends } = useStore();
   const [pane, setPane] = useState<Pane>(
     initialCompose
-      ? { kind: "thread", other: { id: initialCompose.id, name: initialCompose.name, avatar: null } }
+      ? {
+          kind: "thread",
+          other: { id: initialCompose.id, name: initialCompose.name, avatar: null, title: null, frame: null },
+        }
       : { kind: "list" },
   );
 
@@ -189,7 +200,15 @@ function ConversationRowItem({
   return (
     <li>
       <button
-        onClick={() => onOpen({ id: c.otherId, name: c.otherName, avatar: c.otherAvatar })}
+        onClick={() =>
+          onOpen({
+            id: c.otherId,
+            name: c.otherName,
+            avatar: c.otherAvatar,
+            title: c.otherTitle,
+            frame: c.otherCosmetics.frame,
+          })
+        }
         aria-current={active ? "true" : undefined}
         className={
           "flex w-full items-center gap-3 px-4 py-3 text-left transition hover:bg-panel/60 " +
@@ -197,7 +216,13 @@ function ConversationRowItem({
           (c.unreadCount > 0 ? "bg-brand/5" : "")
         }
       >
-        <Avatar url={c.otherAvatar} name={c.otherName} size={40} />
+        <Avatar
+          url={c.otherAvatar}
+          name={c.otherName}
+          size={40}
+          frame={c.otherCosmetics.frame}
+          calm
+        />
         <div className="min-w-0 flex-1">
           <div className="flex items-center justify-between gap-2">
             <span className="truncate text-sm font-medium text-ink">{c.otherName}</span>
@@ -245,6 +270,12 @@ function ThreadView({ other, onBack }: { other: Other; onBack: () => void }) {
     privacy,
   } = useStore();
   const coverOf = useCoverOf();
+  // Opened from a profile's Message button, the thread knows only a name; the
+  // friend record (messaging is friends-only) fills in their avatar and look.
+  const friend = useStore((s) => s.friends.find((f) => f.id === other.id));
+  const avatar = other.avatar ?? friend?.avatarUrl ?? null;
+  const title = other.title ?? friend?.title ?? null;
+  const frame = other.frame ?? friend?.cosmetics.frame ?? null;
   const [reply, setReply] = useState("");
   const [sending, setSending] = useState(false);
   const [confirmingRemove, setConfirmingRemove] = useState(false);
@@ -440,8 +471,11 @@ function ThreadView({ other, onBack }: { other: Other; onBack: () => void }) {
         >
           <ChevronLeft size={18} />
         </button>
-        <Avatar url={other.avatar} name={other.name} size={28} />
-        <span className="min-w-0 flex-1 truncate text-sm font-medium text-ink">{other.name}</span>
+        <Avatar url={avatar} name={other.name} size={28} frame={frame} calm />
+        <span className="flex min-w-0 flex-1 items-center gap-1.5">
+          <span className="truncate text-sm font-medium text-ink">{other.name}</span>
+          {title && <TitleBadge badge={title} size="xs" calm />}
+        </span>
         <button
           onClick={async () => {
             await archiveConversation(other.id, !archived);
@@ -1084,7 +1118,15 @@ function PickFriend({
             {friends.map((f) => (
               <li key={f.id}>
                 <button
-                  onClick={() => onPick({ id: f.id, name: f.displayName, avatar: f.avatarUrl })}
+                  onClick={() =>
+                    onPick({
+                      id: f.id,
+                      name: f.displayName,
+                      avatar: f.avatarUrl,
+                      title: f.title,
+                      frame: f.cosmetics.frame,
+                    })
+                  }
                   className="flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-left transition hover:bg-panel/60"
                 >
                   <Avatar url={f.avatarUrl} name={f.displayName} size={32} />

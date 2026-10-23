@@ -309,6 +309,8 @@ export interface Friend {
   nowPlaying: string | null;
   playingTitle: string | null; // game their stopwatch is on (null = idle, or private)
   playingSince: number | null; // when that stopwatch started (null = no live session)
+  title: Badge | null; // the title they wear (null for a hard-private friend)
+  cosmetics: Cosmetics;
 }
 
 /** A pending friend request involving the caller. */
@@ -412,6 +414,8 @@ export interface ActivityEvent {
   actor: string;
   actorName: string;
   actorAvatar: string | null;
+  actorTitle: Badge | null;
+  actorCosmetics: Cosmetics;
   kind: ActivityKind;
   gameTitle: string | null;
   detail: {
@@ -435,6 +439,8 @@ export interface Conversation {
   otherId: string;
   otherName: string;
   otherAvatar: string | null;
+  otherTitle: Badge | null; // null for a hard-private profile
+  otherCosmetics: Cosmetics;
   lastBody: string;
   lastOutgoing: boolean;
   lastCreatedAt: number;

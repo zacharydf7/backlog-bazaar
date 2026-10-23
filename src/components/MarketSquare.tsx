@@ -310,7 +310,8 @@ function SectionCard({
   );
 }
 
-/** One community clear: who, what, when — cheerable by anyone who can see it. */
+/** One community clear: who, what, when — cheerable by anyone who can see it.
+ *  The clearer wears their frame and title, resting still in the list. */
 function ClearRow({
   event: e,
   me,
@@ -331,7 +332,13 @@ function ClearRow({
         title={me ? "This is you" : `Visit ${e.actorName}'s Bazaar`}
         className={"shrink-0 " + (me ? "cursor-default" : "transition hover:opacity-80")}
       >
-        <Avatar url={e.actorAvatar} name={e.actorName} size={32} />
+        <Avatar
+          url={e.actorAvatar}
+          name={e.actorName}
+          size={32}
+          frame={e.actorCosmetics.frame}
+          calm
+        />
       </button>
       <div className="min-w-0 flex-1">
         <p className="text-sm text-ink">
@@ -345,7 +352,10 @@ function ClearRow({
           <span className="text-muted">{activityHeadline(e)}</span>
           {coins != null && <span className="text-accent"> (+{coins})</span>}
         </p>
-        <p className="text-[11px] text-subtle">{timeAgo(e.createdAt)}</p>
+        <p className="flex flex-wrap items-center gap-1.5 text-[11px] text-subtle">
+          {e.actorTitle && <TitleBadge badge={e.actorTitle} size="xs" calm />}
+          {timeAgo(e.createdAt)}
+        </p>
       </div>
       <button
         onClick={onCheer}

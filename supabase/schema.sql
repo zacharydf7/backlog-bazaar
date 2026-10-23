@@ -16600,14 +16600,16 @@ end;
 $$;
 
 -- The caller's accepted friends, with privacy-respecting coins/presence and the
--- title they currently have in Now Playing.
--- Dropped first because adding the stopwatch-presence columns changes the return type.
+-- title they currently have in Now Playing, plus the title and cosmetics they
+-- wear (owner, 2026-10-23), which a hard-private friend doesn't share.
+-- Dropped first because adding columns changes the return type.
 drop function if exists public.list_friends();
 create or replace function public.list_friends()
 returns table (
   id uuid, display_name text, avatar_url text, coins integer,
   last_seen_at timestamptz, activity text, now_playing text,
-  playing_title text, playing_since timestamptz
+  playing_title text, playing_since timestamptz,
+  title jsonb, cosmetics jsonb
 )
 language plpgsql security definer set search_path = public
 as $$
@@ -16640,7 +16642,11 @@ begin
            or coalesce((p.privacy->>'private_profile')::boolean, false)
          then null else s.playing_title end,
     case when coalesce((p.privacy->>'appear_offline')::boolean, false)
-         then null else s.playing_since end
+         then null else s.playing_since end,
+    case when coalesce((p.privacy->>'private_profile')::boolean, false)
+         then null else public.user_title_json(p.id) end,
+    case when coalesce((p.privacy->>'private_profile')::boolean, false)
+         then null else public.user_cosmetics_json(p.id) end
   from public.profiles p
   join (
     select case when requester = auth.uid() then addressee else requester end as fid
@@ -16787,7 +16793,10 @@ revoke execute on function public.activity_feed_lines(uuid, timestamptz, timesta
 -- The page scans a bounded window of history: the 7 days before p_before (or
 -- now), widened to 30 days, 180 days, then everything, until the window holds
 -- a full page or no friend has anything older. Paging stays exact because
--- activity_feed_lines never splits a day across the window's edge.
+-- activity_feed_lines never splits a day across the window's edge. Each line
+-- carries the actor's title and cosmetics (owner, 2026-10-23); a hard-private
+-- actor never reaches the feed. Dropped first: the return shape changed.
+drop function if exists public.list_activity_feed(timestamptz, integer);
 create or replace function public.list_activity_feed(
   p_before timestamptz default null,
   p_limit  integer default 30
@@ -16795,7 +16804,8 @@ create or replace function public.list_activity_feed(
 returns table (
   id uuid, actor uuid, actor_name text, actor_avatar text,
   kind text, game_title text, detail jsonb, created_at timestamptz,
-  cheer_count bigint, cheered_by_me boolean
+  cheer_count bigint, cheered_by_me boolean,
+  title jsonb, cosmetics jsonb
 )
 language plpgsql security definer set search_path = public
 as $$
@@ -16827,7 +16837,8 @@ begin
   select l.id, l.actor, p.display_name, p.avatar_url,
     l.kind, l.game_title, l.detail, l.created_at,
     (select count(*) from public.activity_cheers c where c.event_id = l.id),
-    exists (select 1 from public.activity_cheers c where c.event_id = l.id and c.user_id = v_me)
+    exists (select 1 from public.activity_cheers c where c.event_id = l.id and c.user_id = v_me),
+    public.user_title_json(l.actor), public.user_cosmetics_json(l.actor)
   from public.activity_feed_lines(v_me, v_from, p_before) l
   join public.profiles p on p.id = l.actor
   order by l.created_at desc, l.id desc
@@ -17130,14 +17141,17 @@ $$;
 
 -- One row per friend the caller has ever messaged with, EXCEPT chats they've removed
 -- with no newer activity since (hidden). Carries the latest message, unread count,
--- whether it's archived, and whether the latest message is a tombstone.
--- Dropped first: the return shape changed (added last_deleted).
+-- whether it's archived, and whether the latest message is a tombstone, plus
+-- the other person's title and cosmetics (owner, 2026-10-23), which a
+-- hard-private profile doesn't share.
+-- Dropped first: the return shape changed (added the title and cosmetics).
 drop function if exists public.list_conversations();
 create or replace function public.list_conversations()
 returns table (
   other_id uuid, other_name text, other_avatar text,
   last_body text, last_outgoing boolean, last_created_at timestamptz,
-  last_deleted boolean, unread_count bigint, archived boolean
+  last_deleted boolean, unread_count bigint, archived boolean,
+  other_title jsonb, other_cosmetics jsonb
 )
 language plpgsql security definer set search_path = public
 as $$
@@ -17169,7 +17183,11 @@ begin
     (select count(*) from public.messages u
        where u.recipient = auth.uid() and u.sender = l.o_id
          and u.read_at is null and u.deleted_at is null and u.recipient_hidden_at is null) as unread_count,
-    (l.my_archived_at is not null) as archived
+    (l.my_archived_at is not null) as archived,
+    case when coalesce((p.privacy->>'private_profile')::boolean, false)
+         then null else public.user_title_json(l.o_id) end,
+    case when coalesce((p.privacy->>'private_profile')::boolean, false)
+         then null else public.user_cosmetics_json(l.o_id) end
   from latest l
   join public.profiles p on p.id = l.o_id
   where l.my_hidden_at is null  -- removed chats stay off the list until newer activity
@@ -23618,7 +23636,8 @@ create or replace function public.list_square_activity(
 returns table (
   id uuid, actor uuid, actor_name text, actor_avatar text,
   kind text, game_title text, detail jsonb, created_at timestamptz,
-  cheer_count bigint, cheered_by_me boolean
+  cheer_count bigint, cheered_by_me boolean,
+  title jsonb, cosmetics jsonb
 )
 language sql
 security definer set search_path = public
@@ -23630,7 +23649,8 @@ as $$
     a.created_at,
     (select count(*) from public.activity_cheers c where c.event_id = a.id),
     exists (select 1 from public.activity_cheers c
-             where c.event_id = a.id and c.user_id = auth.uid())
+             where c.event_id = a.id and c.user_id = auth.uid()),
+    public.user_title_json(a.actor), public.user_cosmetics_json(a.actor)
   from public.activity_events a
   join public.profiles p on p.id = a.actor
   where a.kind in ('bounty_claimed', 'co_op_completed')

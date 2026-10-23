@@ -10,6 +10,8 @@ function friend(over: Partial<Friend> = {}): Friend {
     id: "u1",
     displayName: "Ana",
     avatarUrl: null,
+    title: null,
+    cosmetics: { frame: null, stall: null, coin: null },
     coins: null,
     lastSeenAt: null,
     activity: null,

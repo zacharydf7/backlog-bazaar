@@ -41,6 +41,20 @@ export interface Release {
 export const RELEASES: Release[] = [
   // ── October 2026 ──────────────────────────────────────────────────────────
   {
+    id: "2026-10-23-cosmetics-everywhere",
+    date: "2026-10-23",
+    title: "Your look follows you around",
+    summary: "The frames and titles you wear now show beside your name across Community, not just on your Market Square stall.",
+    tag: "improvement",
+    items: [
+      "Friends see your frame and title on their friends list and in Messages.",
+      "Your frame and title ride along on Fresh Clears and the Activity feed.",
+      "Friends see your coins in the coin design you equipped.",
+      "Animated looks hold still in busy lists and play in full on Market Square stalls.",
+    ],
+    link: { label: "Open Community", view: "community" },
+  },
+  {
     id: "2026-10-21-friends-activity",
     date: "2026-10-21",
     title: "See what your friends are playing",

@@ -2,8 +2,17 @@ import type { Badge } from "../types";
 import { resolveBadgeIcon, badgeChipClass } from "../lib/badges";
 
 /** A small, theme-aware prestige chip (icon + name). Used wherever a player's
- *  title/badges appear: profile header, Market Square, trophy case, admin UI. */
-export function TitleBadge({ badge, size = "sm" }: { badge: Badge; size?: "xs" | "sm" }) {
+ *  title/badges appear: profile header, Market Square, trophy case, admin UI.
+ *  `calm` rests an animated title in its still look, for feeds and lists. */
+export function TitleBadge({
+  badge,
+  size = "sm",
+  calm = false,
+}: {
+  badge: Badge;
+  size?: "xs" | "sm";
+  calm?: boolean;
+}) {
   const Icon = resolveBadgeIcon(badge.icon);
   const pad = size === "xs" ? "px-1.5 py-0.5 text-[10px]" : "px-2 py-0.5 text-[11px]";
   const iconSize = size === "xs" ? 10 : 12;
@@ -14,7 +23,8 @@ export function TitleBadge({ badge, size = "sm" }: { badge: Badge; size?: "xs" |
         "inline-flex items-center gap-1 rounded-full border font-medium " +
         pad +
         " " +
-        badgeChipClass(badge)
+        badgeChipClass(badge) +
+        (calm ? " fx-calm" : "")
       }
     >
       <Icon size={iconSize} className="shrink-0" />

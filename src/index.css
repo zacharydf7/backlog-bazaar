@@ -1844,3 +1844,20 @@ input[type="search"]::-webkit-search-decoration {
   .fx-debut-sheen, .fx-sunset-glow { animation: none; }
   .fx-debut-sheen { background-position: 50% 0; }
 }
+
+/* Calm (owner, 2026-10-23): a frame or title worn in a feed or list rests in
+   its reduced-motion look, so a page of rows never shimmers at once. Set on
+   the cosmetic itself (Avatar's ring, TitleBadge's chip), which holds nothing
+   but its own effects; !important outranks each effect's own selector. */
+.fx-calm,
+.fx-calm::before,
+.fx-calm::after,
+.fx-calm *,
+.fx-calm *::before,
+.fx-calm *::after {
+  animation: none !important;
+}
+.fx-calm.fx-debut-sheen,
+.fx-calm .fx-debut-sheen {
+  background-position: 50% 0;
+}

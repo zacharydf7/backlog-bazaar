@@ -4,19 +4,22 @@ import { FrameOrnament } from "./CosmeticOrnaments";
 
 /** A round user avatar: the uploaded picture, or initials on a brand-tinted disc.
  *  `frame` is a Curio Shop frame style key — when it resolves, the avatar is
- *  wrapped in that decorative ring; unknown/null keys render exactly as before. */
+ *  wrapped in that decorative ring; unknown/null keys render exactly as before.
+ *  `calm` rests an animated frame in its still look, for feeds and lists. */
 export function Avatar({
   url,
   name,
   size = 32,
   className = "",
   frame = null,
+  calm = false,
 }: {
   url?: string | null;
   name: string;
   size?: number;
   className?: string;
   frame?: string | null;
+  calm?: boolean;
 }) {
   const frameStyle = resolveFrameStyle(frame);
   const style = { width: size, height: size };
@@ -50,7 +53,10 @@ export function Avatar({
       data-frame={frame}
       style={{ padding: ring }}
       className={
-        "relative inline-flex shrink-0 rounded-full " + frameStyle.className + " " + className
+        "relative inline-flex shrink-0 rounded-full " +
+        frameStyle.className +
+        (calm ? " fx-calm " : " ") +
+        className
       }
     >
       {core}

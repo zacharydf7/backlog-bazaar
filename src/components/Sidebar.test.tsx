@@ -298,6 +298,8 @@ describe("Sidebar visiting state", () => {
             id: "u2",
             displayName: "Other Player",
             avatarUrl: null,
+            title: null,
+            cosmetics: { frame: null, stall: null, coin: null },
             coins: null,
             lastSeenAt: null,
             activity: null,

@@ -884,6 +884,8 @@ export interface FriendRow {
   playing_since?: string | null;
   activity: string | null;
   now_playing: string | null;
+  title?: unknown;
+  cosmetics?: unknown;
 }
 
 export function rowToFriend(r: FriendRow): Friend {
@@ -897,6 +899,8 @@ export function rowToFriend(r: FriendRow): Friend {
     playingSince: r.playing_since ? Date.parse(r.playing_since) : null,
     activity: r.activity,
     nowPlaying: r.now_playing,
+    title: jsonToTitle(r.title),
+    cosmetics: coerceCosmetics(r.cosmetics),
   };
 }
 
@@ -1002,6 +1006,8 @@ export interface ActivityEventRow {
   created_at: string;
   cheer_count: number | string | null;
   cheered_by_me: boolean | null;
+  title?: unknown;
+  cosmetics?: unknown;
 }
 
 /** games.bounty_basis as the client reads it; null when absent or malformed. */
@@ -1046,6 +1052,8 @@ export function rowToActivityEvent(r: ActivityEventRow): ActivityEvent {
     actor: r.actor,
     actorName: r.actor_name,
     actorAvatar: r.actor_avatar,
+    actorTitle: jsonToTitle(r.title),
+    actorCosmetics: coerceCosmetics(r.cosmetics),
     kind,
     gameTitle: r.game_title,
     detail: tag ? { ...rest, finish_tag: tag } : rest,
@@ -1130,6 +1138,8 @@ export interface ConversationRow {
   last_deleted?: boolean | null;
   unread_count: number | string | null;
   archived: boolean | null;
+  other_title?: unknown;
+  other_cosmetics?: unknown;
 }
 
 export function rowToConversation(r: ConversationRow): Conversation {
@@ -1137,6 +1147,8 @@ export function rowToConversation(r: ConversationRow): Conversation {
     otherId: r.other_id,
     otherName: r.other_name,
     otherAvatar: r.other_avatar,
+    otherTitle: jsonToTitle(r.other_title),
+    otherCosmetics: coerceCosmetics(r.other_cosmetics),
     lastBody: r.last_body,
     lastOutgoing: Boolean(r.last_outgoing),
     lastCreatedAt: r.last_created_at ? Date.parse(r.last_created_at) : Date.now(),

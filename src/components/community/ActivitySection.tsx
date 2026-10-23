@@ -18,9 +18,11 @@ import {
 import { useStore } from "../../store";
 import { Avatar } from "../Avatar";
 import { CoinIcon } from "../CoinIcon";
+import { TitleBadge } from "../TitleBadge";
 import { EmptyState } from "./EmptyState";
 import { timeAgo } from "../../lib/time";
 import { activityHeadline, activityCoins } from "../../lib/social";
+import { isCoinVariant } from "../../lib/coins";
 import type { ActivityKind } from "../../types";
 
 const KIND_ICONS: Record<ActivityKind, LucideIcon> = {
@@ -99,7 +101,13 @@ export function ActivitySection({ onFindFriends }: { onFindFriends: () => void }
           const KindIcon = KIND_ICONS[e.kind];
           return (
             <li key={e.id} className="flex items-start gap-3 px-4 py-3">
-              <Avatar url={e.actorAvatar} name={e.actorName} size={36} />
+              <Avatar
+                url={e.actorAvatar}
+                name={e.actorName}
+                size={36}
+                frame={e.actorCosmetics.frame}
+                calm
+              />
               <div className="min-w-0 flex-1">
                 <p className="text-sm leading-snug text-ink">
                   <span className="font-semibold">{e.actorName}</span>{" "}
@@ -111,11 +119,19 @@ export function ActivitySection({ onFindFriends }: { onFindFriends: () => void }
                   </p>
                 )}
                 <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-subtle">
+                  {e.actorTitle && <TitleBadge badge={e.actorTitle} size="xs" calm />}
                   <KindIcon size={12} aria-hidden className="shrink-0" />
                   <span>{timeAgo(e.createdAt)}</span>
                   {coins != null && (
                     <span className="inline-flex items-center gap-1 text-accent">
-                      <CoinIcon size={12} /> {coins.toLocaleString()}
+                      {/* Their payout wears their own mint. */}
+                      <CoinIcon
+                        size={12}
+                        variant={
+                          isCoinVariant(e.actorCosmetics.coin) ? e.actorCosmetics.coin : undefined
+                        }
+                      />{" "}
+                      {coins.toLocaleString()}
                     </span>
                   )}
                 </div>

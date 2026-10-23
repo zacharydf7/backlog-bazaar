@@ -15,11 +15,13 @@ import { useStore } from "../../store";
 import { Avatar } from "../Avatar";
 import { AvatarWithPresence } from "../PresenceDot";
 import { CoinIcon } from "../CoinIcon";
+import { TitleBadge } from "../TitleBadge";
 import { ConfirmDialog } from "../ConfirmDialog";
 import { KebabMenu } from "../KebabMenu";
 import { EmptyState } from "./EmptyState";
 import { isPresent } from "../../lib/presence";
 import { friendAction } from "../../lib/social";
+import { isCoinVariant } from "../../lib/coins";
 import {
   filterFriends,
   sortFriends,
@@ -371,9 +373,14 @@ function FriendRow({
           name={friend.displayName}
           size={36}
           online={online}
+          frame={friend.cosmetics.frame}
+          calm
         />
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-sm font-medium text-ink">{friend.displayName}</span>
+          <span className="flex min-w-0 items-center gap-1.5">
+            <span className="truncate text-sm font-medium text-ink">{friend.displayName}</span>
+            {friend.title && <TitleBadge badge={friend.title} size="xs" calm />}
+          </span>
           <span className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-[11px]">
             {sub.text && (
               <span
@@ -392,7 +399,12 @@ function FriendRow({
             )}
             {friend.coins != null && (
               <span className="inline-flex items-center gap-1 text-subtle">
-                <CoinIcon size={11} /> {friend.coins.toLocaleString()}
+                {/* Their balance wears their own mint. */}
+                <CoinIcon
+                  size={11}
+                  variant={isCoinVariant(friend.cosmetics.coin) ? friend.cosmetics.coin : undefined}
+                />{" "}
+                {friend.coins.toLocaleString()}
               </span>
             )}
           </span>

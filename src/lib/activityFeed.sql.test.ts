@@ -70,6 +70,12 @@ beforeAll(async () => {
     create table public.achievements (id uuid primary key default gen_random_uuid(), name text);
     create table public.user_achievements (user_id uuid, achievement_id uuid,
       earned_at timestamptz not null default now(), primary key (user_id, achievement_id));
+    -- The worn look's own rules are in socialCosmetics.sql.test.ts; these stand-ins
+    -- echo the user they're asked about, so each line's look is checked to be its actor's.
+    create function public.user_title_json(p_user uuid) returns jsonb language sql
+      as $$ select jsonb_build_object('id', p_user) $$;
+    create function public.user_cosmetics_json(p_user uuid) returns jsonb language sql
+      as $$ select jsonb_build_object('frame', p_user) $$;
   `);
   await db.exec(kindCheck());
   for (const name of [
@@ -142,6 +148,8 @@ type FeedRow = {
   created_at: Date;
   cheer_count: number;
   cheered_by_me: boolean;
+  title: { id: string };
+  cosmetics: { frame: string };
 };
 
 async function feed(before: string | null = null, limit = 30) {
@@ -237,6 +245,8 @@ describe("list_activity_feed", () => {
       ["bounty_claimed", "Hades", null, "2026-10-20T12:00:00.000Z"],
     ]);
     expect(rows[1].id).toBe(first);
+    // Each line wears its actor's title and cosmetics (owner, 2026-10-23).
+    expect(rows.map((r) => [r.title.id, r.cosmetics.frame])).toEqual(rows.map((r) => [r.actor, r.actor]));
   });
 
   it("splits days in the player's own timezone", async () => {

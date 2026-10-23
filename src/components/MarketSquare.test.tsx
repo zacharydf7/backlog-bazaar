@@ -2,9 +2,22 @@ import { describe, expect, it, beforeEach, vi } from "vitest";
 import { act, render, screen } from "@testing-library/react";
 import { MarketSquare } from "./MarketSquare";
 import { useStore } from "../store";
-import type { ActivityEvent, Game } from "../types";
+import type { ActivityEvent, Badge, Game } from "../types";
 
 const NOW = Date.now();
+
+/** A worn look: an animated title, an animated frame and a shop mint. */
+const HAUNT_TITLE: Badge = {
+  id: "b1",
+  slug: "haunt",
+  name: "Keeper of the Haunt",
+  description: null,
+  icon: "moon",
+  prestige: 3,
+  kind: "shop",
+  effect: "haunt-glow",
+};
+const LOOK = { frame: "pixel-heart", stall: null, coin: "opal" };
 
 function ev(over: Partial<ActivityEvent> = {}): ActivityEvent {
   return {
@@ -12,6 +25,8 @@ function ev(over: Partial<ActivityEvent> = {}): ActivityEvent {
     actor: "u2",
     actorName: "Ana",
     actorAvatar: null,
+    actorTitle: null,
+    actorCosmetics: { frame: null, stall: null, coin: null },
     kind: "bounty_claimed",
     gameTitle: "Hollow Knight",
     detail: { coins: 40 },
@@ -104,6 +119,15 @@ describe("MarketSquare community sections", () => {
     const cheerBtn = screen.getByTitle("Cheer this");
     act(() => cheerBtn.click());
     expect(cheer).toHaveBeenCalledWith("e1");
+  });
+
+  it("dresses a clear in the clearer's frame and title, resting still (owner, 2026-10-23)", () => {
+    act(() =>
+      useStore.setState({ squareFeed: [ev({ actorTitle: HAUNT_TITLE, actorCosmetics: LOOK })] }),
+    );
+    const { container } = render(<MarketSquare />);
+    expect(container.querySelector('[data-frame="pixel-heart"]')?.classList.contains("fx-calm")).toBe(true);
+    expect(screen.getByText("Keeper of the Haunt").parentElement?.classList.contains("fx-calm")).toBe(true);
   });
 
   it("uncheers an already-cheered clear", () => {

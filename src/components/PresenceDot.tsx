@@ -16,23 +16,25 @@ export function PresenceDot({ online, className = "" }: { online: boolean; class
 }
 
 /** An avatar with an online dot tucked into its bottom-right corner. `frame`
- *  is a Curio Shop frame style key, passed straight through to Avatar. */
+ *  and `calm` pass straight through to Avatar. */
 export function AvatarWithPresence({
   url,
   name,
   size,
   online,
   frame = null,
+  calm = false,
 }: {
   url: string | null;
   name: string;
   size: number;
   online: boolean;
   frame?: string | null;
+  calm?: boolean;
 }) {
   return (
     <span className="relative inline-block shrink-0">
-      <Avatar url={url} name={name} size={size} frame={frame} />
+      <Avatar url={url} name={name} size={size} frame={frame} calm={calm} />
       {online && (
         <PresenceDot online className="absolute bottom-0 right-0 ring-2 ring-surface" />
       )}

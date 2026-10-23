@@ -2,7 +2,7 @@ import { describe, expect, it, beforeEach, vi } from "vitest";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { CommunityPage } from "./CommunityPage";
 import { useStore } from "../../store";
-import type { ActivityEvent, Friend, FriendRequest } from "../../types";
+import type { ActivityEvent, Badge, Friend, FriendRequest } from "../../types";
 
 // jsdom has no scrollIntoView; the thread view keeps the newest message in view.
 window.HTMLElement.prototype.scrollIntoView =
@@ -10,11 +10,26 @@ window.HTMLElement.prototype.scrollIntoView =
 
 const NOW = Date.now();
 
+/** A worn look: an animated title, an animated frame and a shop mint. */
+const HAUNT_TITLE: Badge = {
+  id: "b1",
+  slug: "haunt",
+  name: "Keeper of the Haunt",
+  description: null,
+  icon: "moon",
+  prestige: 3,
+  kind: "shop",
+  effect: "haunt-glow",
+};
+const LOOK = { frame: "pixel-heart", stall: null, coin: "opal" };
+
 function friend(over: Partial<Friend> = {}): Friend {
   return {
     id: "u2",
     displayName: "Ana",
     avatarUrl: null,
+    title: null,
+    cosmetics: { frame: null, stall: null, coin: null },
     coins: 120,
     lastSeenAt: null,
     activity: null,
@@ -43,6 +58,8 @@ function ev(over: Partial<ActivityEvent> = {}): ActivityEvent {
     actor: "u2",
     actorName: "Ana",
     actorAvatar: null,
+    actorTitle: null,
+    actorCosmetics: { frame: null, stall: null, coin: null },
     kind: "bounty_claimed",
     gameTitle: "Hollow Knight",
     detail: { coins: 40 },
@@ -303,6 +320,47 @@ describe("Messages section", () => {
     expect(screen.getByRole("button", { name: /New/i })).toBeTruthy();
     // …and the thread's Back affordance is phone-only.
     expect(screen.getByRole("button", { name: /^Back$/i }).className).toMatch(/md:hidden/);
+  });
+});
+
+describe("worn cosmetics (owner, 2026-10-23)", () => {
+  /** Every frame and title on screen rests still, as feeds and lists should. */
+  function expectCalm(container: HTMLElement) {
+    const frame = container.querySelector('[data-frame="pixel-heart"]');
+    expect(frame?.classList.contains("fx-calm")).toBe(true);
+    for (const chip of screen.getAllByText("Keeper of the Haunt")) {
+      expect(chip.parentElement?.classList.contains("fx-calm")).toBe(true);
+    }
+  }
+
+  it("shows a friend's frame, title and their own mint on the friends list", () => {
+    act(() => useStore.setState({ friends: [friend({ title: HAUNT_TITLE, cosmetics: LOOK })] }));
+    const { container } = render(<CommunityPage view="community" {...pageProps()} />);
+    expectCalm(container);
+    expect(container.querySelector('img[src="/coins/opal.svg"]')).toBeTruthy();
+  });
+
+  it("shows the actor's frame, title and their own mint on the activity feed", () => {
+    act(() => useStore.setState({ feed: [ev({ actorTitle: HAUNT_TITLE, actorCosmetics: LOOK })] }));
+    const { container } = render(<CommunityPage view="community-activity" {...pageProps()} />);
+    expectCalm(container);
+    expect(container.querySelector('img[src="/coins/opal.svg"]')).toBeTruthy();
+  });
+
+  it("dresses a thread opened from a profile from the friend record", () => {
+    act(() =>
+      useStore.setState({
+        friends: [friend({ title: HAUNT_TITLE, cosmetics: LOOK })],
+        thread: [],
+        threadLoading: false,
+        fetchThread: vi.fn(async () => {}),
+        markThreadRead: vi.fn(async () => {}),
+      }),
+    );
+    const { container } = render(
+      <CommunityPage view="community-messages" {...pageProps()} dmTarget={{ id: "u2", name: "Ana" }} />,
+    );
+    expectCalm(container);
   });
 });
 
