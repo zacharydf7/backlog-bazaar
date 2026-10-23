@@ -675,11 +675,16 @@ export default function App() {
 
   // Same fresh-slate reset for the Master Ledger's own slicers, on a real
   // navigation (view change) or a switch of whose ledger we're viewing. A game
-  // round-trip leaves `view` at "master-ledger", so the filter survives it.
+  // round-trip leaves `view` at "master-ledger", so the filter survives it. A
+  // navigation that asked for a filter (a profile's platform row, issue
+  // fcd0948d) arrives with it applied and its panel open, so it's clearable.
+  const requestedLedgerFilters = useRef<LedgerFilters | null>(null);
   useEffect(() => {
-    setLedgerFilters(EMPTY_LEDGER_FILTERS);
+    const requested = requestedLedgerFilters.current;
+    requestedLedgerFilters.current = null;
+    setLedgerFilters(requested ?? EMPTY_LEDGER_FILTERS);
     setLedgerGroupBy("none");
-    setLedgerFiltersOpen(false);
+    setLedgerFiltersOpen(requested != null);
   }, [view, viewing?.userId]);
 
   // Playing games for the Now Playing slot meter — every playing instance is
@@ -1336,6 +1341,10 @@ export default function App() {
             onOpenTab={navigate}
             onOpenAchievements={() => navigate("achievements")}
             onOpenLists={() => navigate("lists")}
+            onOpenPlatform={(platform) => {
+              requestedLedgerFilters.current = { ...EMPTY_LEDGER_FILTERS, platforms: [platform] };
+              navigate("master-ledger");
+            }}
           />
         ) : view === "achievements" ? (
           <AchievementsPage />

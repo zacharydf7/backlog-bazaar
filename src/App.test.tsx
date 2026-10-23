@@ -189,6 +189,28 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: /^PC$/ })).toBeTruthy();
   });
 
+  it("opens a visited player's games on one platform from their profile (fcd0948d)", async () => {
+    render(<App />);
+    await screen.findAllByRole("heading", { name: /Backlog Bazaar/i });
+    act(() =>
+      useStore.setState({
+        viewing: visit({
+          games: [
+            libGame({ id: "gsw", title: "Switch Game", copies: [{ id: "c1", platform: "Nintendo Switch" } as never] }),
+            libGame({ id: "gps", title: "PS Game", copies: [{ id: "c2", platform: "PlayStation 5" } as never] }),
+          ],
+        }),
+      }),
+    );
+    // A visit lands on their profile; tap the Switch row of the platform breakdown.
+    fireEvent.click(await screen.findByTitle("See the Nintendo Switch games"));
+    expect(await screen.findByText("Switch Game")).toBeTruthy();
+    expect(screen.queryByText("PS Game")).toBeNull();
+    // The filter is visible and clearable.
+    expect(screen.getByRole("button", { name: /^Filters/i }).getAttribute("aria-expanded")).toBe("true");
+    expect(screen.getByRole("button", { name: /^Nintendo Switch$/ })).toBeTruthy();
+  });
+
   it("hides empty Now Playing lanes, except Focus, and keeps filled ones", async () => {
     render(<App />);
     await screen.findAllByRole("heading", { name: /Backlog Bazaar/i });

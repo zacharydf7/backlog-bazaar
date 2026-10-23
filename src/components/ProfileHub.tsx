@@ -35,6 +35,7 @@ import { formatPlaytime } from "../lib/playtime";
 import { profileSummary } from "../lib/profileSummary";
 import { ownershipUnits } from "../lib/compilationGrouping";
 import { platformSummary, PLATFORM_SEGMENTS, type PlatformStatusRow } from "../lib/platformSummary";
+import { NO_PLATFORM_LABEL } from "../lib/ledger";
 import {
   localActivityFallback,
   activityTone,
@@ -87,12 +88,15 @@ export function ProfileHub({
   onOpenTab,
   onOpenAchievements,
   onOpenLists,
+  onOpenPlatform,
 }: {
   onOpenTab: (tab: GameStatus) => void;
   /** Open the full trophy-room page (own profile only). */
   onOpenAchievements?: () => void;
   /** Open the My Lists workspace (own profile only). */
   onOpenLists?: () => void;
+  /** Open this player's Master Ledger filtered to one platform (issue fcd0948d). */
+  onOpenPlatform?: (platform: string) => void;
 }) {
   const viewing = useStore((s) => s.viewing);
   const cloud = useStore((s) => s.cloud);
@@ -630,7 +634,7 @@ export function ProfileHub({
               text={visiting ? "No owned games yet." : "Add a game to see your shelves by platform."}
             />
           ) : (
-            <PlatformBreakdown rows={platforms} />
+            <PlatformBreakdown rows={platforms} onOpen={onOpenPlatform} />
           )}
         </Module>
       </div>
@@ -1034,8 +1038,16 @@ function ActivityRow({
 
 /** Per-platform shelves: a color legend, then one segmented bar per platform
  *  showing how much of that shelf is still in the Bazaar vs. playing vs.
- *  cleared (and how). A fully-finished shelf gets the 100% treatment. */
-function PlatformBreakdown({ rows }: { rows: PlatformStatusRow[] }) {
+ *  cleared (and how). A fully-finished shelf gets the 100% treatment. A row
+ *  opens that platform's games in the Master Ledger (issue fcd0948d); the
+ *  no-platform bucket has nothing to filter on, so it stays plain. */
+function PlatformBreakdown({
+  rows,
+  onOpen,
+}: {
+  rows: PlatformStatusRow[];
+  onOpen?: (platform: string) => void;
+}) {
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap gap-x-3 gap-y-1">
@@ -1046,47 +1058,65 @@ function PlatformBreakdown({ rows }: { rows: PlatformStatusRow[] }) {
         ))}
       </div>
       <ul className="flex flex-col gap-3">
-        {rows.map((row) => (
-          <li key={row.platform} className="flex flex-col gap-1">
-            <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
-              <span className="min-w-0 truncate text-sm font-medium text-ink">{row.platform}</span>
-              {row.allFinished ? (
-                <span className="inline-flex items-center gap-1 text-xs font-medium text-success">
-                  <Check size={13} /> 100% cleared
-                </span>
+        {rows.map((row) => {
+          const content = (
+            <>
+              <span className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
+                <span className="min-w-0 truncate text-sm font-medium text-ink">{row.platform}</span>
+                {row.allFinished ? (
+                  <span className="inline-flex items-center gap-1 text-xs font-medium text-success">
+                    <Check size={13} /> 100% cleared
+                  </span>
+                ) : (
+                  <span className="text-xs text-subtle">
+                    {/* Retired games leave the completion math on both sides —
+                        they're set aside, not part of the shelf's clear rate. */}
+                    {row.beaten + row.completed + row.endless}/{row.total - row.retired} cleared
+                  </span>
+                )}
+              </span>
+              <span
+                className={
+                  "flex h-2.5 w-full overflow-hidden rounded-full bg-panel " +
+                  (row.allFinished ? "ring-1 ring-success/60" : "")
+                }
+              >
+                {PLATFORM_SEGMENTS.map((s) =>
+                  row[s.key] > 0 ? (
+                    <span
+                      key={s.key}
+                      className={s.barClass}
+                      style={{ width: `${(row[s.key] / row.total) * 100}%` }}
+                      title={`${row[s.key]} ${lowerLabel(s.label)}`}
+                    />
+                  ) : null,
+                )}
+              </span>
+              <span className="text-[11px] text-subtle">
+                {PLATFORM_SEGMENTS.filter((s) => row[s.key] > 0)
+                  .map((s) => `${row[s.key]} ${lowerLabel(s.label)}`)
+                  .concat(`${row.total} total`)
+                  .join(" · ")}
+              </span>
+            </>
+          );
+          return (
+            <li key={row.platform}>
+              {onOpen && row.platform !== NO_PLATFORM_LABEL ? (
+                <button
+                  type="button"
+                  onClick={() => onOpen(row.platform)}
+                  title={`See the ${row.platform} games`}
+                  className="-mx-2 flex w-[calc(100%+1rem)] flex-col gap-1 rounded-lg px-2 py-1 text-left transition hover:bg-panel/50"
+                >
+                  {content}
+                </button>
               ) : (
-                <span className="text-xs text-subtle">
-                  {/* Retired games leave the completion math on both sides —
-                      they're set aside, not part of the shelf's clear rate. */}
-                  {row.beaten + row.completed + row.endless}/{row.total - row.retired} cleared
-                </span>
+                <div className="flex flex-col gap-1">{content}</div>
               )}
-            </div>
-            <div
-              className={
-                "flex h-2.5 w-full overflow-hidden rounded-full bg-panel " +
-                (row.allFinished ? "ring-1 ring-success/60" : "")
-              }
-            >
-              {PLATFORM_SEGMENTS.map((s) =>
-                row[s.key] > 0 ? (
-                  <div
-                    key={s.key}
-                    className={s.barClass}
-                    style={{ width: `${(row[s.key] / row.total) * 100}%` }}
-                    title={`${row[s.key]} ${lowerLabel(s.label)}`}
-                  />
-                ) : null,
-              )}
-            </div>
-            <span className="text-[11px] text-subtle">
-              {PLATFORM_SEGMENTS.filter((s) => row[s.key] > 0)
-                .map((s) => `${row[s.key]} ${lowerLabel(s.label)}`)
-                .concat(`${row.total} total`)
-                .join(" · ")}
-            </span>
-          </li>
-        ))}
+            </li>
+          );
+        })}
       </ul>
     </div>
   );

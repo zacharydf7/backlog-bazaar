@@ -63,6 +63,24 @@ beforeEach(() => {
   );
 });
 
+describe("ProfileHub — platform rows (issue fcd0948d)", () => {
+  it("opens a platform's games from its row, but not the no-platform bucket", () => {
+    const onOpenPlatform = vi.fn();
+    useStore.setState({
+      viewing: visit({
+        games: [
+          game({ title: "Mario", copies: [{ id: "c1", platform: "Nintendo Switch" }] }),
+          game({ title: "Mystery" }),
+        ],
+      }),
+    });
+    render(<ProfileHub onOpenTab={() => {}} onOpenPlatform={onOpenPlatform} />);
+    fireEvent.click(screen.getByTitle("See the Nintendo Switch games"));
+    expect(onOpenPlatform).toHaveBeenCalledWith("Nintendo Switch");
+    expect(screen.getByText("Unspecified platform").closest("button")).toBeNull();
+  });
+});
+
 describe("ProfileHub — visiting (read-only)", () => {
   it.each([true, false])("keeps banners separate for all viewers (admin: %s)", (admin) => {
     useStore.setState({ can: (permission) => admin && permission === "shop.manage", viewing: visit({
