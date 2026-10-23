@@ -43,8 +43,8 @@ import { PlatformBadge } from "../PlatformBadge";
 import { ConfirmDialog } from "../ConfirmDialog";
 import { AddCompilationModal } from "../AddCompilationModal";
 import { BundleProgress } from "../CompilationParentCard";
-import { ValueBadge, ValuePlayedNote } from "../ValueBadge";
-import { valueStatusOf, type ValueStatus } from "../../lib/valueMetrics";
+import { UnpaidValueNote, ValueBadge, ValuePlayedNote } from "../ValueBadge";
+import { unpaidValuePlayed, valueStatusOf, type ValueStatus } from "../../lib/valueMetrics";
 import { CompilationPlayPicker } from "../CompilationPlayPicker";
 import { MilestonesSection } from "../MilestonesSection";
 import {
@@ -380,6 +380,10 @@ function CompilationPageBody({
           cover={cover}
           screenshots={screenshots}
           cloud={cloud}
+          owned={ownedCopySummary}
+          totalPlayed={totalPlayed}
+          value={value}
+          target={targetCostPerHour}
         />
       )}
 
@@ -425,32 +429,77 @@ function CompilationPageBody({
 }
 
 /** The compilation as a game at a glance (issue 86fc0b4b): its cover, its
- *  catalog details and community screenshots, and your priority — the same
- *  cards a game's Overview shows, on the compilation's own game row. Without
- *  that row yet (offline), the cover control works on the compilation itself. */
+ *  catalog details and community screenshots, your priority, and what you own
+ *  and paid (issue 9132df8d) — the same cards a game's Overview shows, on the
+ *  compilation's own game row. Without that row yet (offline), the cover
+ *  control works on the compilation itself. */
 function OverviewPane({
   compilation,
   container,
   cover,
   screenshots,
   cloud,
+  owned,
+  totalPlayed,
+  value,
+  target,
 }: {
   compilation: Compilation;
   container: Game | undefined;
   cover: string | undefined;
   screenshots: string[];
   cloud: boolean;
+  owned: ReturnType<typeof ownedPlatformSummary>;
+  totalPlayed: number;
+  value: ValueStatus | null;
+  target: number | null;
 }) {
-  if (container) {
-    return (
-      <div className="flex flex-col gap-4">
-        <CoverControls game={container} />
-        <CatalogCard game={container} screenshots={screenshots} />
-        <PriorityCard game={container} />
-      </div>
-    );
-  }
-  return <CompilationCoverControls compilation={compilation} cover={cover} cloud={cloud} />;
+  // As on a game's Overview: the spend box only once a cost is recorded, else
+  // just the value of the time played, and nothing at all with neither.
+  const showSpend = hasAnyCost(compilationCopiesOf(compilation));
+  const unpaidValue = value == null ? unpaidValuePlayed(totalPlayed, target) : null;
+  return (
+    <div className="flex flex-col gap-4">
+      {container ? (
+        <>
+          <CoverControls game={container} />
+          <CatalogCard game={container} screenshots={screenshots} />
+          <PriorityCard game={container} />
+        </>
+      ) : (
+        <CompilationCoverControls compilation={compilation} cover={cover} cloud={cloud} />
+      )}
+      {(owned.length > 0 || showSpend || unpaidValue != null) && (
+        <div className="flex flex-col gap-2">
+          {owned.length > 0 && (
+            <div className="flex flex-col gap-1">
+              <span className="text-[10px] uppercase tracking-wide text-subtle">Owned on</span>
+              <div className="flex flex-wrap gap-1">
+                {owned.map((o) => (
+                  <PlatformBadge key={o.platform} label={o.platform} formats={o.formats} />
+                ))}
+              </div>
+            </div>
+          )}
+          {showSpend ? (
+            <CompilationSpend
+              compilation={compilation}
+              totalPlayed={totalPlayed}
+              value={value}
+              target={target}
+              unpaidValue={unpaidValue}
+            />
+          ) : (
+            unpaidValue != null && (
+              <div className="rounded-lg bg-panel p-2 text-[11px] text-muted">
+                <UnpaidValueNote value={unpaidValue} hours={totalPlayed} target={target!} />
+              </div>
+            )
+          )}
+        </div>
+      )}
+    </div>
+  );
 }
 
 /** The compilation's cover set on the compilation itself — only while it has
@@ -689,7 +738,6 @@ function LibraryPane({
   target: number | null;
   onEdit: () => void;
 }) {
-  const copies = compilationCopiesOf(compilation);
   return (
     <div className="flex flex-col gap-4">
       <div className="rounded-xl border border-line bg-panel/30 p-3">
@@ -703,27 +751,50 @@ function LibraryPane({
             <Pencil size={13} className="text-accent" /> Edit compilation
           </button>
         </div>
-        <div className="rounded-lg bg-panel p-2 text-[11px] text-muted">
-          <div className="mb-1 flex flex-wrap items-center justify-between gap-x-2 gap-y-0.5">
-            <span className="inline-flex items-center gap-1 text-accent">
-              <Banknote size={12} /> {hasAnyCost(copies) ? spendLabel(compilation.totalCost) : "Spent —"}
-              <span className="text-subtle">· {formatPlaytime(totalPlayed)} played</span>
-            </span>
-            {value && <ValuePlayedNote status={value} target={target!} />}
-          </div>
-          {copies.map((c) => (
-            <div key={c.id} className="flex justify-between gap-2">
-              <span className="truncate">
-                {c.platform}
-                {c.format ? ` (${formatLabel(c.format)})` : ""}
-                {c.note ? ` · ${c.note}` : ""}
-              </span>
-              <span className="shrink-0">{c.cost != null ? formatCost(c.cost) : "—"}</span>
-            </div>
-          ))}
-        </div>
+        <CompilationSpend compilation={compilation} totalPlayed={totalPlayed} value={value} target={target} />
       </div>
       {container && <DatabaseLink compilation={compilation} container={container} />}
+    </div>
+  );
+}
+
+/** The bundle's spend, played time and Money Well Spent value, then each copy
+ *  and its cost. The Overview passes `unpaidValue` so a free bundle still shows
+ *  the value of its time played, as a game's Overview does (issue 40fadb8d). */
+function CompilationSpend({
+  compilation,
+  totalPlayed,
+  value,
+  target,
+  unpaidValue = null,
+}: {
+  compilation: Compilation;
+  totalPlayed: number;
+  value: ValueStatus | null;
+  target: number | null;
+  unpaidValue?: number | null;
+}) {
+  const copies = compilationCopiesOf(compilation);
+  return (
+    <div className="rounded-lg bg-panel p-2 text-[11px] text-muted">
+      <div className="mb-1 flex flex-wrap items-center justify-between gap-x-2 gap-y-0.5">
+        <span className="inline-flex items-center gap-1 text-accent">
+          <Banknote size={12} /> {hasAnyCost(copies) ? spendLabel(compilation.totalCost) : "Spent —"}
+          <span className="text-subtle">· {formatPlaytime(totalPlayed)} played</span>
+        </span>
+        {value && <ValuePlayedNote status={value} target={target!} />}
+        {unpaidValue != null && <UnpaidValueNote value={unpaidValue} hours={totalPlayed} target={target!} />}
+      </div>
+      {copies.map((c) => (
+        <div key={c.id} className="flex justify-between gap-2">
+          <span className="truncate">
+            {c.platform}
+            {c.format ? ` (${formatLabel(c.format)})` : ""}
+            {c.note ? ` · ${c.note}` : ""}
+          </span>
+          <span className="shrink-0">{c.cost != null ? formatCost(c.cost) : "—"}</span>
+        </div>
+      ))}
     </div>
   );
 }

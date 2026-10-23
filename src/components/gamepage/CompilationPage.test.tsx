@@ -94,7 +94,44 @@ describe("CompilationPage", () => {
     expect(screen.getByText("10h played")).toBeTruthy(); // the header chip
     expect(screen.getByText(/\$45 spent/)).toBeTruthy();
     expect(screen.getByText("1/2")).toBeTruthy();
-    expect(screen.getByText("Nintendo Switch")).toBeTruthy();
+    const hero = screen.getByRole("heading", { name: "Trilogy Collection" }).closest("section")!;
+    expect(within(hero as HTMLElement).getByText("Nintendo Switch")).toBeTruthy();
+  });
+
+  it("shows what you own and paid on the Overview, like a game's (9132df8d)", () => {
+    act(() => useStore.setState({ targetCostPerHour: 4.5 }));
+    withContainer();
+    render(<CompilationPage compilationId="C" onBack={() => {}} />);
+    const owned = screen.getByText("Owned on").parentElement!;
+    expect(within(owned).getByText("Nintendo Switch")).toBeTruthy();
+    expect(screen.getByText(/Spent \$45/)).toBeTruthy();
+    expect(screen.getByText(/· 10h played/)).toBeTruthy();
+    expect(screen.getByText(/value played/)).toBeTruthy();
+    expect(screen.getByText("Nintendo Switch (Physical)")).toBeTruthy();
+  });
+
+  it("values the time played on a bundle with nothing spent (9132df8d)", () => {
+    act(() =>
+      useStore.setState({
+        targetCostPerHour: 2,
+        compilations: [{ ...comp, totalCost: 0, copies: [{ id: "cp1", platform: "Nintendo Switch", format: "physical" }] }],
+      }),
+    );
+    render(<CompilationPage compilationId="C" onBack={() => {}} />);
+    // 10h at $2/hr — the value alone, with no empty spend box, like a game's Overview.
+    expect(screen.getByText(/\$20 value played/)).toBeTruthy();
+    expect(screen.queryByText(/Spent —/)).toBeNull();
+    // The Library tab keeps its full copies box, unchanged.
+    openTab(/Library/);
+    expect(screen.getByText(/Spent —/)).toBeTruthy();
+    expect(screen.queryByText(/value played/)).toBeNull();
+  });
+
+  it("shows no ownership block on an Overview with nothing to show (9132df8d)", () => {
+    act(() => useStore.setState({ compilations: [{ ...comp, totalCost: 0, copies: [] }] }));
+    render(<CompilationPage compilationId="C" onBack={() => {}} />);
+    expect(screen.queryByText("Owned on")).toBeNull();
+    expect(screen.queryByText(/Spent/)).toBeNull();
   });
 
   it("lists every bundled game on the Games tab; a row opens the game's page (86fc0b4b)", () => {
