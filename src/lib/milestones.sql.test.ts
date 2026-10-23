@@ -59,7 +59,8 @@ beforeAll(async () => {
       in_rotation boolean not null default false,
       private     boolean not null default false,
       stealth     boolean not null default false,
-      reward      integer
+      reward      integer,
+      preordered_at timestamptz
     );
     create table public.slot_definitions (id uuid primary key, kind text);
     create table public.user_slots (id uuid primary key, definition_id uuid);

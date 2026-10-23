@@ -54,7 +54,7 @@ beforeAll(async () => {
       developers jsonb, hours real, in_rotation boolean not null default false,
       private boolean not null default false, stealth boolean not null default false,
       demo boolean not null default false, progress_note text, finish_tag text, reward integer,
-      cleared_on date);
+      cleared_on date, preordered_at timestamptz);
     create table public.playtime_events (user_id uuid, game_id uuid, game_title text, hours real, played_after real,
       platform text, format text, genres jsonb, developers jsonb, game_hours real, pact_id uuid, session_id uuid,
       source text not null default 'live', in_rotation boolean not null default false,
@@ -64,6 +64,8 @@ beforeAll(async () => {
       kind text not null, game_id uuid references public.games (id) on delete set null, game_title text, detail jsonb not null default '{}'::jsonb,
       created_at timestamptz not null default now());
     create table public.activity_cheers (event_id uuid, user_id uuid, primary key (event_id, user_id));
+    -- What the real log_game_status_event trigger records; tests write the rows they need.
+    create table public.game_status_events (game_id uuid, from_status text, to_status text);
     create table public.user_time_zones (user_id uuid primary key, time_zone text not null);
     create table public.app_config (id integer primary key, rotation_reset_tz text);
     insert into public.app_config values (1, 'UTC');
@@ -79,6 +81,8 @@ beforeAll(async () => {
   `);
   await db.exec(kindCheck());
   for (const name of [
+    "primary_acquisition",
+    "primary_provider",
     "is_live_play",
     "player_tz",
     "clear_is_fresh",
@@ -111,6 +115,7 @@ beforeEach(async () => {
   await db.exec(`
     reset test.uid;
     delete from public.activity_cheers; delete from public.activity_events; delete from public.playtime_events;
+    delete from public.game_status_events;
     delete from public.games; delete from public.profiles; delete from public.friendships;
     delete from public.user_time_zones; delete from public.user_achievements; delete from public.achievements;
     insert into public.profiles (id, display_name) values ('${ME}', 'Me'), ('${SORA}', 'Sora'), ('${STRANGER}', 'Ana');
@@ -185,6 +190,33 @@ describe("capture", () => {
     await db.exec(`update public.games set played_hours = played_hours + 1`);
     expect(await posts()).toEqual([]);
     expect((await db.query("select demo from public.playtime_events where demo")).rows).toHaveLength(1);
+  });
+
+  it("posts a pre-order when it releases, not when it's placed (issue f7040bfd)", async () => {
+    await db.exec(`update public.games set status = 'wishlist' where id = '${MH}'`);
+    await db.exec(`delete from public.activity_events`);
+    await db.exec(`update public.games set status = 'backlog', preordered_at = now() where id = '${MH}'`);
+    await db.exec(`insert into public.game_status_events values ('${MH}', 'wishlist', 'backlog')`);
+    expect(await posts()).toEqual([]);
+    await db.exec(`update public.games set preordered_at = null where id = '${MH}'`);
+    expect((await posts()).map((p) => [p.kind, p.game_title])).toEqual([["game_imported", "Monster Hunter Wilds"]]);
+  });
+
+  it("never announces a pre-order that was added straight to the Bazaar", async () => {
+    await db.exec(`update public.games set status = 'backlog', preordered_at = now() where id = '${MH}'`);
+    await db.exec(`delete from public.activity_events`);
+    await db.exec(`update public.games set preordered_at = null where id = '${MH}'`);
+    expect(await posts()).toEqual([]);
+  });
+
+  it("doesn't announce a game twice when it's marked a pre-order after it was added", async () => {
+    await db.exec(`update public.games set status = 'wishlist' where id = '${MH}'`);
+    await db.exec(`delete from public.activity_events`);
+    await db.exec(`update public.games set status = 'backlog' where id = '${MH}'`);
+    await db.exec(`insert into public.game_status_events values ('${MH}', 'wishlist', 'backlog')`);
+    await db.exec(`update public.games set preordered_at = now() where id = '${MH}'`);
+    await db.exec(`update public.games set preordered_at = null where id = '${MH}'`);
+    expect((await posts()).map((p) => p.kind)).toEqual(["game_imported"]);
   });
 
   it("posts a start once a day per game, never for a private game", async () => {

@@ -18,6 +18,7 @@ import {
   primaryProvider,
 } from "./copies";
 import { type MilestoneKind, KIND_RANK, coerceMilestoneKind } from "./milestones";
+import { isPreordered } from "./preorders";
 
 /** One row in the Recent Activity feed. Mirrors a game_milestone, plus the
  *  finish tag so Beat vs Completed can be styled distinctly. */
@@ -147,7 +148,8 @@ function localRow(
 export function localActivityFallback(games: Game[]): ProfileActivity[] {
   const out: ProfileActivity[] = [];
   for (const g of games) {
-    if (g.addedAt != null) out.push(localRow(g, "added", g.addedAt));
+    // A pre-order isn't added until it releases (issue f7040bfd).
+    if (g.addedAt != null && !isPreordered(g)) out.push(localRow(g, "added", g.addedAt));
     if (g.status === "finished" && g.finishedAt != null && g.finishTag !== "endless") {
       const kind =
         g.finishTag === "completed" ? "completed" : g.finishTag === "retired" ? "retired" : "beat";

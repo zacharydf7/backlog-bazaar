@@ -63,7 +63,8 @@ beforeAll(async () => {
       completionist boolean not null default false,
       in_rotation boolean not null default false,
       reward      integer,
-      compilation_id uuid
+      compilation_id uuid,
+      preordered_at timestamptz
     );
     create table public.slot_definitions (id uuid primary key, kind text);
     create table public.user_slots (id uuid primary key, definition_id uuid);

@@ -203,6 +203,12 @@ describe("localActivityFallback", () => {
     ]);
   });
 
+  it("leaves a pre-order out until it releases (issue f7040bfd)", () => {
+    const preorder = game({ id: "p", status: "backlog", preorderedAt: Date.parse("2026-10-18T00:00:00Z") });
+    expect(localActivityFallback([preorder])).toEqual([]);
+    expect(localActivityFallback([{ ...preorder, preorderedAt: null }]).map((a) => a.kind)).toEqual(["added"]);
+  });
+
   it("derives the acquisition chip from the game's copies, like the online feed", () => {
     const g = game({
       copies: [{ id: "c", platform: "PC", acquisition: "subscription", provider: "Game Pass" }],

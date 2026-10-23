@@ -14068,6 +14068,9 @@ begin
     where m.user_id = p_user
       and g.user_id = p_user
       and (p_user = auth.uid() or not coalesce(g.private, false))
+      -- A pre-order isn't added until it releases (issue f7040bfd); release
+      -- day re-dates its Added step (games_preorder_fulfilled_redate).
+      and not (m.kind = 'added' and g.status = 'backlog' and g.preordered_at is not null)
     order by m.occurred_on desc, m.created_at desc
     limit greatest(1, least(coalesce(p_limit, 30), 100));
 end;
@@ -16386,7 +16389,17 @@ begin
   if coalesce(new.stealth, false) then
     return new;
   end if;
-  if old.status = 'wishlist' and new.status = 'backlog' then
+  -- A pre-order imported from the Wishlist posts when it releases, not when
+  -- it's placed (issue f7040bfd): the import is held back and the release-day
+  -- unlock posts it instead, unless the game was already announced (marked a
+  -- pre-order after import). A pre-order added straight to the Bazaar was never
+  -- a Wishlist import, so it posts nothing, like any direct add.
+  if (old.status = 'wishlist' and new.status = 'backlog' and new.preordered_at is null)
+     or (old.preordered_at is not null and new.preordered_at is null and new.status = 'backlog'
+         and exists (select 1 from public.game_status_events e
+                      where e.game_id = new.id and e.from_status = 'wishlist' and e.to_status = 'backlog')
+         and not exists (select 1 from public.activity_events a
+                          where a.actor = new.user_id and a.game_id = new.id and a.kind = 'game_imported')) then
     -- Snapshot how the game is held (subscription/borrowed/player2 + provider)
     -- so the feed can say "on Game Pass" instead of implying a purchase
     -- (2026-09-01). jsonb_strip_nulls collapses a plainly-owned import to {}.
