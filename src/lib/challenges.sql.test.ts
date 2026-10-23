@@ -47,7 +47,7 @@ beforeAll(async () => {
     create table public.app_config (id integer primary key, rotation_reset_tz text, bounty_gate_pct integer,
       challenge_goal_reward integer, challenge_set_bonus integer, rotation_reset_dow integer,
       rotation_reset_hour integer, challenge_daily_reward integer, challenge_weekly_reward integer,
-      challenge_weekly_sweep integer);
+      challenge_weekly_sweep integer, expansion_counts_streak boolean not null default false);
     insert into public.app_config values (1, 'UTC', 25, 25, 50, 1, 0, 10, 25, 25);
     create table public.profiles (id uuid primary key, coins integer not null default 0,
       economy boolean not null default true);
@@ -64,6 +64,10 @@ beforeAll(async () => {
       in_rotation boolean not null default false, demo boolean not null default false, session_id uuid,
       created_at timestamptz not null default now());
     create table public.action_undos (user_id uuid, game_id uuid, action text, undone_at timestamptz,
+      prev jsonb, created_at timestamptz not null default now());
+    create table public.game_dlc (id uuid primary key, user_id uuid, game_id uuid, name text, run_quote jsonb,
+      removed_at timestamptz);
+    create table public.game_dlc_events (dlc_id uuid, action text, detail jsonb,
       created_at timestamptz not null default now());
     create table public.play_sessions (id uuid primary key default gen_random_uuid(), user_id uuid, status text,
       ended_at timestamptz);
@@ -184,7 +188,8 @@ beforeEach(async () => {
     delete from public.play_sessions; delete from public.review_events; delete from public.profiles;
     delete from public.action_undos; delete from public.user_quick_goals; delete from public.weekly_sweep_bonuses;
     delete from public.rotation_checkins; delete from public.achievements; delete from public.user_achievements;
-    delete from public.user_time_zones;
+    delete from public.user_time_zones; delete from public.game_dlc; delete from public.game_dlc_events;
+    update public.app_config set expansion_counts_streak = false;
     insert into public.profiles (id, coins) values ('${ME}', 100), ('${OTHER}', 0);
     select set_config('test.uid', '${ME}', false);
     select set_config('test.manager', '', false);
@@ -433,6 +438,62 @@ describe("review fixes (2026-10-17)", () => {
     expect((await claim()).paid).toBe(0);
     const goal = await db.query("select completed_at from public.user_monthly_goals");
     expect(goal.rows).toEqual([{ completed_at: null }]);
+  });
+
+  /** A story expansion cleared through finish_expansion a minute ago: its
+   *  run's cleared event and the undo row pointing at it. */
+  async function clearExpansion(opts: {
+    logged: number;
+    paying?: boolean;
+    undone?: boolean;
+    gameId?: string;
+    name?: string;
+  }) {
+    await db.exec(`
+      with d as (
+        insert into public.game_dlc (id, user_id, game_id, name, run_quote)
+        values (gen_random_uuid(), '${ME}', ${opts.gameId ? `'${opts.gameId}'` : "gen_random_uuid()"},
+                '${opts.name ?? "Echoes"}', jsonb_build_object('paying', ${opts.paying ?? true}, 'gate_hours', 3))
+        returning id
+      ), e as (
+        insert into public.game_dlc_events (dlc_id, action, detail, created_at)
+        select d.id, 'cleared', jsonb_build_object('logged_hours', ${opts.logged}, 'gate_hours', 3),
+               now() - interval '1 minute' from d
+      )
+      insert into public.action_undos (user_id, game_id, action, prev, undone_at, created_at)
+      select '${ME}', gen_random_uuid(), 'expansion_finish', jsonb_build_object('dlc_id', d.id),
+             ${opts.undone ? "now()" : "null"}, now() - interval '1 minute' from d`);
+  }
+
+  it("counts an expansion clear as its own clear, only while the switch is on (owner, 2026-10-23)", async () => {
+    await finishGame(0);
+    await clearExpansion({ logged: 4 });
+    expect(await metric("verified_clears")).toBe(1);
+    await db.exec("update public.app_config set expansion_counts_streak = true");
+    expect(await metric("games_finished")).toBe(2);
+    expect(await metric("verified_clears")).toBe(2);
+    expect(await metric("backlog_clears")).toBe(1);
+  });
+
+  it("skips expansion clears under their gate, unpriced or undone", async () => {
+    await db.exec("update public.app_config set expansion_counts_streak = true");
+    await clearExpansion({ logged: 1 });
+    await clearExpansion({ logged: 4, paying: false });
+    await clearExpansion({ logged: 4, undone: true });
+    expect(await metric("games_finished")).toBe(0);
+  });
+
+  it("counts an expansion once across a game's platform copies, and keeps it once the record is removed", async () => {
+    await db.exec(`
+      update public.app_config set expansion_counts_streak = true;
+      insert into public.games (id, user_id, status, rawg_id) values
+        ('00000000-0000-4000-8000-0000000000e1', '${ME}', 'finished', 42),
+        ('00000000-0000-4000-8000-0000000000e2', '${ME}', 'finished', 42)`);
+    await clearExpansion({ logged: 4, gameId: "00000000-0000-4000-8000-0000000000e1", name: "Echoes" });
+    await clearExpansion({ logged: 4, gameId: "00000000-0000-4000-8000-0000000000e2", name: "echoes" });
+    expect(await metric("games_finished")).toBe(1);
+    await db.exec("update public.game_dlc set removed_at = now()");
+    expect(await metric("verified_clears")).toBe(1);
   });
 
   it("refuses to swap away a goal that's already met", async () => {

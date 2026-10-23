@@ -142,8 +142,9 @@ export interface ExpansionConfig {
   countsStreak: boolean;
 }
 
-// Streak counting starts off: adding an expansion, unlike a game, doesn't
-// break the Clear Streak, so counting its clears would let free records pump it.
+// Streak (and clear-goal) counting starts off: adding an expansion, unlike a
+// game, doesn't break the Clear Streak, so counting its clears would let free
+// records pump it.
 export const DEFAULT_EXPANSION_CONFIG: ExpansionConfig = { price: null, bounty: null, minHours: 2, countsStreak: false };
 
 /** The expansion price and bounty formulas, each unset setting taken from the

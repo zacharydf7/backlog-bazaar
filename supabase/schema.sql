@@ -20624,31 +20624,66 @@ $$;
 --     old review or its score doesn't count).
 --   backlog_clears uses the game's Added date, which players may backdate to
 --   when they really bought it (a supported feature, like entering hours).
+--   Expansion clears (owner, 2026-10-23) count as their own clear, apart from
+--   the base game's, behind the Clear Streak's switch (expansion_counts_streak)
+--   and with its bar: a priced run with its gate met. Unlike the streak, which
+--   reads the switch at the clear, this reads it when progress is counted (as
+--   with the gate share), so turning it on also counts earlier clears. One per
+--   expansion name across a game's platform copies; removing the record later
+--   keeps the clear. They're never backlog clears (no Added date of their own).
+-- plpgsql, not sql: game_dlc is created further down this file, and a sql
+-- body is checked against its tables when it's created.
 create or replace function public.challenge_metric(
   p_user uuid, p_metric text, p_from timestamptz, p_to timestamptz
 )
 returns numeric
-language sql
+language plpgsql
 stable
 security definer set search_path = public
 as $$
+begin
+  return (
   with cfg as (
     select coalesce(nullif(btrim(c.rotation_reset_tz), ''), 'UTC') as tz,
-           coalesce(c.bounty_gate_pct, 25) as gate
+           coalesce(c.bounty_gate_pct, 25) as gate,
+           coalesce(c.expansion_counts_streak, false) as expansions
       from public.app_config c where c.id = 1
   ),
   clears as (
     select coalesce(public.game_identity_key(g.rawg_id, g.igdb_id, g.catalog_id), 'g:' || g.id::text) as key,
            min(g.added_at) as added_at, min(u.created_at) as finished,
-           max(coalesce(g.played_hours, 0)) as played,
-           max(coalesce(g.personal_hours, g.hours, 0)) as len
+           max(coalesce(g.personal_hours, g.hours, 0)) > 0
+             and max(coalesce(g.played_hours, 0)) >= cfg.gate / 100.0 * max(coalesce(g.personal_hours, g.hours, 0))
+             as verified
       from public.action_undos u
       join public.games g on g.id = u.game_id
+      cross join cfg
      where p_metric in ('games_finished', 'verified_clears', 'backlog_clears')
        and u.user_id = p_user and u.action = 'finish' and u.undone_at is null
        and u.created_at >= p_from and u.created_at < p_to
        and u.created_at <= now() - interval '30 seconds'
        and g.user_id = p_user
+     group by 1, cfg.gate
+    union all
+    select coalesce(public.game_identity_key(g.rawg_id, g.igdb_id, g.catalog_id),
+                    'g:' || d.game_id::text, 'd:' || d.id::text) || ':x:' || lower(d.name),
+           null, min(u.created_at), true
+      from public.action_undos u
+      join public.game_dlc d on d.id = (u.prev ->> 'dlc_id')::uuid
+      left join public.games g on g.id = d.game_id
+      cross join cfg
+      cross join lateral (
+        select e.detail from public.game_dlc_events e
+         where e.dlc_id = d.id and e.action = 'cleared' and e.created_at <= u.created_at
+         order by e.created_at desc limit 1
+      ) ev
+     where p_metric in ('games_finished', 'verified_clears') and cfg.expansions
+       and u.user_id = p_user and u.action = 'expansion_finish' and u.undone_at is null
+       and u.created_at >= p_from and u.created_at < p_to
+       and u.created_at <= now() - interval '30 seconds'
+       and d.user_id = p_user
+       and coalesce((d.run_quote ->> 'paying')::boolean, false)
+       and (ev.detail ->> 'logged_hours')::numeric >= (ev.detail ->> 'gate_hours')::numeric
      group by 1
   ),
   plays as (
@@ -20662,8 +20697,7 @@ as $$
   )
   select (case p_metric
     when 'games_finished' then (select count(*) from clears)
-    when 'verified_clears' then
-      (select count(*) from clears c, cfg where c.len > 0 and c.played >= cfg.gate / 100.0 * c.len)
+    when 'verified_clears' then (select count(*) from clears c where c.verified)
     when 'backlog_clears' then
       (select count(*) from clears c where c.finished - c.added_at >= interval '365 days')
     when 'hours_logged' then
@@ -20701,7 +20735,9 @@ as $$
         where p.created_at >= p_from
           and not exists (select 1 from plays b where b.key = p.key and b.created_at < p_from))
     else 0
-  end)::numeric;
+  end)::numeric
+  );
+end;
 $$;
 revoke execute on function public.challenge_metric(uuid, text, timestamptz, timestamptz) from public, anon, authenticated;
 

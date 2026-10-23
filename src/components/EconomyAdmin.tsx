@@ -1146,13 +1146,13 @@ function ExpansionsCard() {
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <RateField
             label="Minimum length (hours)"
-            hint="Shorter expansions are tracked without coins and never count toward the streak."
+            hint="Shorter expansions are tracked without coins and never count toward the streak or goals."
             min={0}
             max={100}
             value={minHours}
             onChange={setMinHours}
           />
-          <div className="pt-6">{toggle("Clears count toward the Clear Streak", countsStreak, setCountsStreak)}</div>
+          <div className="pt-6">{toggle("Clears count toward the Clear Streak and goals", countsStreak, setCountsStreak)}</div>
         </div>
         <p className="inline-flex flex-wrap items-center gap-1 text-xs text-muted">
           An 8-hour, $20 expansion bought today: costs <CoinIcon size={12} /> {sample.price}, pays{" "}
