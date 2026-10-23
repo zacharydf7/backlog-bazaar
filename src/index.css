@@ -1845,6 +1845,53 @@ input[type="search"]::-webkit-search-decoration {
   .fx-debut-sheen { background-position: 50% 0; }
 }
 
+/* Hearthside (fall 2026): a hearth flame breathing up from its base, and a
+   leaf tumbling as it falls (nested inside an fx-fall). Both are SVG parts,
+   so they scale around their own box. Stilled, the fire stands and the
+   leaves rest where they were placed. */
+.fx-flame {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  animation: cosmetic-flame var(--flame-duration, 1.6s) ease-in-out infinite;
+}
+@keyframes cosmetic-flame {
+  0%,
+  100% {
+    transform: scale(1, 1);
+  }
+  30% {
+    transform: scale(0.94, 1.08);
+  }
+  60% {
+    transform: scale(1.05, 0.93);
+  }
+  80% {
+    transform: scale(0.97, 1.04);
+  }
+}
+.fx-flutter {
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+  animation: cosmetic-flutter var(--flutter-duration, 1.8s) ease-in-out infinite alternate;
+}
+@keyframes cosmetic-flutter {
+  0% {
+    transform: rotate(-28deg) scale(1, 1);
+  }
+  50% {
+    transform: rotate(6deg) scale(1, 0.55);
+  }
+  100% {
+    transform: rotate(32deg) scale(1, 1);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .fx-flame,
+  .fx-flutter {
+    animation: none;
+  }
+}
+
 /* Calm (owner, 2026-10-23): a frame or title worn in a feed or list rests in
    its reduced-motion look, so a page of rows never shimmers at once. Set on
    the cosmetic itself (Avatar's ring, TitleBadge's chip), which holds nothing

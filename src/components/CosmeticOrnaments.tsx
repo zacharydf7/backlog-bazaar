@@ -1,4 +1,4 @@
-import type { CSSProperties, ReactElement } from "react";
+import { useId, type CSSProperties, type ReactElement } from "react";
 import { resolveStallStyle } from "../lib/shopCosmetics";
 
 /** Decorative overlay layers for ornamented Curio Shop cosmetics. A style's
@@ -1012,8 +1012,223 @@ function LightString({
   );
 }
 
+/** Hearthside Nook (fall 2026): a stone hearth with a breathing fire and
+ *  rising embers, an armchair under a knit blanket, a steaming mug, and leaves
+ *  tumbling past an arched evening window. Drawn on the right like the other
+ *  scene stalls, so the card's text keeps the plain left side. Gradient ids
+ *  are per-instance: the Square can show many of these stalls at once. */
+function HearthNook() {
+  const uid = useId().replace(/:/g, "");
+  const glow = `hearth-glow-${uid}`;
+  const sky = `hearth-sky-${uid}`;
+  const outer = `hearth-flame-outer-${uid}`;
+  const inner = `hearth-flame-inner-${uid}`;
+  const pane = `hearth-pane-${uid}`;
+  const leaf = (x: number, fill: string, fall: { duration: number; delay: number; flutter: number }) => (
+    <g
+      className="fx-fall"
+      style={
+        {
+          "--fall-duration": `${fall.duration}s`,
+          "--fall-distance": "74px",
+          animationDelay: `${fall.delay}s`,
+        } as CSSProperties
+      }
+    >
+      <path
+        className="fx-flutter"
+        style={{ "--flutter-duration": `${fall.flutter}s` } as CSSProperties}
+        d={`M${x} 40c5-4 11-2 12 3-4 5-11 4-12-3z`}
+        fill={fill}
+      />
+    </g>
+  );
+  return (
+    <svg
+      viewBox="0 0 700 190"
+      preserveAspectRatio="xMaxYMid slice"
+      aria-hidden="true"
+      className="pointer-events-none absolute inset-0 h-full w-full"
+    >
+      <defs>
+        <radialGradient id={glow} cx="0.8" cy="0.75" r="0.6">
+          <stop offset="0" stopColor="#ffb35c" stopOpacity="0.7" />
+          <stop offset="0.5" stopColor="#e8733a" stopOpacity="0.22" />
+          <stop offset="1" stopColor="#e8733a" stopOpacity="0" />
+        </radialGradient>
+        <linearGradient id={sky} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor="#2b2f55" />
+          <stop offset="0.7" stopColor="#8a4a3a" />
+          <stop offset="1" stopColor="#d98b4a" />
+        </linearGradient>
+        <linearGradient id={outer} x1="0" y1="1" x2="0" y2="0">
+          <stop offset="0" stopColor="#c2410c" />
+          <stop offset="0.6" stopColor="#f97316" />
+          <stop offset="1" stopColor="#fdba74" />
+        </linearGradient>
+        <linearGradient id={inner} x1="0" y1="1" x2="0" y2="0">
+          <stop offset="0" stopColor="#fb923c" />
+          <stop offset="1" stopColor="#fef3c7" />
+        </linearGradient>
+        <clipPath id={pane}>
+          <rect x="352" y="34" width="64" height="86" rx="32" />
+        </clipPath>
+      </defs>
+      {/* The fire's glow on the room */}
+      <rect x="300" y="0" width="400" height="190" fill={`url(#${glow})`} />
+      {/* Arched window: an autumn evening, leaves tumbling past */}
+      <rect x="348" y="30" width="72" height="94" rx="36" fill="#5a3a26" />
+      <rect x="352" y="34" width="64" height="86" rx="32" fill={`url(#${sky})`} />
+      <g clipPath={`url(#${pane})`}>
+        <circle cx="400" cy="56" r="7" fill="#fde7b0" opacity="0.85" />
+        {leaf(364, "#e8733a", { duration: 7, delay: 0, flutter: 1.6 })}
+        {leaf(388, "#d6a13a", { duration: 8.4, delay: -2.6, flutter: 2.1 })}
+        {leaf(376, "#b4572d", { duration: 6.4, delay: -5, flutter: 1.4 })}
+      </g>
+      <path d="M384 34v86M352 78h64" stroke="#5a3a26" strokeWidth="3" />
+      {/* Armchair under a cable-knit blanket */}
+      <path d="M440 176v-62q0-20 22-20h44q22 0 22 20v62z" fill="#6b2f22" />
+      <rect x="430" y="128" width="24" height="48" rx="10" fill="#7d3828" />
+      <rect x="514" y="128" width="24" height="48" rx="10" fill="#7d3828" />
+      <path d="M458 100q24-8 52 2l-4 54q-24 6-46-2z" fill="#e9d6b0" />
+      <path
+        d="M470 104q-3 24 0 50M484 102q3 26 0 54M498 104q-3 24 0 50"
+        stroke="#c9ad7e"
+        strokeWidth="3"
+        fill="none"
+        strokeDasharray="6 4"
+      />
+      {/* Side table, mug and its steam */}
+      <rect x="548" y="150" width="34" height="5" rx="2" fill="#5a3a26" />
+      <rect x="560" y="155" width="8" height="21" fill="#4a2e1e" />
+      <rect x="555" y="134" width="16" height="16" rx="3" fill="#c2563a" />
+      <path d="M571 138q8 0 8 6t-8 6" stroke="#c2563a" strokeWidth="3" fill="none" />
+      {[0, -2.2].map((delay, i) => (
+        <path
+          key={i}
+          className="fx-bubble"
+          style={
+            {
+              "--bubble-rise": "-16px",
+              "--bubble-duration": "4.4s",
+              animationDelay: `${delay}s`,
+              // An SVG part scales around the viewBox corner unless told
+              // otherwise; these rise from the mug and the fire.
+              transformBox: "fill-box",
+              transformOrigin: "50% 100%",
+            } as CSSProperties
+          }
+          d={i === 0 ? "M560 128q-4-6 0-11t0-11" : "M566 128q4-6 0-11t0-11"}
+          stroke="#f3e6c8"
+          strokeWidth="2.2"
+          fill="none"
+          strokeLinecap="round"
+        />
+      ))}
+      {/* Stone hearth */}
+      <path d="M596 190V58h104v132z" fill="#6f5f57" />
+      <g fill="#837167">
+        <rect x="600" y="62" width="30" height="16" rx="3" />
+        <rect x="634" y="62" width="30" height="16" rx="3" />
+        <rect x="668" y="62" width="32" height="16" rx="3" />
+        <rect x="600" y="82" width="20" height="16" rx="3" />
+        <rect x="684" y="82" width="16" height="16" rx="3" />
+      </g>
+      <rect x="588" y="52" width="112" height="10" rx="3" fill="#4a2e1e" />
+      <path d="M612 190v-58q0-30 36-30t36 30v58z" fill="#1c0f0a" />
+      <rect x="622" y="168" width="56" height="9" rx="4" fill="#5a3a26" />
+      <rect x="628" y="160" width="46" height="9" rx="4" fill="#6b4630" transform="rotate(-6 651 164)" />
+      {/* The fire, three tongues on their own clocks */}
+      <path
+        className="fx-flame"
+        style={{ "--flame-duration": "1.6s" } as CSSProperties}
+        d="M630 166q-6-28 10-44q-2 16 8 20q-2-26 14-38q-4 26 10 36q6-14 4-22q14 18 4 48z"
+        fill={`url(#${outer})`}
+      />
+      <path
+        className="fx-flame"
+        style={{ "--flame-duration": "1.25s", animationDelay: "-0.4s" } as CSSProperties}
+        d="M640 166q-4-18 8-28q0 12 8 14q0-14 10-20q-2 16 6 22q-2 8-4 12z"
+        fill={`url(#${inner})`}
+      />
+      <path
+        className="fx-flame"
+        style={{ "--flame-duration": "1.9s", animationDelay: "-0.9s" } as CSSProperties}
+        d="M652 166q-2-10 4-14q2 6 6 6q2-6 6-8q2 10-2 16z"
+        fill="#fff7d6"
+      />
+      {/* Embers drifting up the flue */}
+      {[
+        { cx: 646, cy: 124, r: 1.8, fill: "#fdba74", delay: 0 },
+        { cx: 660, cy: 118, r: 1.5, fill: "#fde68a", delay: -1.1 },
+        { cx: 652, cy: 128, r: 1.6, fill: "#fb923c", delay: -2.2 },
+      ].map((e, i) => (
+        <circle
+          key={i}
+          className="fx-spark"
+          style={{ animationDelay: `${e.delay}s`, transformBox: "fill-box", transformOrigin: "50% 100%" }}
+          cx={e.cx}
+          cy={e.cy}
+          r={e.r}
+          fill={e.fill}
+        />
+      ))}
+      {/* Rug */}
+      <ellipse cx="560" cy="188" rx="120" ry="10" fill="#7a2e10" opacity="0.55" />
+    </svg>
+  );
+}
+
+/** Falling Leaves frame (fall 2026): an acorn-and-leaf sprig tucked at the
+ *  ring's lower left, and three leaves drifting down past the ring's sides,
+ *  tumbling as they fall. The overlay box matches the other ornamented frames
+ *  (116% of the ring), so the ring itself sits near x 9 and x 119 of this
+ *  viewBox and the leaves cross it. Stilled, they rest beside the ring. */
+function FallingLeaves() {
+  const leaves = [
+    { x: 0, y: 12, w: 15, fill: "#d6a13a", vein: "#8a5a1f", duration: 7, delay: 0, flutter: 1.6, fall: 96 },
+    { x: 110, y: 4, w: 14, fill: "#c2563a", vein: "#7a3416", duration: 8.5, delay: -3, flutter: 2, fall: 98 },
+    { x: 114, y: 40, w: 11, fill: "#b4572d", vein: "#6b2f12", duration: 6.5, delay: -5.5, flutter: 1.4, fall: 70 },
+  ];
+  return (
+    <svg
+      viewBox="0 0 128 128"
+      aria-hidden="true"
+      className="pointer-events-none absolute -inset-[8%] h-[116%] w-[116%] max-w-none overflow-visible"
+    >
+      {/* The sprig */}
+      <path d="M30 114l-6 6M38 118l-3 7" stroke="#6b4630" strokeWidth="2.5" strokeLinecap="round" />
+      <path d="M19 108c6 1 10 6 8 11-6 1-10-4-8-11z" fill="#c2563a" />
+      <path d="M33 114c6 0 9 5 7 10-5 1-9-4-7-10z" fill="#d6a13a" />
+      <ellipse cx="46" cy="120" rx="5" ry="6" fill="#a8743f" />
+      <path d="M40 116q6-6 12 0q-6 2-12 0z" fill="#6b4630" />
+      {leaves.map((l, i) => (
+        <g
+          key={i}
+          className="fx-fall"
+          style={
+            {
+              "--fall-duration": `${l.duration}s`,
+              "--fall-distance": `${l.fall}px`,
+              animationDelay: `${l.delay}s`,
+            } as CSSProperties
+          }
+        >
+          <g className="fx-flutter" style={{ "--flutter-duration": `${l.flutter}s` } as CSSProperties}>
+            <g transform={`translate(${l.x} ${l.y}) scale(${l.w / 20})`}>
+              <path d="M10 1c5 3 8 8 6 13-4 1-9-1-11-5C4 6 6 3 10 1z" fill={l.fill} />
+              <path d="M15 15L6 4" stroke={l.vein} strokeWidth="1.2" fill="none" />
+            </g>
+          </g>
+        </g>
+      ))}
+    </svg>
+  );
+}
+
 const FRAME_ORNAMENTS: Record<string, (size: number) => ReactElement> = {
   windrose: () => <img src="/cosmetics/windrose.svg" alt="" aria-hidden="true" className="pointer-events-none absolute -inset-[8%] h-[116%] w-[116%] max-w-none" />,
+  "falling-leaves": () => <FallingLeaves />,
   "maple-crown": () => <img src="/cosmetics/maple-crown.svg" alt="" aria-hidden="true" className="pointer-events-none absolute -inset-[8%] h-[116%] w-[116%] max-w-none" />,
   "alchemist-sigil": () => <img src="/cosmetics/alchemist-sigil.svg" alt="" aria-hidden="true" className="pointer-events-none absolute -inset-[8%] h-[116%] w-[116%] max-w-none" />,
   "crescent-cradle": () => <img src="/cosmetics/crescent-cradle.svg" alt="" aria-hidden="true" className="pointer-events-none absolute -inset-[8%] h-[116%] w-[116%] max-w-none" />,
@@ -1154,6 +1369,7 @@ const FRAME_ORNAMENTS: Record<string, (size: number) => ReactElement> = {
 
 const STALL_ORNAMENTS: Record<string, (hero: boolean) => ReactElement> = {
   cloudport: () => <img src="/cosmetics/cloudport.svg" alt="" aria-hidden="true" className="pointer-events-none absolute inset-0 h-full w-full object-cover object-right" />,
+  "hearthside-nook": () => <HearthNook />,
   "amber-orchard": () => <img src="/cosmetics/amber-orchard.svg" alt="" aria-hidden="true" className="pointer-events-none absolute inset-0 h-full w-full object-cover object-right" />,
   "midnight-apothecary": () => <img src="/cosmetics/midnight-apothecary.svg" alt="" aria-hidden="true" className="pointer-events-none absolute inset-0 h-full w-full object-cover object-right" />,
   "lunar-conservatory": () => <img src="/cosmetics/lunar-conservatory.svg" alt="" aria-hidden="true" className="pointer-events-none absolute inset-0 h-full w-full object-cover object-right" />,

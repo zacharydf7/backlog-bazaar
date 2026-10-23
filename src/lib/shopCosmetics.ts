@@ -30,6 +30,11 @@ export interface StallStyle {
 
 export const FRAME_STYLES: Record<string, FrameStyle> = {
   windrose: { label: "Windrose", className: "bg-gradient-to-br from-[#e6c88b] to-[#82abbc] [&>span:first-child]:bg-surface", ornament: "windrose" },
+  "falling-leaves": {
+    label: "Falling Leaves",
+    className: "bg-gradient-to-br from-[#8a5a36] to-[#4a2e1e]",
+    ornament: "falling-leaves",
+  },
   "maple-crown": { label: "Maple Crown", className: "bg-gradient-to-br from-[#edb866] to-[#b97145] [&>span:first-child]:bg-surface", ornament: "maple-crown" },
   "alchemist-sigil": { label: "Alchemist Sigil", className: "bg-gradient-to-br from-[#b8dc91] to-[#6b9e80] [&>span:first-child]:bg-surface", ornament: "alchemist-sigil" },
   "crescent-cradle": { label: "Crescent Cradle", className: "bg-gradient-to-br from-[#e4dbfa] to-[#999bc6] [&>span:first-child]:bg-surface", ornament: "crescent-cradle" },
@@ -136,6 +141,12 @@ export const FRAME_STYLES: Record<string, FrameStyle> = {
 
 export const STALL_STYLES: Record<string, StallStyle> = {
   cloudport: { label: "Cloudport", cardClassName: "isolate relative overflow-hidden border-[#82abbc]/60 bg-gradient-to-br from-[#82abbc]/15 to-transparent", ornament: "cloudport" },
+  "hearthside-nook": {
+    label: "Hearthside Nook",
+    cardClassName:
+      "isolate relative overflow-hidden border-[#e8873a]/55 bg-gradient-to-b from-[#7a2e10]/25 via-[#3a1608]/15 to-transparent",
+    ornament: "hearthside-nook",
+  },
   "amber-orchard": { label: "Amber Orchard", cardClassName: "isolate relative overflow-hidden border-[#edb866]/50 bg-gradient-to-br from-[#b97145]/15 to-transparent", ornament: "amber-orchard" },
   "midnight-apothecary": { label: "Midnight Apothecary", cardClassName: "isolate relative overflow-hidden border-[#b8dc91]/50 bg-gradient-to-br from-[#6b9e80]/15 to-transparent", ornament: "midnight-apothecary" },
   "lunar-conservatory": { label: "Lunar Conservatory", cardClassName: "isolate relative overflow-hidden border-[#e4dbfa]/50 bg-gradient-to-br from-[#999bc6]/15 to-transparent", ornament: "lunar-conservatory" },

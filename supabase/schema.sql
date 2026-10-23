@@ -27608,6 +27608,13 @@ insert into public.badges(slug,name,description,icon,kind,prestige,effect)
 values('shop-set-grand-debut','Encore','Complete the four-piece Grand Debut collection.','crown','shop',7,'encore')
 on conflict(slug) do nothing;
 
+-- Hearthside (fall 2026) completion title. Like Encore: no shop item or price;
+-- the collection draft names it as the set's reward, and completing the set
+-- is the only way to earn it. Creates no user awards.
+insert into public.badges(slug,name,description,icon,kind,prestige,effect)
+values('shop-set-hearthside','Hearthkeeper','Complete the Hearthside collection.','flame','shop',7,'hearthkeeper')
+on conflict(slug) do nothing;
+
 -- Metadata only: the Cloudbound Caravan title is earned through collection
 -- completion. No purchase listing, user grant, or historical backfill is created.
 insert into public.badges(slug,name,description,icon,kind,prestige,effect)

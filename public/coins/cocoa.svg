@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" role="img" aria-label="Cocoa Mint coin">
+  <!-- Cocoa Mint (Hearthside, fall 2026): a cocoa-glazed coin with two
+       marshmallows and a cream swirl, on the mint template's reeded rim. -->
+  <defs>
+    <linearGradient id="cocoa-rim" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#b98458"/>
+      <stop offset="55%" stop-color="#8a5a36"/>
+      <stop offset="100%" stop-color="#4a2614"/>
+    </linearGradient>
+    <radialGradient id="cocoa-face" cx="36%" cy="28%" r="80%">
+      <stop offset="0%" stop-color="#8f5530"/>
+      <stop offset="60%" stop-color="#6b3b1f"/>
+      <stop offset="100%" stop-color="#4a2614"/>
+    </radialGradient>
+  </defs>
+
+  <!-- Drop shadow + coin body -->
+  <ellipse cx="24" cy="25.8" rx="20.6" ry="20.4" fill="#1d0e06" opacity="0.35"/>
+  <circle cx="24" cy="24" r="21" fill="#3a1d0e"/>
+  <circle cx="24" cy="23.6" r="20.4" fill="url(#cocoa-rim)"/>
+
+  <!-- Reeded edge -->
+  <circle cx="24" cy="23.6" r="18.9" fill="none" stroke="#4a2614" stroke-width="2.6" stroke-dasharray="1.1 2.025" opacity="0.6"/>
+
+  <!-- Cocoa face -->
+  <circle cx="24" cy="23.6" r="16.8" fill="#4a2614"/>
+  <circle cx="24" cy="23.2" r="15.9" fill="url(#cocoa-face)"/>
+  <path d="M11 22q13-7 26 0" stroke="#a8743f" stroke-width="1.2" fill="none" opacity="0.7"/>
+
+  <!-- Marshmallows -->
+  <rect x="15" y="15" width="10" height="10" rx="3" fill="#fbf4e6" transform="rotate(-12 20 20)"/>
+  <rect x="23" y="21" width="10" height="10" rx="3" fill="#f3e6d0" transform="rotate(14 28 26)"/>
+
+  <!-- Cream swirl + glint -->
+  <path d="M14 33q10 4 20 0" stroke="#f3e6c8" stroke-width="1.6" fill="none" stroke-linecap="round" opacity="0.8"/>
+  <path d="M10 18Q14 9 24 8" fill="none" stroke="#e8c49a" stroke-width="1.6" stroke-linecap="round" opacity="0.55"/>
+</svg>

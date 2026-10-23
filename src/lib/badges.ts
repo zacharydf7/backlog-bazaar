@@ -31,6 +31,8 @@ import {
   Skull,
   Map,
   Ghost,
+  Flame,
+  Coffee,
   type LucideIcon,
 } from "lucide-react";
 import type { Badge } from "../types";
@@ -72,6 +74,9 @@ const ICONS: Record<string, LucideIcon> = {
   skull: Skull,
   map: Map,
   ghost: Ghost,
+  // Hearthside (fall 2026).
+  flame: Flame,
+  coffee: Coffee,
 };
 
 export const DEFAULT_BADGE_ICON: LucideIcon = Award;
@@ -112,6 +117,16 @@ export function badgePrestigeClass(prestige: number): string {
 export const TITLE_EFFECTS: Record<string, { label: string; chipClassName: string }> = {
   skybound: { label: "Skybound", chipClassName: "border-[#82abbc] bg-[#244b67] text-[#f3db9f]" },
   "horizon-keeper": { label: "Horizon Keeper", chipClassName: "fx-shimmer border-[#c6a774] bg-[#e7f2f4] text-[#244b67]" },
+  "sweater-weather": {
+    label: "Sweater Weather",
+    chipClassName:
+      "border-[#b4572d] bg-[#efe2c8] bg-[repeating-linear-gradient(90deg,#8a3b1f1a_0px,#8a3b1f1a_2px,transparent_2px,transparent_5px)] text-[#7a3416]",
+  },
+  hearthkeeper: {
+    label: "Hearthkeeper",
+    chipClassName:
+      "fx-flicker border-[#e8873a] bg-gradient-to-r from-[#3a1608] via-[#7a2e10] to-[#3a1608] text-[#ffd28a]",
+  },
   "autumn-archivist": { label: "Autumn Archivist", chipClassName: "border-[#b97145] bg-[#3c2926] text-[#edb866]" },
   "potion-peddler": { label: "Potion Peddler", chipClassName: "border-[#6b9e80] bg-[#20362e] text-[#b8dc91]" },
   "moonlit-curator": { label: "Moonlit Curator", chipClassName: "border-[#999bc6] bg-[#292840] text-[#e4dbfa]" },
@@ -173,6 +188,7 @@ export const SEEDED_TITLE_EFFECT_KEYS = [
   "arcade-gold",
   "iridescent",
   "opal-sheen",
+  "hearthkeeper",
 ];
 
 /** Chip classes for a badge. An animated effect (premium/set-reward titles)
