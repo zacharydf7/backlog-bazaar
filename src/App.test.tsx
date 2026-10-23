@@ -66,6 +66,15 @@ describe("App", () => {
     expect(headings.length).toBeGreaterThan(0);
   });
 
+  it("offers a retry instead of loading forever when the server can't be reached", () => {
+    act(() => useStore.setState({ initialized: true, ready: false, bootStalled: true }));
+    render(<App />);
+    expect(screen.getByText("Can't reach the server right now")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Try again" })).toBeTruthy();
+    expect(screen.queryByText("Loading…")).toBeNull();
+    act(() => useStore.setState({ ready: true, bootStalled: false }));
+  });
+
   it("hides cloud-only nav controls in local/guest mode", async () => {
     render(<App />);
     await screen.findAllByRole("heading", { name: /Backlog Bazaar/i });

@@ -68,6 +68,7 @@ import { ReportModal } from "./components/ReportModal";
 import { PostGameRoutingModal } from "./components/PostGameRoutingModal";
 import { UpdateBanner } from "./components/UpdateBanner";
 import { MaintenancePage } from "./components/MaintenancePage";
+import { ServerUnreachablePage } from "./components/ServerUnreachablePage";
 import { GameCard } from "./components/GameCard";
 import { CompilationParentCard } from "./components/CompilationParentCard";
 import { AddGameModal } from "./components/AddGameModal";
@@ -170,6 +171,7 @@ export default function App() {
   const {
     cloud,
     ready,
+    bootStalled,
     userId,
     games,
     compilations,
@@ -1066,7 +1068,9 @@ export default function App() {
   }, [boardRestoreId]);
 
   if (!ready) {
-    return (
+    return bootStalled ? (
+      <ServerUnreachablePage />
+    ) : (
       <div className="flex min-h-full items-center justify-center text-subtle">Loading…</div>
     );
   }

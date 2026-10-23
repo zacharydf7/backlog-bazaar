@@ -960,6 +960,9 @@ interface BazaarState {
   cloud: boolean; // is Supabase configured
   initialized: boolean; // init() has run
   ready: boolean; // safe to render the app
+  // Startup is taking unusually long, or failed (the server unreachable): the
+  // loading screen offers a retry. A slow load that still lands opens the app.
+  bootStalled: boolean;
   // True once the signed-in user's profile + library have actually loaded. Gates
   // anything that must not act on the transient cross-account state during an
   // auth switch (userId flips before the new account's data lands) — e.g. the
@@ -2160,10 +2163,16 @@ async function refreshCoinsFromServer(
 // The pending reload at the next coin event start/end (fetchBonusEvents).
 let bonusEventTimer: ReturnType<typeof setTimeout> | null = null;
 
+/** How long startup may take before the loading screen offers a retry. A hung
+ *  request otherwise left the app on "Loading…" for good (Supabase gateway
+ *  incident, 2026-10-23). */
+export const BOOT_STALL_MS = 15_000;
+
 export const useStore = create<BazaarState>((set, get) => ({
   cloud: isCloudConfigured,
   initialized: false,
   ready: false,
+  bootStalled: false,
   sessionLoaded: false,
   busy: false,
   error: null,
@@ -2332,6 +2341,8 @@ export const useStore = create<BazaarState>((set, get) => ({
       });
       return;
     }
+
+    const stall = setTimeout(() => set({ bootStalled: true }), BOOT_STALL_MS);
 
     // Maintenance flag (anon-readable). A missing table is treated as "open".
     const bypass = readBypass();
@@ -2513,15 +2524,27 @@ export const useStore = create<BazaarState>((set, get) => ({
       },
     });
 
-    const { data } = await supabase.auth.getSession();
-    await get().applySession(data.session);
+    try {
+      const { data } = await supabase.auth.getSession();
+      await get().applySession(data.session);
+    } catch {
+      // The loading screen's retry reloads the page and starts over.
+      clearTimeout(stall);
+      set({ bootStalled: true });
+      return;
+    }
+    clearTimeout(stall);
     supabase.auth.onAuthStateChange((event, session) => {
       // A password-recovery link signs the user in and fires this event; flag
       // it so App can prompt for the new password.
       if (event === "PASSWORD_RECOVERY") set({ passwordRecovery: true });
-      void get().applySession(session);
+      get()
+        .applySession(session)
+        .catch(() =>
+          set({ error: "Couldn't load your account. Check your connection and refresh the page." }),
+        );
     });
-    set({ ready: true });
+    set({ ready: true, bootStalled: false });
   },
 
   applySession: async (session) => {
@@ -2609,7 +2632,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     });
 
     const [
-      { data: prof },
+      { data: prof, error: profError },
       rows,
       { data: compRows },
       { data: notes },
@@ -2632,7 +2655,7 @@ export const useStore = create<BazaarState>((set, get) => ({
         // unpaginated read of a 1,000+ game library silently drops the OLDEST
         // rows — games vanishing from the boards (issue d2309794). The id
         // tiebreak keeps the page windows stable across same-timestamp imports.
-        // A load failure falls back to [] exactly as the unpaged read did.
+        // A load failure fails the whole load (below), never an empty library.
         fetchAllRows<GameRow>((from, to) =>
           supabase!
             .from("games")
@@ -2641,7 +2664,7 @@ export const useStore = create<BazaarState>((set, get) => ({
             .order("added_at", { ascending: false })
             .order("id")
             .range(from, to),
-        ).catch(() => [] as GameRow[]),
+        ),
         supabase
           .from("compilations")
           // The embedded template row carries the moderator-set cover the
@@ -2687,6 +2710,11 @@ export const useStore = create<BazaarState>((set, get) => ({
             .range(from, to),
         ).catch(() => []),
       ]);
+
+    // An unreachable server reads as no data, not an error to throw (2026-10-23
+    // gateway incident): fail the load rather than show an empty account at
+    // starting coins. A missing profile row (PGRST116) isn't a failure.
+    if (profError && profError.code !== "PGRST116") throw new Error(profError.message);
 
     // Applied before any state lands, so the first render already groups
     // cross-provider copies of one game together.
@@ -3088,7 +3116,13 @@ export const useStore = create<BazaarState>((set, get) => ({
     // everything else straight from the DB — the source of truth for the reset.
     set({ ledger: [], feed: [], rotationCheckedIn: [] });
     const { data } = await supabase.auth.getSession();
-    await get().applySession(data.session);
+    try {
+      await get().applySession(data.session);
+    } catch {
+      // The reset itself went through; only the reload didn't.
+      set({ error: "Your fresh start is done, but your account didn't reload. Refresh the page." });
+      return true;
+    }
     toast("Fresh start complete — welcome back to day one", Sparkles);
     return true;
   },
