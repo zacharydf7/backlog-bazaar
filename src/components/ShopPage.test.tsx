@@ -206,4 +206,46 @@ describe("ShopPage storefront", () => {
     // A set with no visible members never shows a banner.
     expect(screen.queryByText(/Nothing Here/)).toBeNull();
   });
+
+  it("narrows the shelves to a collection's pieces when you tap it (issue a1cce36f)", () => {
+    act(() =>
+      useStore.setState({
+        shopItems: [
+          item({ id: "a", name: "Haunt Frame", setKey: "haunt-2026" }),
+          item({ id: "b", slug: "stall-haunt", kind: "stall", name: "Haunt Stall", style: "haunted-bazaar", setKey: "haunt-2026" }),
+          item({ id: "c", slug: "frame-plain", name: "Plain Frame" }),
+        ],
+        shopSets: [{ key: "haunt-2026", name: "The Haunt", description: null, badgeId: null }],
+      }),
+    );
+    render(<ShopPage />);
+    const card = screen.getByRole("button", { name: /The Haunt collection/ });
+    fireEvent.click(card);
+    expect(card.getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByText(/Showing pieces from The Haunt/)).toBeTruthy();
+    expect(screen.getByText("Haunt Frame")).toBeTruthy();
+    expect(screen.getByText("Haunt Stall")).toBeTruthy();
+    expect(screen.queryByText("Plain Frame")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Show everything" }));
+    expect(screen.getByText("Plain Frame")).toBeTruthy();
+    expect(card.getAttribute("aria-pressed")).toBe("false");
+    // Focus lands back on the collection, not lost with the removed banner.
+    expect(document.activeElement).toBe(card);
+  });
+
+  it("clears the collection when you tap it again", () => {
+    act(() =>
+      useStore.setState({
+        shopItems: [item({ id: "a", name: "Haunt Frame", setKey: "haunt-2026" }), item({ id: "c", slug: "frame-plain", name: "Plain Frame" })],
+        shopSets: [{ key: "haunt-2026", name: "Haunt", description: null, badgeId: null }],
+      }),
+    );
+    render(<ShopPage />);
+    const card = screen.getByRole("button", { name: /Haunt collection/ });
+    fireEvent.click(card);
+    expect(screen.queryByText("Plain Frame")).toBeNull();
+    fireEvent.click(card);
+    expect(screen.getByText("Plain Frame")).toBeTruthy();
+  });
 });

@@ -51,7 +51,6 @@ export function ShopPage() {
     const now = Date.now();
     return shopItems.filter((i) => i.active && isShopItemVisible(i, now));
   }, [shopItems]);
-  const groups = useMemo(() => groupShopItems(visible), [visible]);
   // Collections with at least one visible member — a fully hidden pre-season
   // set never leaks through its banner.
   const collections = useMemo(
@@ -61,6 +60,31 @@ export function ShopPage() {
         .filter((c) => c.progress.total > 0 && visible.some(item => item.setKey === c.set.key)),
     [shopSets, visible, purchasedIds],
   );
+  // Tapping a collection narrows the shelves to its pieces (issue a1cce36f),
+  // so players needn't hunt for them across every kind.
+  const [activeSetKey, setActiveSetKey] = useState<string | null>(null);
+  const activeSet = collections.find((c) => c.set.key === activeSetKey)?.set ?? null;
+  const groups = useMemo(
+    () => groupShopItems(activeSet ? visible.filter((i) => i.setKey === activeSet.key) : visible),
+    [visible, activeSet],
+  );
+  const showCollection = (key: string) => setActiveSetKey((current) => (current === key ? null : key));
+  // On a phone the collections stack above the shelves, so bring the pieces
+  // up to the top; leave the page alone when they're already on screen.
+  const bannerRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const banner = bannerRef.current;
+    if (activeSetKey && banner && banner.getBoundingClientRect().bottom > window.innerHeight) {
+      banner.scrollIntoView?.({ block: "start" });
+    }
+  }, [activeSetKey]);
+  // "Show everything" removes the banner holding focus; hand focus back to
+  // the collection's own card so keyboard players keep their place.
+  const collectionsRef = useRef<HTMLDivElement>(null);
+  const showEverything = () => {
+    collectionsRef.current?.querySelector<HTMLButtonElement>('[aria-pressed="true"]')?.focus();
+    setActiveSetKey(null);
+  };
 
   if (!cloud) {
     return (
@@ -114,32 +138,57 @@ export function ShopPage() {
       )}
 
       {collections.length > 0 && (
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div ref={collectionsRef} className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           {collections.map(({ set, progress }) => {
             const reward = set.badgeId ? badgeById.get(set.badgeId) : undefined;
             const done = progress.owned === progress.total;
+            const active = set.key === activeSet?.key;
             return (
-              <section
+              <button
                 key={set.key}
-                className="flex flex-col gap-1.5 rounded-2xl border border-[#e0a82e]/40 bg-surface p-4"
+                type="button"
+                onClick={() => showCollection(set.key)}
+                aria-pressed={active}
+                className={
+                  "flex flex-col gap-1.5 rounded-2xl border bg-surface p-4 text-left transition hover:border-[#e0a82e] " +
+                  (active ? "border-[#e0a82e] ring-2 ring-[#e0a82e]/40" : "border-[#e0a82e]/40")
+                }
               >
-                <p className="flex flex-wrap items-center justify-between gap-2 font-medium text-ink">
+                <span className="flex flex-wrap items-center justify-between gap-2 font-medium text-ink">
                   <span className="inline-flex items-center gap-1.5">
                     <Sparkles size={14} className="text-accent" /> {set.name} collection
                   </span>
                   <span className={"text-xs " + (done ? "text-success" : "text-muted")}>
                     {done ? "Complete!" : `${progress.owned} / ${progress.total} collected`}
                   </span>
-                </p>
-                {set.description && <p className="text-xs text-muted">{set.description}</p>}
+                </span>
+                {set.description && <span className="text-xs text-muted">{set.description}</span>}
                 {reward && (
-                  <p className="flex flex-wrap items-center gap-2 text-xs text-muted">
+                  <span className="flex flex-wrap items-center gap-2 text-xs text-muted">
                     Reward: <TitleBadge badge={reward} size="xs" />
-                  </p>
+                  </span>
                 )}
-              </section>
+              </button>
             );
           })}
+        </div>
+      )}
+
+      {activeSet && (
+        <div
+          ref={bannerRef}
+          className="flex scroll-mt-[calc(var(--chrome-h,0px)+12px)] flex-wrap items-center justify-between gap-2 rounded-2xl border border-[#e0a82e]/40 bg-panel px-4 py-2.5"
+        >
+          <span className="inline-flex items-center gap-1.5 text-sm text-ink">
+            <Sparkles size={14} className="text-accent" /> Showing pieces from {activeSet.name}
+          </span>
+          <button
+            type="button"
+            onClick={showEverything}
+            className="rounded-lg border border-line bg-surface px-3 py-1.5 text-sm text-ink transition hover:border-brand/50"
+          >
+            Show everything
+          </button>
         </div>
       )}
 
