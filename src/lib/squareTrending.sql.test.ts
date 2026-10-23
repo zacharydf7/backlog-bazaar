@@ -62,7 +62,8 @@ beforeAll(async () => {
       resumed     boolean not null default false,
       completionist boolean not null default false,
       in_rotation boolean not null default false,
-      reward      integer
+      reward      integer,
+      compilation_id uuid
     );
     create table public.slot_definitions (id uuid primary key, kind text);
     create table public.user_slots (id uuid primary key, definition_id uuid);
@@ -206,5 +207,29 @@ describe("square_trending — Hot This Week counts only real clears", () => {
     await setStatus(id, "finished", "beaten");
     await db.query("update public.games set cleared_on = current_date - 60 where id = $1", [id]);
     expect(await finishes()).toBe(0);
+  });
+});
+
+describe("square_trending — a bundle is one add (2026-10-23)", () => {
+  it("counts adding a bundle once, as the bundle, but still counts finishing a game inside it", async () => {
+    const BUNDLE = "00000000-0000-4000-8000-0000000000c1";
+    await db.query("insert into public.games (user_id, title, status) values ($1, 'Toy Story Double Pack', 'backlog')", [USER]);
+    const members = await db.query<{ id: string }>(
+      `insert into public.games (user_id, title, status, compilation_id)
+       values ($1, 'Toy Story', 'backlog', $2), ($1, 'Toy Story Racer', 'backlog', $2) returning id`,
+      [USER, BUNDLE],
+    );
+    const shelf = async () =>
+      (await db.query<{ title: string; adds: number; finishes: number }>(
+        "select title, adds::int, finishes::int from public.square_trending(12) order by title",
+      )).rows;
+    expect(await shelf()).toEqual([{ title: "Toy Story Double Pack", adds: 1, finishes: 0 }]);
+
+    await setStatus(members.rows[0].id, "playing");
+    await setStatus(members.rows[0].id, "finished", "beaten");
+    expect(await shelf()).toEqual([
+      { title: "Toy Story", adds: 0, finishes: 1 },
+      { title: "Toy Story Double Pack", adds: 1, finishes: 0 },
+    ]);
   });
 });

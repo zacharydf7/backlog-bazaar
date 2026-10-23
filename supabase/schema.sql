@@ -23775,12 +23775,17 @@ language sql
 security definer set search_path = public
 as $$
   with ev as (
-    -- New library entries (from_status null = the initial add).
+    -- New library entries (from_status null = the initial add). A bundle's
+    -- games arrive with it, so adding a bundle is one add, of the bundle's
+    -- own entry: counting each game inside filled the shelf with one bundle,
+    -- often hand-typed entries with no cover (2026-10-23). Their finishes,
+    -- likes and reviews still count below.
     select g.rawg_id, g.igdb_id, g.catalog_id, g.title, e.user_id, 'add' as kind
       from public.game_status_events e
       join public.games g on g.id = e.game_id
      where e.created_at >= now() - interval '7 days'
        and e.from_status is null
+       and g.compilation_id is null
        and not coalesce(g.private, false)
     union all
     -- Finishes: the clears the activity feed broadcast, the same rows Fresh
