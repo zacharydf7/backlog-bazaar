@@ -8,6 +8,8 @@
 import type { Game, GameMeta } from "../types";
 import { applyCatalogOverride, type CatalogOverride } from "./submissions";
 import { catalogKey } from "./ownershipMerge";
+import { hasAnyCost, totalCost } from "./copies";
+import { dlcSpend, type GameDlc } from "./dlc";
 
 export type ListVisibility = "private" | "unlisted" | "public";
 
@@ -186,28 +188,80 @@ export function listHasGame(items: GameListItem[], meta: CatalogRef): boolean {
   });
 }
 
-/** The first game in `pool` that is the same title as this entry — shared
+/** Every game in `pool` that is the same title as this entry — shared
  *  catalog identity (catalogKey, crosswalk-aware, so an IGDB item matches a
  *  RAWG-era copy and vice versa), else a case-insensitive title match for
- *  snapshot-only entries (custom games carry no shared id). */
-function matchByIdentity(pool: Game[], item: GameListItem): Game | undefined {
+ *  snapshot-only entries (custom games carry no shared id). Several when you
+ *  hold the game on more than one platform. */
+function matchAllByIdentity(pool: Game[], item: GameListItem): Game[] {
   const key = catalogKey(item);
   if (key != null) {
-    const hit = pool.find((g) => catalogKey(g) === key);
-    if (hit) return hit;
+    const hits = pool.filter((g) => catalogKey(g) === key);
+    if (hits.length > 0) return hits;
   }
   const t = item.title.trim().toLowerCase();
-  return pool.find((g) => g.title.trim().toLowerCase() === t);
+  return pool.filter((g) => g.title.trim().toLowerCase() === t);
 }
 
-/** The viewer's own library instance of a list entry (any owned board), for
- *  the "in your library" badge. A wishlist want is not "in your library", so
- *  those are ignored here — use `listGamePage` for navigation. */
-export function ownedListGame(games: Game[], item: GameListItem): Game | undefined {
-  return matchByIdentity(
+function matchByIdentity(pool: Game[], item: GameListItem): Game | undefined {
+  return matchAllByIdentity(pool, item)[0];
+}
+
+/** The viewer's own library instances of a list entry (any owned board, one
+ *  per platform). A wishlist want is not "in your library", so those are
+ *  ignored here — use `listGamePage` for navigation. */
+function ownedListGames(games: Game[], item: GameListItem): Game[] {
+  return matchAllByIdentity(
     games.filter((g) => g.status !== "wishlist"),
     item,
   );
+}
+
+/** The viewer's own library instance of a list entry, for the "in your
+ *  library" badge. */
+export function ownedListGame(games: Game[], item: GameListItem): Game | undefined {
+  return ownedListGames(games, item)[0];
+}
+
+/** A list's games as they stand in one player's library. */
+export interface ListStats {
+  total: number;
+  owned: number;
+  finished: number;
+  spent: number | null;
+  played: number;
+}
+
+/** How a list's games stand in the VIEWER's own library (issue c2a54311):
+ *  how many they own and have cleared, what those copies and their DLC cost,
+ *  and the hours played on them. Always the viewer's numbers, even on someone
+ *  else's or a shared list. A retired game isn't a clear; `spent` is null when
+ *  no cost was ever recorded. */
+export function listStats(
+  games: Game[],
+  dlc: Pick<GameDlc, "gameId" | "cost">[],
+  items: GameListItem[],
+): ListStats {
+  const copies = new Map<string, Game>();
+  let owned = 0;
+  let finished = 0;
+  for (const item of items) {
+    const mine = ownedListGames(games, item);
+    if (mine.length === 0) continue;
+    owned += 1;
+    if (mine.some((g) => g.status === "finished" && g.finishTag !== "retired")) finished += 1;
+    for (const g of mine) copies.set(g.id, g);
+  }
+  const held = [...copies.values()];
+  const dlcRows = dlc.filter((d) => d.gameId != null && copies.has(d.gameId) && typeof d.cost === "number");
+  const priced = held.some((g) => hasAnyCost(g.copies)) || dlcRows.length > 0;
+  return {
+    total: items.length,
+    owned,
+    finished,
+    spent: priced ? held.reduce((sum, g) => sum + totalCost(g.copies), 0) + dlcSpend(dlcRows) : null,
+    played: held.reduce((sum, g) => sum + (g.playedHours ?? 0), 0),
+  };
 }
 
 /** The game whose page a list entry should open: your owned copy when you have

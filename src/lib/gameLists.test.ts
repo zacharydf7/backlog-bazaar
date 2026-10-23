@@ -14,6 +14,7 @@ import {
   listItemPreviewGame,
   listRole,
   listsInFolder,
+  listStats,
   nextRank,
   ownedListGame,
   rerank,
@@ -209,6 +210,41 @@ describe("ownedListGame", () => {
     const games = [game({ igdbId: 188946, status: "backlog" })];
     expect(ownedListGame(games, item({ igdbId: 188946, title: "Spiritfall" }))).toBeTruthy();
     expect(ownedListGame(games, item({ igdbId: 999, title: "Other" }))).toBeUndefined();
+  });
+});
+
+describe("listStats (issue c2a54311)", () => {
+  it("counts the viewer's owned and cleared entries, never a wishlist want or a retirement", () => {
+    const items = [item({ rawgId: 1 }), item({ rawgId: 2 }), item({ rawgId: 3 }), item({ rawgId: 4 })];
+    const games = [
+      game({ rawgId: 1, status: "finished", finishTag: "beaten" }),
+      game({ rawgId: 2, status: "finished", finishTag: "retired" }),
+      game({ rawgId: 3, status: "wishlist" }),
+    ];
+    expect(listStats(games, [], items)).toMatchObject({ total: 4, owned: 2, finished: 1 });
+  });
+
+  it("adds up every platform copy's cost and hours, plus the DLC on them", () => {
+    const pc = game({ rawgId: 7, playedHours: 10, copies: [{ id: "a", platform: "PC", cost: 20 }] });
+    const ps5 = game({ rawgId: 7, playedHours: 5, copies: [{ id: "b", platform: "PS5", cost: 30 }] });
+    const other = game({ rawgId: 8, playedHours: 99, copies: [{ id: "c", platform: "PC", cost: 60 }] });
+    const dlc = [
+      { gameId: ps5.id, cost: 15 },
+      { gameId: other.id, cost: 40 },
+    ];
+    expect(listStats([pc, ps5, other], dlc, [item({ rawgId: 7 })])).toEqual({
+      total: 1,
+      owned: 1,
+      finished: 0,
+      spent: 65,
+      played: 15,
+    });
+  });
+
+  it("leaves spend unknown when no cost was ever recorded, but counts a free copy", () => {
+    const items = [item({ rawgId: 9 })];
+    expect(listStats([game({ rawgId: 9, copies: [{ id: "a", platform: "PC" }] })], [], items).spent).toBeNull();
+    expect(listStats([game({ rawgId: 9, copies: [{ id: "a", platform: "PC", cost: 0 }] })], [], items).spent).toBe(0);
   });
 });
 

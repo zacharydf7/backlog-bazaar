@@ -3,7 +3,9 @@ import { createPortal } from "react-dom";
 import { Reorder, useDragControls } from "motion/react";
 import {
   ArrowLeft,
+  Banknote,
   Check,
+  Clock,
   GripVertical,
   History,
   Library,
@@ -14,6 +16,7 @@ import {
   Plus,
   Search,
   Trash2,
+  Trophy,
   UserPlus,
   Users,
   X,
@@ -29,6 +32,7 @@ import {
   listHasGame,
   listItemPreviewGame,
   listRole,
+  listStats,
   nextRank,
   ownedListGame,
   VISIBILITY_META,
@@ -40,6 +44,8 @@ import {
   type ListVisibility,
 } from "../../lib/gameLists";
 import type { CatalogOverride } from "../../lib/submissions";
+import { spendLabel } from "../../lib/copies";
+import { formatPlaytime } from "../../lib/playtime";
 import type { GameMeta } from "../../types";
 import { Avatar } from "../Avatar";
 import { ConfirmDialog } from "../ConfirmDialog";
@@ -570,6 +576,41 @@ function ItemRow({
   );
 }
 
+/** Your own standing with this list's games (issue c2a54311): owned, cleared,
+ *  spent and played, from YOUR library, so a contributor or visitor sees
+ *  their numbers, not the owner's. */
+function ListStatsRow({ items }: { items: GameListItem[] }) {
+  const games = useStore((s) => s.games);
+  const dlc = useStore((s) => s.gameDlc);
+  const stats = useMemo(() => listStats(games, dlc, items), [games, dlc, items]);
+  return (
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-xl bg-panel/50 px-3 py-2 text-xs text-muted">
+      <span className="text-[10px] uppercase tracking-wide text-subtle">Your stats</span>
+      <span className="inline-flex items-center gap-1">
+        <Library size={12} className="text-accent" />
+        <span className="font-semibold text-ink">{stats.owned}</span> of {stats.total} owned
+      </span>
+      {stats.owned > 0 && (
+        <>
+          <span className="inline-flex items-center gap-1">
+            <Trophy size={12} className="text-accent" />
+            <span className="font-semibold text-ink">{stats.finished}</span> finished
+          </span>
+          {stats.spent != null && (
+            <span className="inline-flex items-center gap-1">
+              <Banknote size={12} className="text-accent" /> {spendLabel(stats.spent)}
+            </span>
+          )}
+          <span className="inline-flex items-center gap-1">
+            <Clock size={12} className="text-accent" />
+            <span className="font-semibold text-ink">{formatPlaytime(stats.played)}</span> played
+          </span>
+        </>
+      )}
+    </div>
+  );
+}
+
 /** A custom list's page — the share-link destination. The owner curates in
  *  place (rename, describe, set visibility, add/remove/reorder games, blurb
  *  each pick); everyone else gets the clean vertical read with box art. */
@@ -810,6 +851,8 @@ export function ListPage({ listId, onBack }: { listId: string; onBack: () => voi
               {items.length} {items.length === 1 ? "game" : "games"}
             </span>
           </div>
+
+          {items.length > 0 && <ListStatsRow items={items} />}
 
           {/* Shared-list indicators (issue b2059a55): the overlapping avatar
               stack of everyone curating. Tapping opens the roster (owner can

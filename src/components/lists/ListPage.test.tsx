@@ -96,6 +96,30 @@ async function renderPage(onBack = () => {}) {
   await waitFor(() => expect(screen.queryByText("Top 10 JRPGs")).toBeTruthy());
 }
 
+describe("ListPage — your stats (issue c2a54311)", () => {
+  it("shows the viewer's own numbers for the list's games", async () => {
+    act(() =>
+      useStore.setState({
+        games: [libraryGame({ playedHours: 22, copies: [{ id: "c1", platform: "SNES", cost: 40 }] })] as never,
+        gameDlc: [],
+      }),
+    );
+    await renderPage();
+    const stats = screen.getByText("Your stats").parentElement!;
+    expect(stats.textContent).toContain("1 of 2 owned");
+    expect(stats.textContent).toContain("1 finished");
+    expect(stats.textContent).toContain("Spent $40");
+    expect(stats.textContent).toContain("22h played");
+  });
+
+  it("shows only what you own when you hold none of the list", async () => {
+    await renderPage();
+    const stats = screen.getByText("Your stats").parentElement!;
+    expect(stats.textContent).toContain("0 of 2 owned");
+    expect(stats.textContent).not.toContain("finished");
+  });
+});
+
 describe("ListPage — owner", () => {
   it("renders the entries in rank order with their blurbs", async () => {
     await renderPage();
