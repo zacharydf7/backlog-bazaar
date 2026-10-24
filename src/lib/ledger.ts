@@ -15,6 +15,7 @@ import { STATUS_LABEL, OWNED_STATUS_ORDER } from "./status";
 import { visibleLibrary } from "./families";
 import { filterByQuery } from "./librarySearch";
 import { orderCompilationChildren, ownershipUnits } from "./compilationGrouping";
+import type { PageNavStop } from "./pageNav";
 
 /** True for any game the player owns (everything except Wishlist). */
 export function isOwned(game: Pick<Game, "status">): boolean {
@@ -236,10 +237,20 @@ export const GROUP_BY_OPTIONS: { value: LedgerGroupBy; label: string }[] = [
   { value: "status", label: "Status" },
 ];
 
+/** One card in the ledger: a game, or one of your compilations standing in
+ *  for its games in this group (issue 9f958571), opening the compilation's
+ *  page. */
+export type LedgerRow =
+  | { kind: "game"; game: Game }
+  | { kind: "compilation"; compilation: Compilation; games: Game[] };
+
 export interface LedgerGroup {
   key: string;
   label: string;
+  /** Every game in the group, in display order. */
   games: Game[];
+  /** The cards: each compilation's games fold into one row. */
+  rows: LedgerRow[];
 }
 
 /** Games with no platform recorded fall into this bucket when grouping by
@@ -279,6 +290,26 @@ export function clusterCompilationRows(games: Game[], compilations: Compilation[
   return units.sort((a, b) => a.sortTitle.localeCompare(b.sortTitle)).flatMap((u) => u.games);
 }
 
+/** The cards for one group's games (already clustered): each run of a known
+ *  compilation's games becomes one compilation row. A compilation not in
+ *  `compilations` (a visited library's) leaves its games as their own rows. */
+export function ledgerRowsOf(games: Game[], compilations: Compilation[]): LedgerRow[] {
+  const byId = new Map(compilations.map((c) => [c.id, c]));
+  const rows: LedgerRow[] = [];
+  for (const g of games) {
+    const compilation = g.compilationId != null ? byId.get(g.compilationId) : undefined;
+    const last = rows[rows.length - 1];
+    if (compilation && last?.kind === "compilation" && last.compilation.id === compilation.id) {
+      last.games.push(g);
+    } else if (compilation) {
+      rows.push({ kind: "compilation", compilation, games: [g] });
+    } else {
+      rows.push({ kind: "game", game: g });
+    }
+  }
+  return rows;
+}
+
 /** Bucket games for display. "none" returns a single unlabeled group; "status"
  *  groups by economic status in canonical order; "platform" lists a game under
  *  *each* platform it's owned on (so a multi-platform game appears in several
@@ -291,18 +322,19 @@ export function groupLedger(
   groupBy: LedgerGroupBy,
   compilations: Compilation[] = [],
 ): LedgerGroup[] {
-  const cluster = (list: Game[]) => clusterCompilationRows(list, compilations);
+  const group = (key: string, label: string, list: Game[]): LedgerGroup => {
+    const clustered = clusterCompilationRows(list, compilations);
+    return { key, label, games: clustered, rows: ledgerRowsOf(clustered, compilations) };
+  };
 
   if (groupBy === "none") {
-    return [{ key: "all", label: "", games: cluster(games) }];
+    return [group("all", "", games)];
   }
 
   if (groupBy === "status") {
-    return OWNED_STATUS_ORDER.map((status) => ({
-      key: status,
-      label: STATUS_LABEL[status],
-      games: cluster(games.filter((g) => g.status === status)),
-    })).filter((grp) => grp.games.length > 0);
+    return OWNED_STATUS_ORDER.map((status) =>
+      group(status, STATUS_LABEL[status], games.filter((g) => g.status === status)),
+    ).filter((grp) => grp.games.length > 0);
   }
 
   // groupBy === "platform"
@@ -322,9 +354,9 @@ export function groupLedger(
   }
   const groups: LedgerGroup[] = [...byPlatform.entries()]
     .sort((a, b) => a[0].localeCompare(b[0]))
-    .map(([platform, list]) => ({ key: platform, label: platform, games: cluster(list) }));
+    .map(([platform, list]) => group(platform, platform, list));
   if (noPlatform.length) {
-    groups.push({ key: "__none__", label: NO_PLATFORM_LABEL, games: cluster(noPlatform) });
+    groups.push(group("__none__", NO_PLATFORM_LABEL, noPlatform));
   }
   return groups;
 }
@@ -336,9 +368,9 @@ export function toggleLedgerValue<T>(list: T[], value: T): T[] {
 
 /** Total rows across the grouped ledger — the unit the incremental reveal
  *  counts in. Platform grouping lists a multi-platform game once per platform,
- *  so this can exceed the number of distinct games. */
+ *  so this can exceed the number of distinct games; a compilation is one row. */
 export function ledgerRowTotal(groups: LedgerGroup[]): number {
-  return groups.reduce((n, g) => n + g.games.length, 0);
+  return groups.reduce((n, g) => n + g.rows.length, 0);
 }
 
 /** The grouped ledger cut down to its first `count` rows, for progressive
@@ -350,11 +382,13 @@ export function sliceLedgerGroups(groups: LedgerGroup[], count: number): LedgerG
   let left = Math.max(0, count);
   for (const group of groups) {
     if (left <= 0) break;
-    if (group.games.length <= left) {
+    if (group.rows.length <= left) {
       out.push(group);
-      left -= group.games.length;
+      left -= group.rows.length;
     } else {
-      out.push({ ...group, games: group.games.slice(0, left) });
+      const rows = group.rows.slice(0, left);
+      const games = rows.flatMap((r) => (r.kind === "game" ? [r.game] : r.games));
+      out.push({ ...group, games, rows });
       left = 0;
     }
   }
@@ -364,41 +398,50 @@ export function sliceLedgerGroups(groups: LedgerGroup[], count: number): LedgerG
 /** The flattened row index of a game's FIRST appearance across the grouped
  *  ledger (the row that carries its scroll anchor), or -1. Returning from a
  *  game's page, the reveal must already span this row for the scroll-restore
- *  to land on it. */
+ *  to land on it. A compilation's id, or any of its games', finds its row. */
 export function ledgerRowIndexOf(groups: LedgerGroup[], gameId: string): number {
   let i = 0;
   for (const group of groups) {
-    for (const g of group.games) {
-      if (g.id === gameId) return i;
+    for (const r of group.rows) {
+      const hit =
+        r.kind === "game"
+          ? r.game.id === gameId
+          : r.compilation.id === gameId || r.games.some((g) => g.id === gameId);
+      if (hit) return i;
       i++;
     }
   }
   return -1;
 }
 
-/** The Master Ledger's games in exactly the order it displays them — the same
+/** The Master Ledger's cards in exactly the order it displays them — the same
  *  pipeline the component runs (hide family siblings → owned only → slicers +
- *  search → group), flattened across groups. Used to power Prev/Next browsing
- *  from a game's page (issue 7ad49282). Platform grouping lists a multi-platform
- *  game under each of its platforms, so the result is de-duplicated to each
- *  game's first appearance — you browse every owned game once. */
-export function orderedLedgerGames(
+ *  search → group), flattened across groups, as Prev/Next stops on a page
+ *  (issue 7ad49282): a game card is a game stop, and one of your compilations'
+ *  cards a compilation stop (issue 9f958571), as on the boards. Platform
+ *  grouping lists a multi-platform card under each of its platforms, so the
+ *  result keeps each card's first appearance: you browse every card once. */
+export function orderedLedgerStops(
   rawGames: Game[],
   filters: LedgerFilters,
   searchQuery: string,
   groupBy: LedgerGroupBy,
   compilations: Compilation[] = [],
-): Game[] {
+): PageNavStop[] {
   const owned = ownedGames(visibleLibrary(rawGames));
   const filtered = filterByQuery(applyLedgerFilters(owned, filters), searchQuery);
-  const ordered = groupLedger(filtered, groupBy, compilations).flatMap((g) => g.games);
   const seen = new Set<string>();
-  const unique: Game[] = [];
-  for (const g of ordered) {
-    if (!seen.has(g.id)) {
-      seen.add(g.id);
-      unique.push(g);
+  const stops: PageNavStop[] = [];
+  for (const row of groupLedger(filtered, groupBy, compilations).flatMap((g) => g.rows)) {
+    const stop: PageNavStop =
+      row.kind === "game"
+        ? { kind: "game", id: row.game.id }
+        : { kind: "compilation", id: row.compilation.id };
+    const key = `${stop.kind}:${stop.id}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      stops.push(stop);
     }
   }
-  return unique;
+  return stops;
 }

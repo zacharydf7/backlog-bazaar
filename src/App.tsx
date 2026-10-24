@@ -136,7 +136,7 @@ import { isRetired } from "./lib/finishTags";
 import { clearVerification } from "./lib/bountyHold";
 import {
   EMPTY_LEDGER_FILTERS,
-  orderedLedgerGames,
+  orderedLedgerStops,
   type LedgerFilters,
   type LedgerGroupBy,
 } from "./lib/ledger";
@@ -634,15 +634,15 @@ export default function App() {
   // so those pages simply show no Prev/Next.
   const pageNav = useMemo<PageNav | null>(() => {
     if (view === "master-ledger") {
-      // The Ledger lists owned editions individually — compilation children are
-      // their own rows — so every stop is a game.
-      const stops: PageNavStop[] = orderedLedgerGames(
+      // The Ledger lists owned editions individually, but your compilations
+      // are one card each (issue 9f958571), so those are compilation stops.
+      const stops: PageNavStop[] = orderedLedgerStops(
         boardGames,
         ledgerFilters,
         searchQuery,
         ledgerGroupBy,
         viewing ? [] : compilations,
-      ).map((g) => ({ kind: "game", id: g.id }));
+      );
       return stops.length ? { stops, label: "Master Ledger" } : null;
     }
     if (view === "backlog" || view === "finished" || view === "wishlist") {

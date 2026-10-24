@@ -19,16 +19,20 @@ import { gamePriorityRank } from "./gamePriority";
  *  holds a lane slot, so it keeps its own (bundle-framed) card there. */
 export type BundleBoard = Exclude<GameStatus, "playing">;
 const BUNDLE_BOARDS: BundleBoard[] = ["backlog", "finished", "wishlist"];
+/** Where a bundle card sits: a board, or the Master Ledger (issue 9f958571),
+ *  where it stands in for its games in view whatever their status. */
+export type BundleScope = BundleBoard | "ledger";
 
-/** One bundle card: a compilation as it shows on one board. */
-export interface CollapsedCompilation {
+/** One bundle card: a compilation as it shows on one board (or the ledger). */
+export interface CollapsedCompilation<B extends BundleScope = BundleBoard> {
   compilation: Compilation;
   /** Every child, in the owner's chosen order. */
   children: Game[];
   /** The board this card sits on. */
-  board: BundleBoard;
-  /** The children on this card's board, in the same order. The tray lists
-   *  them, and the board's slicers and sort read only these. */
+  board: B;
+  /** The children on this card's board (on the ledger, the ones in view), in
+   *  the same order. The tray lists them, and the board's slicers and sort
+   *  read only these. */
   boardChildren: Game[];
   /** Aggregate play time: every child's hours plus the bundle's carryover
    *  (time logged on the single parent card before it was expanded). */
@@ -103,13 +107,15 @@ export function inheritedCover(
 }
 
 /** Build one board's bundle card, with every child in the owner's chosen order
- *  (so the card, its cover fallback, and any preview all agree). */
-export function compilationRollup(
+ *  (so the card, its cover fallback, and any preview all agree). A ledger card
+ *  has no board to filter by, so its caller sets `boardChildren` to the games
+ *  in view. */
+export function compilationRollup<B extends BundleScope>(
   compilation: Compilation,
   children: Game[],
-  board: BundleBoard,
+  board: B,
   compilationGame?: Pick<Game, "image">,
-): CollapsedCompilation {
+): CollapsedCompilation<B> {
   const ordered = orderCompilationChildren(children, compilation.childOrder);
   const played = ordered.reduce((sum, g) => sum + (g.playedHours ?? 0), 0);
   return {
@@ -247,7 +253,7 @@ export const TRAY_LIMIT = 3;
 
 /** The games a bundle card's tray lists: in the Bazaar, the highest-priority
  *  games first (ties keep the bundle order); elsewhere, the bundle order. */
-export function compilationTray(c: CollapsedCompilation): { shown: Game[]; more: number } {
+export function compilationTray(c: CollapsedCompilation<BundleScope>): { shown: Game[]; more: number } {
   const list =
     c.board === "backlog"
       ? [...c.boardChildren].sort(
@@ -258,10 +264,12 @@ export function compilationTray(c: CollapsedCompilation): { shown: Game[]; more:
 }
 
 /** The bundle card's status pill, phrased for its board. */
-export function compilationSummary(c: CollapsedCompilation): string {
+export function compilationSummary(c: CollapsedCompilation<BundleScope>): string {
   const total = c.children.length;
   const games = `${total} game${total === 1 ? "" : "s"}`;
   switch (c.board) {
+    case "ledger":
+      return `Compilation · ${games} · ${c.finishedCount} finished`;
     case "finished":
       return `Compilation · ${c.finishedCount} of ${total} finished`;
     case "wishlist":

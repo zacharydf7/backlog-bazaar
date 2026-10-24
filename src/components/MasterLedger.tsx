@@ -16,6 +16,8 @@ import {
 } from "lucide-react";
 import { useStore } from "../store";
 import { LedgerCard } from "./LedgerCard";
+import { CompilationParentCard } from "./CompilationParentCard";
+import { compilationGameOf, compilationRollup } from "../lib/compilationGrouping";
 import { JumpToTopButton } from "./JumpToTopButton";
 import { FilterChips } from "./FilterChips";
 import { StatusBadge } from "./StatusBadge";
@@ -90,9 +92,11 @@ export function MasterLedger({
   const games = useStore((s) => s.games);
   const viewing = useStore((s) => s.viewing);
   // Your compilations supply each bundle's saved child order for clustering
-  // (issue 140ac868); none while visiting (a visited bundle still clusters, in
-  // its natural order, keyed off the games' compilationId).
+  // (issue 140ac868) and fold its games into one card (issue 9f958571); none
+  // while visiting (a visited bundle's games stay their own cards, clustered in
+  // their natural order, keyed off the games' compilationId).
   const compilations = useStore((s) => s.compilations);
+  const compilationGames = useStore((s) => s.compilationGames);
   // Source the visited player's library while visiting, otherwise your own.
   // Hidden family siblings stay out — a linked family is ONE consolidated
   // ledger entry (the primary's); severing the link restores the rest.
@@ -225,22 +229,38 @@ export function MasterLedger({
     io.observe(el);
     return () => io.disconnect();
   }, [hasMore, showMore]);
-  // Anchor the first row of each game so returning from its page scrolls back to
-  // it (issue 86dce059 — the boards already did this; the Ledger now matches).
-  // Platform grouping lists a game under each platform, so only its first row
-  // takes the id, keeping DOM ids unique.
+  // Anchor the first row of each game (or compilation) so returning from its
+  // page scrolls back to it (issue 86dce059 — the boards already did this; the
+  // Ledger now matches). Platform grouping lists a game under each platform, so
+  // only its first row takes the id, keeping DOM ids unique. A compilation card
+  // also anchors the games folded into it, so coming back from one of them
+  // lands on the card.
   const anchorRowKeys = useMemo(() => {
     const seen = new Set<string>();
     const keys = new Set<string>();
     for (const group of groups) {
-      for (const g of group.games) {
-        if (seen.has(g.id)) continue;
-        seen.add(g.id);
-        keys.add(`${group.key}:${g.id}`);
+      for (const r of group.rows) {
+        const ids = r.kind === "game" ? [r.game.id] : [r.compilation.id, ...r.games.map((g) => g.id)];
+        for (const id of ids) {
+          if (seen.has(id)) continue;
+          seen.add(id);
+          keys.add(`${group.key}:${id}`);
+        }
       }
     }
     return keys;
   }, [groups]);
+  // Each of your compilations' games, for its card's counts and playtime.
+  const gamesByCompilation = useMemo(() => {
+    const map = new Map<string, Game[]>();
+    for (const g of games) {
+      if (g.compilationId == null) continue;
+      const list = map.get(g.compilationId);
+      if (list) list.push(g);
+      else map.set(g.compilationId, [g]);
+    }
+    return map;
+  }, [games]);
   const searching = searchQuery.trim() !== "";
   const filterActive = ledgerFilterCount(filters) > 0;
 
@@ -427,18 +447,49 @@ export function MasterLedger({
                     </div>
                   )}
                   <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                    {group.games.map((g) => {
-                      const rowKey = `${group.key}:${g.id}`;
+                    {group.rows.map((r) => {
+                      const id = r.kind === "game" ? r.game.id : r.compilation.id;
+                      const rowKey = `${group.key}:${id}`;
                       return (
                         <div
                           key={rowKey}
-                          id={anchorRowKeys.has(rowKey) ? boardGameAnchor(g.id) : undefined}
-                          className="h-full scroll-mt-24"
+                          id={anchorRowKeys.has(rowKey) ? boardGameAnchor(id) : undefined}
+                          className="relative h-full scroll-mt-24"
                         >
-                          <LedgerCard
-                            game={g}
-                            family={g.familyId != null ? familyMembers.get(g.familyId) : undefined}
-                          />
+                          {r.kind === "game" ? (
+                            <LedgerCard
+                              game={r.game}
+                              family={
+                                r.game.familyId != null ? familyMembers.get(r.game.familyId) : undefined
+                              }
+                            />
+                          ) : (
+                            // One of your compilations (issue 9f958571): one card
+                            // for its games in this group, opening its page.
+                            <>
+                              {r.games.map(
+                                (g) =>
+                                  anchorRowKeys.has(`${group.key}:${g.id}`) && (
+                                    <span
+                                      key={g.id}
+                                      id={boardGameAnchor(g.id)}
+                                      className="pointer-events-none absolute inset-0"
+                                    />
+                                  ),
+                              )}
+                              <CompilationParentCard
+                                collapsed={{
+                                  ...compilationRollup(
+                                    r.compilation,
+                                    gamesByCompilation.get(r.compilation.id) ?? [],
+                                    "ledger",
+                                    compilationGameOf(r.compilation.id, compilationGames),
+                                  ),
+                                  boardChildren: r.games,
+                                }}
+                              />
+                            </>
+                          )}
                         </div>
                       );
                     })}

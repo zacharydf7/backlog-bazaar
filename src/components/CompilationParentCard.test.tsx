@@ -102,6 +102,22 @@ describe("CompilationParentCard (86fc0b4b)", () => {
     expect(screen.queryByRole("button", { name: /Play a Game/ })).toBeNull();
   });
 
+  it("on the Master Ledger, lists the games in view whatever their status (9f958571)", () => {
+    render(
+      <CompilationParentCard
+        collapsed={{ ...compilationRollup(comp, children, "ledger"), boardChildren: children }}
+      />,
+    );
+    expect(screen.getByText("Compilation · 3 games · 1 finished")).toBeTruthy();
+    const tray = within(screen.getByRole("list", { name: "Games from Trilogy Collection" }));
+    // A finished game reads as on Finished; the others show their length.
+    expect(tray.getByText("Completed")).toBeTruthy();
+    expect(tray.getByText("12h")).toBeTruthy();
+    expect(tray.getByText("Part 3")).toBeTruthy();
+    // Playing a game is the Bazaar card's job.
+    expect(screen.queryByRole("button", { name: /Play a Game/ })).toBeNull();
+  });
+
   it("opens a tray game's own page", () => {
     render(card("backlog"));
     fireEvent.click(screen.getByTitle("Open Part 2"));

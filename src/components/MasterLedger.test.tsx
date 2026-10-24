@@ -103,7 +103,7 @@ describe("MasterLedger", () => {
     expect(container.querySelector("#np-game-g2")).not.toBeNull();
   });
 
-  it("clusters a compilation's rows together in the owner's order (140ac868)", () => {
+  it("shows your compilation as one card, its games in your order (140ac868, 9f958571)", () => {
     act(() =>
       useStore.setState({
         viewing: null,
@@ -127,12 +127,45 @@ describe("MasterLedger", () => {
       }),
     );
     const { container } = render(<MasterLedger />);
-    // Rows render in clustered order: the bundle sits together (in order) placed
-    // by its first title, not scattered A–Z among Alpha…Zelda.
+    // The bundle is one card, placed by its first title, not scattered A–Z
+    // among Alpha…Zelda; its tray lists the games in the owner's order.
     const ids = [...container.querySelectorAll('[id^="np-game-"]')].map((el) =>
       el.id.replace("np-game-", ""),
     );
-    expect(ids).toEqual(["alpha", "rem", "two", "z"]);
+    // (The card also anchors its games, so coming back from one lands on it.)
+    expect(ids).toEqual(["alpha", "C", "rem", "two", "z"]);
+    expect(screen.getAllByTitle(/^Open (Alpha Game|BioShock|Zelda)$/)).toHaveLength(3);
+    const tray = screen.getByRole("list", { name: "Games from BioShock" });
+    expect([...tray.querySelectorAll("button")].map((b) => b.title)).toEqual([
+      "Open BioShock Remastered",
+      "Open BioShock 2 Remastered",
+    ]);
+    // Tapping the card opens the compilation's own page.
+    fireEvent.click(screen.getByTitle("Open BioShock"));
+    expect(window.location.hash).toBe("#c/C");
+  });
+
+  it("keeps a visited player's compilation games as their own cards (9f958571)", () => {
+    act(() =>
+      useStore.setState({
+        games: [],
+        // Yours are loaded, but a visited ledger never folds by them.
+        compilations: [
+          { id: "C", title: "BioShock", totalCost: 0, createdAt: 1, expanded: true, carryoverHours: 0 },
+        ],
+        viewing: visit({
+          games: [
+            game({ id: "rem", title: "BioShock Remastered", compilationId: "C" }),
+            game({ id: "two", title: "BioShock 2 Remastered", compilationId: "C" }),
+          ],
+        }),
+      }),
+    );
+    const { container } = render(<MasterLedger />);
+    const ids = [...container.querySelectorAll('[id^="np-game-"]')].map((el) =>
+      el.id.replace("np-game-", ""),
+    );
+    expect(ids.sort()).toEqual(["rem", "two"]);
   });
 
   it("keeps a multi-platform game's anchor unique even when it lists under each platform", () => {

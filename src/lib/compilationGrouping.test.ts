@@ -248,6 +248,9 @@ describe("compilationTray / compilationSummary (86fc0b4b)", () => {
         compilationRollup(comp(), [game({ id: "w", status: "wishlist" })], "wishlist"),
       ),
     ).toBe("Compilation · 1 game · 1 on Wishlist");
+    expect(compilationSummary(compilationRollup(comp(), children, "ledger"))).toBe(
+      "Compilation · 6 games · 1 finished",
+    );
   });
 });
 

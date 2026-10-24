@@ -9,7 +9,7 @@ import {
   ledgerStats,
   groupLedger,
   clusterCompilationRows,
-  orderedLedgerGames,
+  orderedLedgerStops,
   ledgerRowTotal,
   sliceLedgerGroups,
   ledgerRowIndexOf,
@@ -406,36 +406,34 @@ describe("applyLedgerFilters", () => {
   });
 });
 
-describe("orderedLedgerGames (Prev/Next browse order, 7ad49282)", () => {
+describe("orderedLedgerStops (Prev/Next browse order, 7ad49282)", () => {
+  const ids = (stops: { id: string }[]) => stops.map((s) => s.id);
+
   it("returns owned games in display order, wishlist excluded", () => {
     const zelda = game({ title: "Zelda" });
     const antichamber = game({ title: "Antichamber" });
     const wished = game({ title: "Aaa", status: "wishlist" });
-    const out = orderedLedgerGames(
-      [zelda, antichamber, wished],
-      EMPTY_LEDGER_FILTERS,
-      "",
-      "none",
-    );
-    expect(out.map((g) => g.title)).toEqual(["Antichamber", "Zelda"]);
+    const out = orderedLedgerStops([zelda, antichamber, wished], EMPTY_LEDGER_FILTERS, "", "none");
+    expect(ids(out)).toEqual([antichamber.id, zelda.id]);
   });
 
   it("narrows to the live search query", () => {
-    const out = orderedLedgerGames(
-      [game({ title: "Hollow Knight" }), game({ title: "Celeste" })],
+    const celeste = game({ title: "Celeste" });
+    const out = orderedLedgerStops(
+      [game({ title: "Hollow Knight" }), celeste],
       EMPTY_LEDGER_FILTERS,
       "celeste",
       "none",
     );
-    expect(out.map((g) => g.title)).toEqual(["Celeste"]);
+    expect(ids(out)).toEqual([celeste.id]);
   });
 
   it("browses a multi-platform game once even though it lists under each platform group", () => {
     const alpha = game({ title: "Alpha", copies: [copy("PC"), copy("PS5")] });
     const beta = game({ title: "Beta", copies: [copy("PS5")] });
     // Grouped display: PC → [Alpha], PS5 → [Alpha, Beta]; deduped to first seen.
-    const out = orderedLedgerGames([alpha, beta], EMPTY_LEDGER_FILTERS, "", "platform");
-    expect(out.map((g) => g.id)).toEqual([alpha.id, beta.id]);
+    const out = orderedLedgerStops([alpha, beta], EMPTY_LEDGER_FILTERS, "", "platform");
+    expect(ids(out)).toEqual([alpha.id, beta.id]);
   });
 
   it("matches the ledger's flattened group order exactly (no drift)", () => {
@@ -446,20 +444,73 @@ describe("orderedLedgerGames (Prev/Next browse order, 7ad49282)", () => {
     ];
     const filtered = applyLedgerFilters(ownedGames(games), EMPTY_LEDGER_FILTERS);
     const expected = groupLedger(filtered, "status").flatMap((grp) => grp.games.map((g) => g.id));
-    const out = orderedLedgerGames(games, EMPTY_LEDGER_FILTERS, "", "status").map((g) => g.id);
-    expect(out).toEqual(expected);
+    expect(ids(orderedLedgerStops(games, EMPTY_LEDGER_FILTERS, "", "status"))).toEqual(expected);
   });
 
-  it("clusters a bundle in the flat browse order (Prev/Next parity)", () => {
+  it("steps onto your compilation's card, as the ledger shows it (issue 9f958571)", () => {
     const games = [
       game({ id: "alpha", title: "Alpha" }),
       game({ id: "rem", title: "BioShock Remastered", compilationId: "C" }),
       game({ id: "two", title: "BioShock 2 Remastered", compilationId: "C" }),
+      game({ id: "z", title: "Zelda" }),
     ];
-    const out = orderedLedgerGames(games, EMPTY_LEDGER_FILTERS, "", "none", [
+    const out = orderedLedgerStops(games, EMPTY_LEDGER_FILTERS, "", "none", [
       bundleComp("C", ["rem", "two"]),
     ]);
-    expect(out.map((g) => g.id)).toEqual(["alpha", "rem", "two"]);
+    expect(out).toEqual([
+      { kind: "game", id: "alpha" },
+      { kind: "compilation", id: "C" },
+      { kind: "game", id: "z" },
+    ]);
+  });
+});
+
+describe("compilation cards on the ledger (issue 9f958571)", () => {
+  const bundle = () => [
+    game({ id: "alpha", title: "Alpha" }),
+    game({ id: "rem", title: "BioShock Remastered", compilationId: "C" }),
+    game({ id: "two", title: "BioShock 2 Remastered", compilationId: "C" }),
+    game({ id: "z", title: "Zelda" }),
+  ];
+
+  it("folds your compilation's games into one card, keeping every game in the group", () => {
+    const [g] = groupLedger(bundle(), "none", [bundleComp("C", ["rem", "two"])]);
+    expect(g.rows.map((r) => (r.kind === "game" ? r.game.id : `comp:${r.compilation.id}`))).toEqual([
+      "alpha",
+      "comp:C",
+      "z",
+    ]);
+    const comp = g.rows[1];
+    expect(comp.kind === "compilation" && comp.games.map((x) => x.id)).toEqual(["rem", "two"]);
+    expect(g.games.map((x) => x.id)).toEqual(["alpha", "rem", "two", "z"]);
+  });
+
+  it("leaves a compilation it doesn't know (a visited library's) as separate cards", () => {
+    const [g] = groupLedger(bundle(), "none", []);
+    expect(g.rows.map((r) => r.kind)).toEqual(["game", "game", "game", "game"]);
+  });
+
+  it("shows the card under each platform it has games on", () => {
+    const games = [
+      game({ id: "a", title: "A", compilationId: "C", copies: [{ id: "c1", platform: "PC" }] }),
+      game({ id: "b", title: "B", compilationId: "C", copies: [{ id: "c2", platform: "Nintendo Switch" }] }),
+    ];
+    const groups = groupLedger(games, "platform", [bundleComp("C")]);
+    expect(groups.map((g) => [g.key, g.rows.length, g.rows[0].kind])).toEqual([
+      ["Nintendo Switch", 1, "compilation"],
+      ["PC", 1, "compilation"],
+    ]);
+  });
+
+  it("pages a compilation as one row, and finds it by its id or any of its games'", () => {
+    const groups = groupLedger(bundle(), "none", [bundleComp("C")]);
+    expect(ledgerRowTotal(groups)).toBe(3);
+    expect(ledgerRowIndexOf(groups, "C")).toBe(1);
+    expect(ledgerRowIndexOf(groups, "two")).toBe(1);
+    expect(ledgerRowIndexOf(groups, "z")).toBe(2);
+    const cut = sliceLedgerGroups(groups, 2);
+    expect(cut[0].rows).toHaveLength(2);
+    expect(cut[0].games.map((x) => x.id)).toEqual(["alpha", "rem", "two"]);
   });
 });
 
@@ -508,10 +559,16 @@ describe("clusterCompilationRows (ledger clustering, 140ac868)", () => {
 });
 
 describe("ledger paging helpers (86dce059 — the Ledger pages like the boards)", () => {
+  const grp = (key: string, games: Game[]): LedgerGroup => ({
+    key,
+    label: key.toUpperCase(),
+    games,
+    rows: games.map((g) => ({ kind: "game", game: g })),
+  });
   const grouped: LedgerGroup[] = [
-    { key: "a", label: "A", games: [game({ id: "a1" }), game({ id: "a2" })] },
-    { key: "b", label: "B", games: [game({ id: "b1" }), game({ id: "b2" }), game({ id: "b3" })] },
-    { key: "c", label: "C", games: [game({ id: "c1" })] },
+    grp("a", [game({ id: "a1" }), game({ id: "a2" })]),
+    grp("b", [game({ id: "b1" }), game({ id: "b2" }), game({ id: "b3" })]),
+    grp("c", [game({ id: "c1" })]),
   ];
 
   it("counts rows across every group (a game repeated per platform counts each row)", () => {

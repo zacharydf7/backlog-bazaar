@@ -13,6 +13,7 @@ import type { Game } from "../types";
 import {
   compilationSummary,
   compilationTray,
+  type BundleScope,
   type CollapsedCompilation,
 } from "../lib/compilationGrouping";
 import { formatUsd, ownedPlatformSummary } from "../lib/copies";
@@ -37,7 +38,11 @@ import { useViewing } from "../lib/viewContext";
  *  played (including hours carried over from before an expansion) but is not a
  *  games row, so it never logs playtime or moves coins itself: Play a Game hands
  *  the chosen game to that game's own activation dialog. */
-export function CompilationParentCard({ collapsed }: { collapsed: CollapsedCompilation }) {
+export function CompilationParentCard({
+  collapsed,
+}: {
+  collapsed: CollapsedCompilation<BundleScope>;
+}) {
   const { readOnly, hideSpend } = useViewing();
   const [menuOpen, setMenuOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -200,8 +205,16 @@ export function CompilationParentCard({ collapsed }: { collapsed: CollapsedCompi
             ))}
           </div>
 
-          {/* The tray: just this board's games, each opening its own page. */}
-          <ul className="flex flex-col gap-1" aria-label={`Games on this board from ${compilation.title}`}>
+          {/* The tray: just this board's games (on the Master Ledger, the ones
+              in view), each opening its own page. */}
+          <ul
+            className="flex flex-col gap-1"
+            aria-label={
+              board === "ledger"
+                ? `Games from ${compilation.title}`
+                : `Games on this board from ${compilation.title}`
+            }
+          >
             {tray.shown.map((g) => (
               <li key={g.id}>
                 <TrayRow game={g} board={board} />
@@ -272,9 +285,11 @@ export function BundleProgress({
 }
 
 /** One tray line: the game's title plus what matters on this board — priority
- *  and length in the Bazaar, the finish badge and hours on Finished. */
-function TrayRow({ game, board }: { game: Game; board: CollapsedCompilation["board"] }) {
+ *  and length in the Bazaar, the finish badge and hours on Finished. On the
+ *  Master Ledger, a finished game reads as on Finished and the rest show length. */
+function TrayRow({ game, board }: { game: Game; board: BundleScope }) {
   const length = effectiveLength(game);
+  const shownAs = board === "ledger" && game.status === "finished" ? "finished" : board;
   return (
     <button
       type="button"
@@ -288,7 +303,7 @@ function TrayRow({ game, board }: { game: Game; board: CollapsedCompilation["boa
         <TitleWithOrigin game={game} />
       </span>
       <span className="flex shrink-0 items-center gap-1">
-        {board === "finished" ? (
+        {shownAs === "finished" ? (
           <>
             {game.finishTag && <FinishTagBadge tag={game.finishTag} />}
             {(game.playedHours ?? 0) > 0 && (
