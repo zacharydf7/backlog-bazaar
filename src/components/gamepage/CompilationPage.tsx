@@ -25,6 +25,7 @@ import {
 import type { Compilation, Game } from "../../types";
 import { useStore } from "../../store";
 import { gameHash } from "../../lib/route";
+import { entryTab, rememberEntryTab } from "../../lib/entryTab";
 import type { PageNav, PageNavStop } from "../../lib/pageNav";
 import { PageNavControls } from "./PageNavControls";
 import {
@@ -183,7 +184,10 @@ function CompilationPageBody({
 }) {
   const { cloud, setCompilationChildOrder, deleteCompilation, fetchGameScreenshots } = useStore();
   const targetCostPerHour = useStore((s) => s.targetCostPerHour);
-  const [tab, setTab] = useState<CompilationTabId>("overview");
+  // Back from a game opened here reopens the tab it was opened from.
+  const [tab, setTab] = useState<CompilationTabId>(
+    () => TABS.find((t) => t.id === entryTab())?.id ?? "overview",
+  );
   const [editing, setEditing] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [picking, setPicking] = useState(false);
@@ -335,6 +339,7 @@ function CompilationPageBody({
               aria-selected={isActive}
               onClick={() => {
                 setTab(t.id);
+                rememberEntryTab(t.id);
                 trackEvent("feature", "compilation_tab", { tab: t.id });
               }}
               className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-medium transition ${

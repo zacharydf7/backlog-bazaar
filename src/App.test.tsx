@@ -484,6 +484,37 @@ describe("App", () => {
     expect(screen.queryByText("Filler 057")).not.toBeNull(); // newest → a page-1 card too
   });
 
+  it("Back from a compilation's game reopens its Games tab (88e8ed1c)", async () => {
+    const comp: Compilation = {
+      id: "CMP",
+      title: "Trilogy",
+      totalCost: 30,
+      copies: [],
+      createdAt: 1,
+      expanded: false,
+      carryoverHours: 0,
+    };
+    render(<App />);
+    act(() =>
+      useStore.setState({
+        viewing: null,
+        games: [libGame({ id: "cmp-a", title: "Part One", compilationId: "CMP" })],
+        compilations: [comp],
+      }),
+    );
+    act(() => {
+      window.location.hash = "#c/CMP";
+    });
+    fireEvent.click(await screen.findByRole("tab", { name: /Games/ }));
+    fireEvent.click(screen.getByTitle("Open Part One"));
+    expect(await screen.findByRole("heading", { level: 1, name: "Part One" })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: /^Back$/i }));
+    expect(
+      (await screen.findByRole("tab", { name: /Games/ })).getAttribute("aria-selected"),
+    ).toBe("true");
+  });
+
   it("a fast-scroll jump reveals cards beyond the first page (d2444c65, 3e5eee26)", async () => {
     // 100 titles spread A…Z under the A–Z sort: page 1 ends well before "Z",
     // so a fast-scroll jump to the bottom must first force-reveal the deep cards.
