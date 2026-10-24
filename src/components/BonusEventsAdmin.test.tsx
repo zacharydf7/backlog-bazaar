@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { BonusEventsAdmin } from "./BonusEventsAdmin";
 import { useStore } from "../store";
@@ -62,7 +62,13 @@ describe("BonusEventsAdmin", () => {
     expect(useStore.getState().archiveBonusEvent).toHaveBeenCalledWith("e1", true);
   });
 
+  afterEach(() => vi.useRealTimers());
+
   it("creates a repeating, targeted event that starts now", async () => {
+    // The default weekend spans two calendar days, which is 47 or 49 hours
+    // when a clock change falls inside it; pin a date with no change nearby.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(2026, 5, 3, 12));
     render(<BonusEventsAdmin />);
     await screen.findByText("Weekend Bounties");
     fireEvent.click(screen.getByRole("button", { name: /New event/ }));
