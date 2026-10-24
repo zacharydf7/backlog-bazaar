@@ -206,9 +206,41 @@ describe("App", () => {
     fireEvent.click(await screen.findByTitle("See the Nintendo Switch games"));
     expect(await screen.findByText("Switch Game")).toBeTruthy();
     expect(screen.queryByText("PS Game")).toBeNull();
-    // The filter is visible and clearable.
-    expect(screen.getByRole("button", { name: /^Filters/i }).getAttribute("aria-expanded")).toBe("true");
-    expect(screen.getByRole("button", { name: /^Nintendo Switch$/ })).toBeTruthy();
+    // The filter shows without its panel taking over a phone screen.
+    expect(screen.getByRole("button", { name: /^Filters/i }).getAttribute("aria-expanded")).toBe("false");
+    expect(screen.getByText("Filtered view")).toBeTruthy();
+    // Back steps to their profile, still inside the visit, not out of it.
+    act(() => window.history.back());
+    expect(await screen.findByTitle("See the Nintendo Switch games")).toBeTruthy();
+    expect(useStore.getState().viewing).not.toBeNull();
+  });
+
+  it("Back into a visit's page lands on that page once their Bazaar loads (fcd0948d)", async () => {
+    const original = useStore.getState().openUserBazaar;
+    useStore.setState({
+      openUserBazaar: async (uid: string) => useStore.setState({ viewing: visit({ userId: uid }) }),
+    });
+    try {
+      render(<App />);
+      await screen.findAllByRole("heading", { name: /Backlog Bazaar/i });
+      act(() => {
+        window.history.pushState(null, "", "/#u/u2/v/master-ledger");
+        window.dispatchEvent(new PopStateEvent("popstate"));
+      });
+      expect(await screen.findByRole("heading", { name: /Pat's Master Ledger/ })).toBeTruthy();
+      expect(window.location.hash).toBe("#u/u2/v/master-ledger");
+    } finally {
+      useStore.setState({ openUserBazaar: original, viewing: null });
+    }
+  });
+
+  it("entering a visit adds one history entry, so Back leaves it (fcd0948d)", async () => {
+    render(<App />);
+    await screen.findAllByRole("heading", { name: /Backlog Bazaar/i });
+    act(() => useStore.setState({ viewing: visit() }));
+    await waitFor(() => expect(window.location.hash).toBe("#u/u2"));
+    act(() => window.history.back());
+    await waitFor(() => expect(useStore.getState().viewing).toBeNull());
   });
 
   it("hides empty Now Playing lanes, except Focus, and keeps filled ones", async () => {

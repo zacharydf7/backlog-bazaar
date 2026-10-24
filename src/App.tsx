@@ -148,23 +148,13 @@ import {
   compilationHash,
   listHash,
   isAccountSwitch,
+  isGameStatus,
+  isVisitView,
   type Route,
 } from "./lib/route";
 import { isCommunityView, loadCommunitySection } from "./lib/community";
 import type { Game, GameStatus } from "./types";
 import { useCoverOf } from "./lib/useCoverOf";
-
-/** The game-library sections (everything else is a discovery/utility page). */
-function isGameStatus(v: View): v is GameStatus {
-  return v === "backlog" || v === "playing" || v === "finished" || v === "wishlist";
-}
-
-/** Views that belong to a player's collection, so navigating to them stays inside
- *  a visit: the game boards plus their unified Master Ledger. Anything else (a
- *  utility/discovery page) ends the visit and returns you to your own account. */
-function isVisitView(v: View): boolean {
-  return isGameStatus(v) || v === "master-ledger" || v === "profile";
-}
 
 export default function App() {
   useCosmeticEventVisit();
@@ -677,14 +667,15 @@ export default function App() {
   // navigation (view change) or a switch of whose ledger we're viewing. A game
   // round-trip leaves `view` at "master-ledger", so the filter survives it. A
   // navigation that asked for a filter (a profile's platform row, issue
-  // fcd0948d) arrives with it applied and its panel open, so it's clearable.
+  // fcd0948d) arrives with it applied; the panel stays shut, since on a phone it
+  // fills the screen, and the Filters count and "Filtered view" note show it.
   const requestedLedgerFilters = useRef<LedgerFilters | null>(null);
   useEffect(() => {
     const requested = requestedLedgerFilters.current;
     requestedLedgerFilters.current = null;
     setLedgerFilters(requested ?? EMPTY_LEDGER_FILTERS);
     setLedgerGroupBy("none");
-    setLedgerFiltersOpen(requested != null);
+    setLedgerFiltersOpen(false);
   }, [view, viewing?.userId]);
 
   // Playing games for the Now Playing slot meter — every playing instance is
@@ -713,8 +704,14 @@ export default function App() {
       if (pendingVisitGameRef.current === viewing.userId) {
         pendingVisitGameRef.current = null;
       } else {
+        // A "#u/<uid>/v/<view>" route (Back into a visit, or a reload) lands on
+        // that page of theirs instead of their Profile.
+        const pending = pendingVisitViewRef.current;
+        const landing = pending?.userId === viewing.userId ? pending.view : "profile";
+        pendingVisitViewRef.current = null;
+        visitLandingRef.current = landing;
         setOpenGameId(null);
-        setView("profile");
+        setView(landing);
       }
     } else {
       if (restoreOnLeaveRef.current && preVisitViewRef.current != null) {
@@ -880,6 +877,13 @@ export default function App() {
   // page to their Profile, and (c) the URL-sync effect doesn't rewrite the hash
   // mid-load with the visit half missing.
   const pendingVisitGameRef = useRef<string | null>(null);
+  // The same for a "#u/<uid>/v/<view>" route: the page to land on once that
+  // visit's Bazaar arrives.
+  const pendingVisitViewRef = useRef<{ userId: string; view: View } | null>(null);
+  // The page a visit just landed on. The landing effect's setView hasn't applied
+  // yet when the URL-sync effect runs in the same commit, so the sync effect
+  // reads this instead of the stale `view` (your own page before the visit).
+  const visitLandingRef = useRef<View | null>(null);
   // True while the ONLY way we got to a game page was a cold deep link — Back
   // would leave the site, so the page's Back button goes to the board instead.
   // Cleared as soon as any in-app navigation pushes a history entry.
@@ -894,9 +898,13 @@ export default function App() {
   const applyRoute = useCallback(
     (route: Route) => {
       if (route.kind === "visit" || route.kind === "visitGame") {
+        pendingVisitViewRef.current = null;
         if (useStore.getState().viewing?.userId !== route.userId) {
           if (route.kind === "visitGame") pendingVisitGameRef.current = route.userId;
+          else if (route.view) pendingVisitViewRef.current = { userId: route.userId, view: route.view };
           void openUserBazaar(route.userId);
+        } else if (route.kind === "visit") {
+          setView(route.view ?? "profile");
         }
         if (route.kind !== "visitGame") pendingVisitGameRef.current = null;
         setOpenGameId(route.kind === "visitGame" ? route.gameId : null);
@@ -905,6 +913,7 @@ export default function App() {
       } else if (route.kind === "game") {
         if (useStore.getState().viewing) closeUserBazaar();
         pendingVisitGameRef.current = null;
+        pendingVisitViewRef.current = null;
         // Leave `view` as-is — it's the board the page's Back returns to.
         setOpenGameId(route.gameId);
         setOpenCompilationId(null);
@@ -912,6 +921,7 @@ export default function App() {
       } else if (route.kind === "compilation") {
         if (useStore.getState().viewing) closeUserBazaar();
         pendingVisitGameRef.current = null;
+        pendingVisitViewRef.current = null;
         // Leave `view` as-is, like a game page — Back returns to the board.
         setOpenGameId(null);
         setOpenCompilationId(route.compilationId);
@@ -919,6 +929,7 @@ export default function App() {
       } else if (route.kind === "list") {
         if (useStore.getState().viewing) closeUserBazaar();
         pendingVisitGameRef.current = null;
+        pendingVisitViewRef.current = null;
         // Leave `view` as-is, like a game page — Back returns to the board.
         setOpenGameId(null);
         setOpenCompilationId(null);
@@ -926,6 +937,7 @@ export default function App() {
       } else {
         if (useStore.getState().viewing) closeUserBazaar();
         pendingVisitGameRef.current = null;
+        pendingVisitViewRef.current = null;
         setOpenGameId(null);
         setOpenCompilationId(null);
         setOpenListId(null);
@@ -971,6 +983,8 @@ export default function App() {
   // not fire pop/hashchange, so this never loops; when a change came *from* the
   // URL the desired hash already matches and we skip the push.
   useEffect(() => {
+    const visitView = visitLandingRef.current ?? view;
+    visitLandingRef.current = null;
     if (!routeReadyRef.current) return;
     // While a visit-game deep link's Bazaar is still loading, the state only has
     // half the route (game id, no visit) — the URL is already right, leave it.
@@ -984,7 +998,7 @@ export default function App() {
         : openListId && !viewingUserId
           ? { kind: "list", listId: openListId }
           : viewingUserId
-            ? { kind: "visit", userId: viewingUserId }
+            ? { kind: "visit", userId: viewingUserId, view: isVisitView(visitView) ? visitView : undefined }
             : { kind: "view", view };
     const desired = routeToHash(route);
     const current = window.location.hash;
@@ -1018,6 +1032,7 @@ export default function App() {
     if (isAccountSwitch(prev, userId)) {
       if (useStore.getState().viewing) closeUserBazaar();
       pendingVisitGameRef.current = null;
+      pendingVisitViewRef.current = null;
       setOpenGameId(null);
       setView("backlog");
     }
@@ -1136,7 +1151,7 @@ export default function App() {
   const backFromGame = () => {
     if (deepLinkedGameRef.current) {
       deepLinkedGameRef.current = false;
-      window.location.hash = viewing ? `#u/${viewing.userId}` : "";
+      window.location.hash = viewing ? routeToHash({ kind: "visit", userId: viewing.userId, view }) : "";
     } else {
       window.history.back();
     }

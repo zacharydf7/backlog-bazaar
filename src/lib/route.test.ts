@@ -42,6 +42,17 @@ describe("parseHash", () => {
     expect(parseHash("#u/")).toEqual(HOME);
   });
 
+  it("parses a page inside a visit, and degrades a non-visit page to their Profile", () => {
+    expect(parseHash("#u/abc/v/master-ledger")).toEqual({
+      kind: "visit",
+      userId: "abc",
+      view: "master-ledger",
+    });
+    expect(parseHash("#u/abc/v/admin")).toEqual({ kind: "visit", userId: "abc" });
+    expect(parseHash("#u/abc/v/profile")).toEqual({ kind: "visit", userId: "abc" });
+    expect(parseHash("#u//v/playing")).toEqual(HOME);
+  });
+
   it("parses a game route", () => {
     expect(parseHash("#g/game-1")).toEqual({ kind: "game", gameId: "game-1" });
     expect(parseHash("#/g/game-1")).toEqual({ kind: "game", gameId: "game-1" });
@@ -94,8 +105,10 @@ describe("routeToHash", () => {
     expect(routeToHash({ kind: "view", view: "about" })).toBe("#about");
   });
 
-  it("encodes a visit", () => {
+  it("encodes a visit, with the page unless it's their Profile", () => {
     expect(routeToHash({ kind: "visit", userId: "abc" })).toBe("#u/abc");
+    expect(routeToHash({ kind: "visit", userId: "abc", view: "profile" })).toBe("#u/abc");
+    expect(routeToHash({ kind: "visit", userId: "abc", view: "playing" })).toBe("#u/abc/v/playing");
   });
 
   it("encodes a game page, standalone and inside a visit", () => {
@@ -143,6 +156,7 @@ describe("round-trip", () => {
     { kind: "view", view: "about" },
     { kind: "view", view: "privacy" },
     { kind: "visit", userId: "00000000-0000-0000-0000-000000000000" },
+    { kind: "visit", userId: "00000000-0000-0000-0000-000000000000", view: "master-ledger" },
     { kind: "game", gameId: "11111111-1111-1111-1111-111111111111" },
     {
       kind: "visitGame",

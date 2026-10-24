@@ -6,6 +6,7 @@ import { WHATS_NEW_ENABLED } from "./featureVisibility";
 // is unit-tested without the DOM; the effects that read/write history live in App.
 
 import type { View } from "../components/Sidebar";
+import type { GameStatus } from "../types";
 
 // Pages that can appear in the URL. The slug is the View id for stability;
 // "backlog" is home and uses an empty hash to keep the root URL clean.
@@ -53,9 +54,23 @@ const VIEWS: View[] = [
 
 const VIEW_SET = new Set<string>(VIEWS);
 
+/** The game-library sections (everything else is a discovery/utility page). */
+export function isGameStatus(v: View): v is GameStatus {
+  return v === "backlog" || v === "playing" || v === "finished" || v === "wishlist";
+}
+
+/** Views that belong to a player's collection, so navigating to them stays inside
+ *  a visit: the game boards plus their unified Master Ledger. Anything else (a
+ *  utility/discovery page) ends the visit and returns you to your own account. */
+export function isVisitView(v: View): boolean {
+  return isGameStatus(v) || v === "master-ledger" || v === "profile";
+}
+
 export type Route =
   | { kind: "view"; view: View }
-  | { kind: "visit"; userId: string }
+  // A visit, on one of their pages ("#u/<id>/v/<view>"), so Back walks their
+  // pages too (issue fcd0948d). No view means their Profile, the visit landing.
+  | { kind: "visit"; userId: string; view?: View }
   | { kind: "game"; gameId: string }
   | { kind: "visitGame"; userId: string; gameId: string }
   // A collapsed compilation's own page. Owner-only: visits never render
@@ -89,6 +104,17 @@ export function parseHash(hash: string): Route {
       if (userId && gameId) return { kind: "visitGame", userId, gameId };
       return userId ? { kind: "visit", userId } : HOME;
     }
+    // A page inside a visit: "u/<userId>/v/<view>". An unknown or non-visit
+    // page degrades to the plain visit (their Profile).
+    const viewSep = rest.indexOf("/v/");
+    if (viewSep >= 0) {
+      const userId = rest.slice(0, viewSep);
+      const view = rest.slice(viewSep + 3);
+      if (!userId) return HOME;
+      return VIEW_SET.has(view) && isVisitView(view as View) && view !== "profile"
+        ? { kind: "visit", userId, view: view as View }
+        : { kind: "visit", userId };
+    }
     return rest ? { kind: "visit", userId: rest } : HOME;
   }
   if (raw.startsWith("g/")) {
@@ -113,7 +139,11 @@ export function parseHash(hash: string): Route {
 
 /** The hash for a Route, including the leading "#". Home is "" (no hash). */
 export function routeToHash(route: Route): string {
-  if (route.kind === "visit") return `#u/${route.userId}`;
+  if (route.kind === "visit") {
+    return route.view && route.view !== "profile"
+      ? `#u/${route.userId}/v/${route.view}`
+      : `#u/${route.userId}`;
+  }
   if (route.kind === "game") return `#g/${route.gameId}`;
   if (route.kind === "visitGame") return `#u/${route.userId}/g/${route.gameId}`;
   if (route.kind === "compilation") return `#c/${route.compilationId}`;
