@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Clock,
   Download,
@@ -12,6 +12,7 @@ import {
   RotateCcw,
   StickyNote,
   Trophy,
+  UserRound,
   Users,
   type LucideIcon,
 } from "lucide-react";
@@ -22,6 +23,7 @@ import { TitleBadge } from "../TitleBadge";
 import { EmptyState } from "./EmptyState";
 import { timeAgo } from "../../lib/time";
 import { activityHeadline, activityCoins } from "../../lib/social";
+import { loadFeedShowMine, saveFeedShowMine } from "../../lib/community";
 import type { ActivityKind } from "../../types";
 
 const KIND_ICONS: Record<ActivityKind, LucideIcon> = {
@@ -51,9 +53,33 @@ export function ActivitySection({ onFindFriends }: { onFindFriends: () => void }
     uncheerActivity,
   } = useStore();
 
+  // Show mine (issue 337e39ca): your own lines alongside your friends', as
+  // they see them. Remembered on this device.
+  const [showMine, setShowMine] = useState(loadFeedShowMine);
   useEffect(() => {
-    void fetchFeed();
-  }, [fetchFeed]);
+    void fetchFeed(showMine);
+  }, [fetchFeed, showMine]);
+
+  const showMineToggle = (
+    <div className="flex justify-end border-b border-line px-4 py-2">
+      <button
+        onClick={() => {
+          setShowMine(!showMine);
+          saveFeedShowMine(!showMine);
+        }}
+        aria-pressed={showMine}
+        title="Include your own activity, as your friends see it"
+        className={
+          "inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-sm transition " +
+          (showMine
+            ? "border-brand/50 bg-brand/10 text-accent"
+            : "border-line bg-panel text-ink hover:bg-panel/70")
+        }
+      >
+        <UserRound size={14} /> Show mine
+      </button>
+    </div>
+  );
 
   // Auto-load ahead of the sentinel; the store guards re-entrancy and the end
   // of the feed, so firing on every intersection tick is safe.
@@ -75,6 +101,7 @@ export function ActivitySection({ onFindFriends }: { onFindFriends: () => void }
   if (feed.length === 0) {
     return (
       <div className="rounded-2xl border border-line bg-surface">
+        {showMineToggle}
         <EmptyState
           icon={Newspaper}
           title="No activity yet"
@@ -94,6 +121,7 @@ export function ActivitySection({ onFindFriends }: { onFindFriends: () => void }
 
   return (
     <div className="rounded-2xl border border-line bg-surface">
+      {showMineToggle}
       <ul className="divide-y divide-line">
         {feed.map((e) => {
           const coins = activityCoins(e);

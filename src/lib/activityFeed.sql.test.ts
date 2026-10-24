@@ -158,10 +158,14 @@ type FeedRow = {
   cosmetics: { frame: string };
 };
 
-async function feed(before: string | null = null, limit = 30) {
+async function feed(before: string | null = null, limit = 30, includeMe = false) {
   await db.exec(`set test.uid = '${ME}'`);
   return (
-    await db.query<FeedRow>("select * from public.list_activity_feed($1, $2)", [before, limit])
+    await db.query<FeedRow>("select * from public.list_activity_feed($1, $2, $3)", [
+      before,
+      limit,
+      includeMe,
+    ])
   ).rows.map((r) => ({ ...r, cheer_count: Number(r.cheer_count) }));
 }
 
@@ -441,6 +445,34 @@ describe("list_activity_feed", () => {
     expect(await feed()).toHaveLength(1);
     await db.exec(`update public.profiles set privacy = '{"private_profile": true}' where id = '${SORA}'`);
     expect(await feed()).toEqual([]);
+  });
+
+  it("adds my own lines when asked, as my friends see them (issue 337e39ca)", async () => {
+    const MINE = "00000000-0000-4000-8000-0000000000b3";
+    await db.exec(`insert into public.games (id, user_id, title, status) values ('${MINE}', '${ME}', 'Celeste', 'playing')`);
+    await post(SORA, "medal_earned", "2026-10-20T09:00:00Z", { name: "First Clear" }, null);
+    await post(ME, "played", "2026-10-20T10:00:00Z", { hours: 1 }, MINE);
+    await post(ME, "medal_earned", "2026-10-20T11:00:00Z", { name: "Night Owl" }, null);
+    const lines = async (includeMe: boolean) =>
+      (await feed(null, 30, includeMe)).map((r) => [r.actor === ME ? "me" : "sora", r.kind]);
+    expect(await lines(false)).toEqual([["sora", "medal_earned"]]);
+    expect(await lines(true)).toEqual([
+      ["me", "medal_earned"],
+      ["me", "played"],
+      ["sora", "medal_earned"],
+    ]);
+    // Hidden from friends means hidden here too.
+    await db.exec(`update public.profiles set privacy = '{"hide_play_activity": true}' where id = '${ME}'`);
+    expect(await lines(true)).toEqual([
+      ["me", "medal_earned"],
+      ["sora", "medal_earned"],
+    ]);
+  });
+
+  it("reaches back for my own older lines when no friend has any", async () => {
+    const longAgo = new Date(Date.now() - 60 * 86_400_000).toISOString();
+    await post(ME, "medal_earned", longAgo, { name: "Night Owl" }, null);
+    expect(await feed(null, 30, true)).toHaveLength(1);
   });
 
   it("keeps a private game's posts hidden after the game is deleted", async () => {

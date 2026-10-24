@@ -16737,8 +16737,13 @@ $$;
 -- p_before). Every row of a line lies within one local day (25 hours at
 -- most), so it reads only raw rows within 26 hours of that range: a line is
 -- either entirely inside the scan or left out, never partial.
+--
+-- p_include_me (issue 337e39ca) adds the viewer's own lines, read through the
+-- same privacy filters as a friend's, so it shows what friends see of you.
+-- Dropped first: the added parameter would otherwise leave an overload.
+drop function if exists public.activity_feed_lines(uuid, timestamptz, timestamptz);
 create or replace function public.activity_feed_lines(
-  p_viewer uuid, p_from timestamptz, p_before timestamptz
+  p_viewer uuid, p_from timestamptz, p_before timestamptz, p_include_me boolean default false
 )
 returns table (
   id uuid, actor uuid, kind text, game_title text, detail jsonb, created_at timestamptz
@@ -16752,7 +16757,9 @@ begin
     select f.fid, public.player_tz(f.fid) as tz
       from (select case when requester = p_viewer then addressee else requester end as fid
               from public.friendships
-             where status = 'accepted' and p_viewer in (requester, addressee)) f
+             where status = 'accepted' and p_viewer in (requester, addressee)
+            union
+            select p_viewer where p_include_me) f
   ),
   visible as (
     select a.id, a.actor, a.kind, a.game_title, a.created_at,
@@ -16818,18 +16825,21 @@ begin
    where l.created_at >= p_from and (p_before is null or l.created_at < p_before);
 end;
 $$;
-revoke execute on function public.activity_feed_lines(uuid, timestamptz, timestamptz) from public, anon, authenticated;
+revoke execute on function public.activity_feed_lines(uuid, timestamptz, timestamptz, boolean) from public, anon, authenticated;
 
 -- The page scans a bounded window of history: the 7 days before p_before (or
 -- now), widened to 30 days, 180 days, then everything, until the window holds
 -- a full page or no friend has anything older. Paging stays exact because
 -- activity_feed_lines never splits a day across the window's edge. Each line
 -- carries the actor's title and cosmetics (owner, 2026-10-23); a hard-private
--- actor never reaches the feed. Dropped first: the return shape changed.
+-- actor never reaches the feed. p_include_me adds your own lines (the
+-- Activity page's Show mine switch, issue 337e39ca). Dropped first: the
+-- return shape changed, then the parameters.
 drop function if exists public.list_activity_feed(timestamptz, integer);
 create or replace function public.list_activity_feed(
-  p_before timestamptz default null,
-  p_limit  integer default 30
+  p_before     timestamptz default null,
+  p_limit      integer default 30,
+  p_include_me boolean default false
 )
 returns table (
   id uuid, actor uuid, actor_name text, actor_avatar text,
@@ -16850,14 +16860,17 @@ begin
   if v_me is null then raise exception 'Not authenticated'; end if;
 
   foreach v_span in array array[interval '7 days', interval '30 days', interval '180 days'] loop
-    if (select count(*) from (select 1 from public.activity_feed_lines(v_me, v_top - v_span, p_before)
+    if (select count(*) from (select 1 from public.activity_feed_lines(v_me, v_top - v_span, p_before, p_include_me)
                                limit v_limit) x) >= v_limit
        or not exists (
          select 1 from public.friendships f
            join public.activity_events a
              on a.actor = case when f.requester = v_me then f.addressee else f.requester end
           where f.status = 'accepted' and v_me in (f.requester, f.addressee)
-            and a.created_at < v_top - v_span) then
+            and a.created_at < v_top - v_span
+         union all
+         select 1 from public.activity_events a
+          where p_include_me and a.actor = v_me and a.created_at < v_top - v_span) then
       v_from := v_top - v_span;
       exit;
     end if;
@@ -16869,7 +16882,7 @@ begin
     (select count(*) from public.activity_cheers c where c.event_id = l.id),
     exists (select 1 from public.activity_cheers c where c.event_id = l.id and c.user_id = v_me),
     public.user_title_json(l.actor), public.user_cosmetics_json(l.actor)
-  from public.activity_feed_lines(v_me, v_from, p_before) l
+  from public.activity_feed_lines(v_me, v_from, p_before, p_include_me) l
   join public.profiles p on p.id = l.actor
   order by l.created_at desc, l.id desc
   limit v_limit;
@@ -16964,7 +16977,7 @@ revoke execute on function public.remove_friend(uuid)                 from publi
 revoke execute on function public.search_users(text)                  from public, anon;
 revoke execute on function public.list_friends()                      from public, anon;
 revoke execute on function public.list_friend_requests()              from public, anon;
-revoke execute on function public.list_activity_feed(timestamptz, integer) from public, anon;
+revoke execute on function public.list_activity_feed(timestamptz, integer, boolean) from public, anon;
 revoke execute on function public.cheer_activity(uuid)                from public, anon;
 revoke execute on function public.uncheer_activity(uuid)              from public, anon;
 
@@ -16975,7 +16988,7 @@ grant execute on function public.remove_friend(uuid)                  to authent
 grant execute on function public.search_users(text)                   to authenticated;
 grant execute on function public.list_friends()                       to authenticated;
 grant execute on function public.list_friend_requests()               to authenticated;
-grant execute on function public.list_activity_feed(timestamptz, integer) to authenticated;
+grant execute on function public.list_activity_feed(timestamptz, integer, boolean) to authenticated;
 grant execute on function public.cheer_activity(uuid)                 to authenticated;
 grant execute on function public.uncheer_activity(uuid)               to authenticated;
 

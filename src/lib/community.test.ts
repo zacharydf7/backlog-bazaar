@@ -4,6 +4,8 @@ import {
   isCommunityView,
   loadCommunitySection,
   saveCommunitySection,
+  loadFeedShowMine,
+  saveFeedShowMine,
 } from "./community";
 
 describe("COMMUNITY_VIEWS", () => {
@@ -45,5 +47,17 @@ describe("remembered section", () => {
   it("falls back to Friends for an unrecognized stored value", () => {
     localStorage.setItem("bb:community-section", "leaderboard");
     expect(loadCommunitySection()).toBe("community");
+  });
+});
+
+describe("remembered Show mine switch", () => {
+  beforeEach(() => localStorage.clear());
+
+  it("is off until turned on, and remembers either way", () => {
+    expect(loadFeedShowMine()).toBe(false);
+    saveFeedShowMine(true);
+    expect(loadFeedShowMine()).toBe(true);
+    saveFeedShowMine(false);
+    expect(loadFeedShowMine()).toBe(false);
   });
 });

@@ -79,6 +79,7 @@ function pageProps() {
 }
 
 beforeEach(() => {
+  localStorage.removeItem("bb:feed-show-mine");
   act(() =>
     useStore.setState({
       userId: "me",
@@ -264,6 +265,19 @@ describe("Activity section", () => {
     render(<CommunityPage view="community-activity" {...pageProps()} />);
     fireEvent.click(screen.getByRole("button", { name: /Show more/i }));
     expect(more).toHaveBeenCalled();
+  });
+
+  it("shows my own activity when I turn on Show mine, and remembers it (337e39ca)", () => {
+    const fetchFeed = vi.fn(async () => {});
+    act(() => useStore.setState({ feed: [ev()], fetchFeed }));
+    render(<CommunityPage view="community-activity" {...pageProps()} />);
+    expect(fetchFeed).toHaveBeenLastCalledWith(false);
+    const toggle = screen.getByRole("button", { name: /Show mine/i });
+    expect(toggle.getAttribute("aria-pressed")).toBe("false");
+    fireEvent.click(toggle);
+    expect(fetchFeed).toHaveBeenLastCalledWith(true);
+    expect(toggle.getAttribute("aria-pressed")).toBe("true");
+    expect(localStorage.getItem("bb:feed-show-mine")).toBe("1");
   });
 
   it("offers Find friends from the empty state", () => {

@@ -49,3 +49,25 @@ export function saveCommunitySection(v: CommunityView): void {
     /* ignore */
   }
 }
+
+const FEED_MINE_PREF_KEY = "bb:feed-show-mine";
+
+/** Whether the Activity feed shows your own lines too (issue 337e39ca),
+ *  remembered on this device. Off when nothing's stored or localStorage is
+ *  unavailable. */
+export function loadFeedShowMine(): boolean {
+  try {
+    return localStorage.getItem(FEED_MINE_PREF_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+/** Remember the Activity feed's Show mine switch for next time. */
+export function saveFeedShowMine(on: boolean): void {
+  try {
+    localStorage.setItem(FEED_MINE_PREF_KEY, on ? "1" : "0");
+  } catch {
+    /* ignore */
+  }
+}

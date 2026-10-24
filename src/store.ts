@@ -1134,6 +1134,7 @@ interface BazaarState {
   feed: ActivityEvent[];
   feedHasMore: boolean;
   feedLoadingMore: boolean;
+  feedIncludeMine: boolean; // the Show mine setting most recently requested
   // Market Square community sections (Phase 2). null = not loaded yet, so the
   // page can tell "empty" from "still fetching".
   squareFeed: ActivityEvent[] | null;
@@ -1926,7 +1927,7 @@ interface BazaarState {
   respondFriendRequest: (id: string, accept: boolean) => Promise<boolean>;
   cancelFriendRequest: (id: string) => Promise<boolean>;
   removeFriend: (userId: string) => Promise<boolean>;
-  fetchFeed: () => Promise<void>;
+  fetchFeed: (includeMine?: boolean) => Promise<void>;
   loadMoreFeed: () => Promise<void>;
   fetchSquare: () => Promise<void>;
   loadMoreSquareFeed: () => Promise<void>;
@@ -2289,6 +2290,7 @@ export const useStore = create<BazaarState>((set, get) => ({
   feed: [],
   feedHasMore: false,
   feedLoadingMore: false,
+  feedIncludeMine: false,
   squareFeed: null,
   squareFeedHasMore: false,
   squareFeedLoadingMore: false,
@@ -11323,9 +11325,16 @@ export const useStore = create<BazaarState>((set, get) => ({
     return true;
   },
 
-  fetchFeed: async () => {
+  // includeMine adds your own lines (the Show mine switch). A later call wins:
+  // a reply for a switch setting that's since changed is dropped.
+  fetchFeed: async (includeMine = false) => {
     if (!supabase) return;
-    const { data, error } = await supabase.rpc("list_activity_feed", { p_limit: FEED_PAGE });
+    set({ feedIncludeMine: includeMine });
+    const { data, error } = await supabase.rpc("list_activity_feed", {
+      p_limit: FEED_PAGE,
+      p_include_me: includeMine,
+    });
+    if (get().feedIncludeMine !== includeMine) return;
     if (error) {
       set({ error: error.message });
       return;
@@ -11337,14 +11346,25 @@ export const useStore = create<BazaarState>((set, get) => ({
   // Append the next page of older posts, keyset-paginated on the oldest loaded
   // post's timestamp. Dedupes by id and guards re-entrancy + the end of the list.
   loadMoreFeed: async () => {
-    const { feed, feedHasMore, feedLoadingMore } = get();
+    const { feed, feedHasMore, feedLoadingMore, feedIncludeMine } = get();
     if (!supabase || !feedHasMore || feedLoadingMore || feed.length === 0) return;
     set({ feedLoadingMore: true });
     const before = new Date(feed[feed.length - 1].createdAt).toISOString();
     const { data, error } = await supabase.rpc("list_activity_feed", {
       p_before: before,
       p_limit: FEED_PAGE,
+      p_include_me: feedIncludeMine,
     });
+    // The feed was replaced mid-load (the switch flipped): this page continues
+    // the old list, so it would leave a gap. Compared by the cursor line's id,
+    // since a cheer copies the list without replacing it.
+    if (
+      get().feedIncludeMine !== feedIncludeMine ||
+      get().feed[get().feed.length - 1]?.id !== feed[feed.length - 1].id
+    ) {
+      set({ feedLoadingMore: false });
+      return;
+    }
     if (error) {
       set({ error: error.message, feedLoadingMore: false });
       return;
