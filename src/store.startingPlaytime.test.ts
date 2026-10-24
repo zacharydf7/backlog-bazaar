@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 // Time already played, entered when adding a game, is catch-up, not this
-// week's play (owner reports, 2026-10-17): the store sends it through the
-// bonus-free set_platform_playtime call, which the server logs as 'backfill'
-// (src/lib/playtimeSource.sql.test.ts) — never as a plain played_hours update.
+// week's play (owner reports, 2026-10-17): the store sends it through
+// set_platform_playtime, which the server logs as typed catch-up
+// (src/lib/playtimeSource.sql.test.ts), never as a plain played_hours update.
 // The Supabase boundary is mocked.
 const h = vi.hoisted(() => {
   const state = {
@@ -73,7 +73,6 @@ describe("starting playtime at add", () => {
           p_platform: "PlayStation 5",
           p_format: "digital",
           p_hours: 356,
-          p_session_bonus: false,
         },
       },
     ]);

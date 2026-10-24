@@ -213,12 +213,13 @@ describe("feature bonuses — the server-side anti-farm rules", () => {
     expect(fn).toContain("for update");
   });
 
-  it("every way of logging time pays the Daily Session bonus through one rule", () => {
+  it("logged time pays the Daily Session bonus, and typed hours never do", () => {
     // The rule itself (daily cap, minimum, economy-off) is exercised in
-    // src/lib/sessionBonus.sql.test.ts.
+    // src/lib/sessionBonus.sql.test.ts. Typed hours are catch-up (owner,
+    // 2026-10-24, issue 0b535cb2).
     expect(body("log_playtime")).toContain("public.pay_session_bonus(auth.uid(), p_game, p_hours)");
-    const played = body("set_platform_playtime");
-    expect(played).toContain("if p_hours > v_current and p_session_bonus then");
-    expect(played).toContain("public.pay_session_bonus(auth.uid(), p_game, p_hours - v_current)");
+    const typed = body("set_platform_playtime");
+    expect(typed).not.toContain("pay_session_bonus");
+    expect(typed).not.toContain("rotation_play_rewards");
   });
 });

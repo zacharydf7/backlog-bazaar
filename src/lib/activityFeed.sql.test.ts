@@ -181,8 +181,13 @@ describe("capture", () => {
   });
 
   describe("hours typed into the Played fields (issue 0b535cb2)", () => {
-    const log = (h: number) =>
-      db.exec(`update public.games set played_hours = played_hours + ${h} where id = '${MH}'`);
+    // Each step is its own request in the app, so give it its own moment: the
+    // rules read which came first, and PGlite's clock only has milliseconds.
+    const tick = () => new Promise((resolve) => setTimeout(resolve, 2));
+    const log = async (h: number) => {
+      await tick();
+      await db.exec(`update public.games set played_hours = played_hours + ${h} where id = '${MH}'`);
+    };
     // set_platform_playtime marks its writes explicit; this stands in for it.
     async function typed(...steps: number[]) {
       await db.exec(`set app.play_platform_explicit = 'true'`);
@@ -208,10 +213,21 @@ describe("capture", () => {
       expect(await day()).toEqual([0.5]);
     });
 
-    it("leaves logged play alone when hours move between platforms", async () => {
+    it("leaves logged play alone when a bucket is cleared and re-set", async () => {
       await log(2);
       await typed(-2, 3); // clear the logged bucket, then set the platform row
       expect(await day()).toEqual([2]);
+    });
+
+    it("posts nothing when a typed drop is later typed back up", async () => {
+      await typed(-30, 10);
+      expect(await posts()).toEqual([]);
+    });
+
+    it("leaves logged play alone across a typed drop and rise bigger than a day", async () => {
+      await log(1);
+      await typed(-20, 25);
+      expect(await day()).toEqual([1]);
     });
 
     it("still takes a mistaken log back off when it's typed down", async () => {

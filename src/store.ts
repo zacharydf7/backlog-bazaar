@@ -1539,15 +1539,13 @@ interface BazaarState {
   removeGameMilestone: (id: string) => Promise<boolean>;
   // Set the total logged hours for one version (platform + format) of a game — or
   // the Unspecified bucket when platform is null — logging an attributed
-  // correction. Cloud only; used by the per-version playtime editor.
-  // `sessionBonus: false` for starting playtime entered at add/attach time
-  // (past play), which never earns a Daily Session bonus.
+  // correction. Cloud only; used by the per-version playtime editor. Typed
+  // hours are catch-up, so they earn no Daily Session bonus.
   setPlatformPlaytime: (
     id: string,
     platform: string | null,
     format: CopyFormat | null,
     hours: number,
-    opts?: { sessionBonus?: boolean },
   ) => Promise<void>;
   // Page through the Transaction Ledger newest-first; `done` = no older rows.
   fetchLedger: (offset: number) => Promise<{ entries: LedgerEntry[]; done: boolean }>;
@@ -5362,7 +5360,7 @@ export const useStore = create<BazaarState>((set, get) => ({
     // the row to exist, and each logs an attributed playtime event and mirrors
     // the new total into state via setPlatformPlaytime).
     for (const vh of startingHours) {
-      await get().setPlatformPlaytime(row.id, vh.platform, vh.format, vh.hours, { sessionBonus: false });
+      await get().setPlatformPlaytime(row.id, vh.platform, vh.format, vh.hours);
     }
     addedToast(meta.title, status);
     // Library growth (and a straight-to-Finished add) can cross thresholds.
@@ -5421,9 +5419,7 @@ export const useStore = create<BazaarState>((set, get) => ({
           breakdown.byVersion.find(
             (v) => v.platform === vh.platform && (v.format ?? null) === (vh.format ?? null),
           )?.hours ?? 0;
-        await get().setPlatformPlaytime(id, vh.platform, vh.format, current + vh.hours, {
-          sessionBonus: false,
-        });
+        await get().setPlatformPlaytime(id, vh.platform, vh.format, current + vh.hours);
       }
     }
     toast(`Added a new copy of ${game.title}`, Package);
@@ -7730,17 +7726,14 @@ export const useStore = create<BazaarState>((set, get) => ({
   // Set one version's logged hours (or the Unspecified bucket when platform is
   // null). The RPC logs an attributed correction and returns the game's new grand
   // total, which we mirror into the local games state. Cloud only.
-  setPlatformPlaytime: async (id, platform, format, hours, opts) => {
+  setPlatformPlaytime: async (id, platform, format, hours) => {
     if (!supabase || !get().cloud) return;
     const safe = Math.max(0, Math.round(hours * 60) / 60); // ≥0, snap to the minute
-    const sessionBonus = opts?.sessionBonus !== false;
-    const before = get().games.find((g) => g.id === id)?.playedHours ?? 0;
     const { data, error } = await supabase.rpc("set_platform_playtime", {
       p_game: id,
       p_platform: platform,
       p_format: format,
       p_hours: safe,
-      p_session_bonus: sessionBonus,
     });
     if (error) {
       set({ error: error.message });
@@ -7751,37 +7744,6 @@ export const useStore = create<BazaarState>((set, get) => ({
       set({ games: get().games.map((g) => (g.id === id ? { ...g, playedHours: total } : g)) });
     }
     await get().refreshHeldBounty(id);
-    // Time added to a Rotation game also counts toward its milestones and the
-    // Regular streak, and checks it in for the week (rotation_play_rewards).
-    const inRotation = get().games.find((g) => g.id === id)?.inRotation === true;
-    if (sessionBonus && inRotation && Number.isFinite(total) && total > before) {
-      set({ rotationCheckedIn: [...new Set([...get().rotationCheckedIn, id])] });
-      void get().fetchRotationProgress();
-    }
-    // Added time can earn a Daily Session bonus server-side: re-read the
-    // balance and say so (a hold release above already re-read it too).
-    if (sessionBonus && Number.isFinite(total) && total > before) {
-      const coinsBefore = get().coins;
-      const { data: prof } = await supabase
-        .from("profiles")
-        .select("coins")
-        .eq("id", get().userId ?? "")
-        .maybeSingle();
-      const coins = (prof as { coins?: number } | null)?.coins;
-      if (typeof coins === "number") {
-        set({ coins });
-        if (coins > coinsBefore) {
-          const event = get().bonusPerks[id]?.session?.event;
-          toast(
-            inRotation
-              ? `+${coins - coinsBefore} coins for logging time`
-              : `Daily Session +${coins - coinsBefore}${event ? ` · ${event} bonus included` : ""}`,
-            Sparkles,
-          );
-          if (get().bonusEvents.length > 0) void get().fetchBonusEvents();
-        }
-      }
-    }
   },
 
   // Replace a game's list of copies (the platforms you own it on + what each

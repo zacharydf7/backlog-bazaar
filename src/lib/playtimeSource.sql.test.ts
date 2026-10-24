@@ -2,11 +2,11 @@
 //
 // Exercises the REAL log_playtime_event trigger and set_platform_playtime
 // from schema.sql in an embedded Postgres (PGlite): play logged as it happens
-// is 'live', while catch-up is 'backfill' (owner reports, 2026-10-17) — the
-// starting time entered when a game is added or a copy attached (the
-// bonus-free set_platform_playtime call), and any single change over 24 hours
-// either way. It also checks which version an unattributed session is
-// credited to. Tables are trimmed; pay_session_bonus and auth.uid are stubbed.
+// is 'live', while catch-up is 'backfill' (owner reports, 2026-10-17): any
+// single change over 24 hours either way, and hours typed into the Played
+// fields (owner, 2026-10-24) apart from a same-day take-back. It also checks
+// which version an unattributed session is credited to. Tables are trimmed;
+// auth.uid is stubbed.
 import { readFileSync } from "node:fs";
 import { PGlite } from "@electric-sql/pglite";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
@@ -40,12 +40,10 @@ beforeAll(async () => {
       drop_in boolean not null default false, note text, demo boolean not null default false,
       via_editor boolean not null default false,
       created_at timestamptz not null default now());
-    create table public.bonus_calls (hours real);
-    create function public.rotation_play_rewards(p_game uuid) returns table (milestone integer, regular integer, checkin integer)
-      language sql as $$ select 0, 0, null::integer $$;
-    create function public.pay_session_bonus(p_user uuid, p_game uuid, p_hours real) returns integer
-      language sql as $$ insert into public.bonus_calls values (p_hours); select 5 $$;
+    create table public.user_time_zones (user_id uuid primary key, time_zone text not null);
+    create table public.app_config (id integer primary key, rotation_reset_tz text);
   `);
+  await db.exec(fn("player_tz"));
   await db.exec(fn("log_playtime_event"));
   await db.exec(`create trigger games_log_playtime after update of played_hours on public.games
     for each row execute function public.log_playtime_event()`);
@@ -58,7 +56,7 @@ afterAll(async () => {
 
 beforeEach(async () => {
   await db.exec(`
-    delete from public.playtime_events; delete from public.games; delete from public.bonus_calls;
+    delete from public.playtime_events; delete from public.games;
     insert into public.games (id, user_id, title) values ('${G}', '${ME}', 'Hades');
     select set_config('test.uid', '${ME}', false);
   `);
@@ -80,14 +78,107 @@ describe("playtime source", () => {
     ]);
   });
 
-  it("logs starting time (the bonus-free call) as catch-up, with no bonus", async () => {
-    await db.query("select public.set_platform_playtime($1, 'PC', null, 12, false)", [G]);
-    await db.query("select public.set_platform_playtime($1, 'PC', null, 14, true)", [G]);
+  it("logs hours typed into the Played fields as catch-up (issue 0b535cb2)", async () => {
+    await db.query("select public.set_platform_playtime($1, 'PC', null, 12)", [G]);
+    await db.query("select public.set_platform_playtime($1, 'PC', null, 14)", [G]);
     expect(await sources()).toEqual([
-      { hours: 2, source: "live" },
+      { hours: 2, source: "backfill" },
       { hours: 12, source: "backfill" },
     ]);
-    expect((await db.query("select hours from public.bonus_calls")).rows).toEqual([{ hours: 2 }]);
+  });
+});
+
+describe("typed edits against play logged today (issue 0b535cb2)", () => {
+  // Each step is its own request in the app, so give it its own moment: the
+  // rules read which came first, and PGlite's clock only has milliseconds.
+  const tick = () => new Promise((resolve) => setTimeout(resolve, 2));
+  const log = async (h: number) => {
+    await tick();
+    await db.exec(`update public.games set played_hours = played_hours + ${h} where id = '${G}'`);
+  };
+  /** Type a version's hours to `total` in the Played fields. */
+  const type = async (platform: string | null, total: number, format: string | null = null) => {
+    await tick();
+    await db.query("select public.set_platform_playtime($1, $2, $3, $4)", [G, platform, format, total]);
+  };
+  const ownPcDigital = () =>
+    db.exec(`update public.games set copies = '[{"id":"c","platform":"PC","format":"digital"}]' where id = '${G}'`);
+  async function live() {
+    const r = await db.query<{ h: number }>(
+      "select coalesce(sum(hours), 0)::real as h from public.playtime_events where source = 'live'",
+    );
+    return Math.round(r.rows[0].h * 100) / 100;
+  }
+
+  it("takes a mistaken log back when it's typed down", async () => {
+    await log(15);
+    await type(null, 1.5);
+    expect(await live()).toBe(1.5);
+  });
+
+  it("leaves logged play alone when a fill-in is typed and then fixed", async () => {
+    await log(2);
+    await type("PC", 10);
+    await type("PC", 8);
+    expect(await live()).toBe(2);
+  });
+
+  it("uses up a typo'd fill-in before logged play on the same platform", async () => {
+    await log(2);
+    await type(null, 12); // a 10h fill-in on the same bucket as the log
+    await type(null, 10); // the typo fixed
+    expect(await live()).toBe(2);
+  });
+
+  it("leaves logged play alone when a format's hours fold into its platform row", async () => {
+    await ownPcDigital();
+    await log(2); // credited to PC (Digital)
+    await type("PC", 0, "digital"); // the editor clears the folded bucket…
+    await type("PC", 3); // …then sets the platform row, one hour higher
+    expect(await live()).toBe(2);
+    expect(await sources()).toEqual([
+      { hours: -2, source: "live" },
+      { hours: 1, source: "backfill" },
+      { hours: 2, source: "live" },
+      { hours: 2, source: "live" },
+    ]);
+  });
+
+  it("takes a mistaken log back even after starting hours were typed that day", async () => {
+    await ownPcDigital();
+    await type("PC", 356, "digital"); // starting hours, typed at add
+    await log(15);
+    await type("PC", 357.5, "digital");
+    expect(await live()).toBe(1.5);
+  });
+
+  it("never gives a taken-back log back as a fill-in on another platform", async () => {
+    await log(15);
+    await type(null, 1.5);
+    await type("PS5", 10);
+    expect(await live()).toBe(1.5);
+  });
+
+  it("counts today's logged hours moved to another platform as catch-up (known limit)", async () => {
+    await log(2);
+    await type(null, 0);
+    await type("PC", 2);
+    expect(await live()).toBe(0);
+  });
+
+  it("leaves logged play alone across a move bigger than a day", async () => {
+    await type("PS5", 20); // yesterday's history, typed in
+    await log(1);
+    await type("PS5", 0);
+    await type("PC", 25);
+    expect(await live()).toBe(1);
+  });
+
+  it("never turns a typed drop and rise into play", async () => {
+    await type("PC", 50);
+    await type("PC", 20);
+    await type("PC", 30);
+    expect(await live()).toBe(0);
   });
 });
 

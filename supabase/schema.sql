@@ -9647,13 +9647,13 @@ drop function if exists public.log_playtime(uuid, real, text, text);
 -- (Re-dropped each apply: the Rotation milestone column, 2026-10-17, widened
 -- the result, and p_note, 2026-10-18, added a parameter.)
 -- Daily Session bonus (feature bonuses): each logging of play time — the Log
--- button, a stopwatch stop (end_play_session -> log_playtime) or time added in
--- the Played editor (set_platform_playtime) — pays session_bonus coins, up to
+-- button or a stopwatch stop (end_play_session -> log_playtime) — pays session_bonus coins, up to
 -- session_bonus_daily_cap times a day (owner, 2026-10-17: 3 x 5 coins), for a
 -- log of at least session_bonus_min_minutes (0 = any length). Days turn over at
 -- midnight in the Rotation reset's timezone. The profile row is locked first so
 -- racing logs can't both take the last slot. Only the logging player earns it
--- (a co-op partner's mirrored time never does). Returns the coins paid.
+-- (a co-op partner's mirrored time never does). Hours typed into the Played
+-- editor are catch-up and pay none. Returns the coins paid.
 create or replace function public.pay_session_bonus(p_user uuid, p_game uuid, p_hours real)
 returns integer
 language plpgsql security definer set search_path = public
@@ -12698,6 +12698,13 @@ declare
   v_pact     uuid;
   v_session  uuid;
   v_source   text;
+  v_delta    real;
+  v_live     real := 0;
+  v_tz       text;
+  v_logged   real;
+  v_applied  real;
+  v_last_log timestamptz;
+  v_since    real;
 begin
   -- The instance-split migration MOVES a platform's sessions to the new
   -- instance and lowers the source's scalar to match — that reduction is a
@@ -12743,26 +12750,67 @@ begin
     -- so the event links back to its play_sessions row. NB: the mirrored co-op
     -- partner's row carries it too — the shared delta came from the same session.
     v_session := nullif(current_setting('app.play_session', true), '')::uuid;
-    -- Catch-up time is history, not this week's play (owner, 2026-10-17): the
-    -- starting time entered when a game is added or a copy attached (the
-    -- caller marks the transaction with app.play_source), and any single
-    -- change over 24 hours either way, since no day holds more play than that.
-    -- Totals still include it; time-windowed stats count only 'live'.
-    v_source := case
-      when coalesce(current_setting('app.play_source', true), '') = 'backfill'
-        or abs(new.played_hours - old.played_hours) > 24 then 'backfill'
-      else 'live'
-    end;
+    -- Catch-up time is history, not this week's play (owner, 2026-10-17): any
+    -- single change over 24 hours either way, since no day holds more play
+    -- than that. Totals still include it; time-windowed stats count only 'live'.
+    v_delta := new.played_hours - old.played_hours;
+    v_source := case when abs(v_delta) > 24 then 'backfill' else 'live' end;
+    -- Hours typed into the Played fields (and the starting hours typed when a
+    -- game is added or a copy attached) are catch-up too (owner, 2026-10-24,
+    -- issue 0b535cb2): no recap, goal, feed or Rotation credit. The one live
+    -- part of a typed edit is the play logged today on that platform it takes
+    -- back, so a mistaken log can still be typed down; typing down first uses
+    -- up hours typed there since its last log (a fill-in's typo fixed), and
+    -- typing up gives back only what was taken back there today, which keeps
+    -- a format's hours folded into its platform row (the editor clears one,
+    -- then sets the other) from touching real play. Separate edits can't say whether they're
+    -- a move, a fill-in or a fix, so some cases stay inexact, all within the
+    -- day's logged play: moving today's logged hours to another platform
+    -- (including the Unspecified row clearing a platform you no longer own)
+    -- counts them as catch-up, fixing a fill-in typed before that platform's
+    -- last log takes back logged play, and a fill-in on a platform after a
+    -- same-day take-back there gives that play back. The live part is its own row; the
+    -- rest is a catch-up row beside it.
+    if v_explicit then
+      v_tz := public.player_tz(new.user_id);
+      select coalesce(sum(e.hours) filter (where not e.via_editor and e.source = 'live'), 0),
+             coalesce(sum(e.hours) filter (where e.via_editor and e.source = 'live'), 0),
+             max(e.created_at) filter (where not e.via_editor and e.source = 'live')
+        into v_logged, v_applied, v_last_log
+        from public.playtime_events e
+       where e.user_id = new.user_id and e.game_id = new.id
+         and nullif(btrim(e.platform), '') is not distinct from v_platform
+         and (e.created_at at time zone v_tz)::date = (now() at time zone v_tz)::date;
+      select coalesce(sum(e.hours), 0) into v_since
+        from public.playtime_events e
+       where e.user_id = new.user_id and e.game_id = new.id and e.via_editor and e.source = 'backfill'
+         and nullif(btrim(e.platform), '') is not distinct from v_platform
+         and e.created_at > coalesce(v_last_log, '-infinity')
+         and (e.created_at at time zone v_tz)::date = (now() at time zone v_tz)::date;
+      v_live := case when v_delta < 0
+                     then least(0, greatest(v_delta + greatest(v_since, 0),
+                                            -greatest(v_logged + v_applied, 0)))
+                     else least(v_delta, greatest(-v_applied, 0)) end;
+      v_live := greatest(-24, least(24, v_live));
+      -- Float sums leave crumbs; under half a minute is nothing.
+      if abs(v_live) < 1.0 / 120 then v_live := 0;
+      elsif abs(v_delta - v_live) < 1.0 / 120 then v_live := v_delta;
+      end if;
+      v_source := 'backfill';
+    end if;
     insert into public.playtime_events
       (user_id, game_id, game_title, hours, played_after, platform, format, genres, developers, game_hours,
        pact_id, session_id, source, in_rotation, drop_in, note, demo, via_editor)
-    values (new.user_id, new.id, new.title, new.played_hours - old.played_hours, new.played_hours,
-            v_platform, v_format, new.genres, new.developers, new.hours, v_pact, v_session, v_source,
-            coalesce(new.in_rotation, false),
-            coalesce(current_setting('app.play_drop_in', true), '') = '1',
-            nullif(current_setting('app.play_note', true), ''),
-            new.status = 'wishlist' and coalesce(new.demo, false),
-            v_explicit);
+    select new.user_id, new.id, new.title, p.hours, p.played_after,
+           v_platform, v_format, new.genres, new.developers, new.hours, v_pact, v_session, p.source,
+           coalesce(new.in_rotation, false),
+           coalesce(current_setting('app.play_drop_in', true), '') = '1',
+           nullif(current_setting('app.play_note', true), ''),
+           new.status = 'wishlist' and coalesce(new.demo, false),
+           v_explicit
+      from (values (v_live, old.played_hours + v_live, 'live'),
+                   (v_delta - v_live, new.played_hours, v_source)) p(hours, played_after, source)
+     where p.hours <> 0;
   end if;
   return new;
 end;
@@ -13061,7 +13109,7 @@ grant execute on function public.my_regular_streak() to authenticated;
 -- week; same check-in, reward and history row as the button). checkin is
 -- null when no check-in happened (already done, or one raced in first).
 -- Nothing for a game that isn't in Rotation. Internal: called by
--- log_playtime and set_platform_playtime as the caller.
+-- log_playtime as the caller.
 create or replace function public.rotation_play_rewards(p_game uuid)
 returns table (milestone integer, regular integer, checkin integer)
 language plpgsql
@@ -13395,10 +13443,10 @@ create policy "profile_events_select" on public.profile_events
 -- (corrections aren't limited to Now Playing). Returns the new grand total.
 -- Signature changed (added p_format), so the older 3-arg version is dropped.
 drop function if exists public.set_platform_playtime(uuid, text, real);
--- p_session_bonus (2026-10-17): time added here earns a Daily Session bonus,
--- except the starting playtime entered when a game is added or a copy attached
--- (past play, not a session) — those callers pass false. Dropped first: the
--- 4-arg version would otherwise linger as an overload.
+-- p_session_bonus (2026-10-17) is IGNORED since 2026-10-24, when typed hours
+-- stopped earning a Daily Session bonus at all; it stays only so a client
+-- loaded before then, which still sends it, keeps resolving this function.
+-- Dropped first: the 4-arg version would otherwise linger as an overload.
 drop function if exists public.set_platform_playtime(uuid, text, text, real);
 create or replace function public.set_platform_playtime(
   p_game uuid, p_platform text, p_format text, p_hours real, p_session_bonus boolean default true
@@ -13439,23 +13487,13 @@ begin
   perform set_config('app.play_platform_explicit', 'true', true);
   perform set_config('app.play_platform', coalesce(v_platform, ''), true);
   perform set_config('app.play_format', coalesce(v_format, ''), true);
-  -- The bonus-free call is the starting time entered when a game is added or
-  -- a copy attached: time played before, so it's logged as catch-up.
-  if not p_session_bonus then
-    perform set_config('app.play_source', 'backfill', true);
-  end if;
+  -- Typed hours are catch-up, not a session (owner, 2026-10-24): they earn no
+  -- Daily Session bonus or Rotation reward, and log_playtime_event records
+  -- them as catch-up apart from any take-back of play logged today.
   update public.games
      set played_hours = greatest(0, played_hours + (p_hours - v_current))
    where id = p_game and user_id = auth.uid()
    returning played_hours into v_total;
-
-  -- Time added here is logged play too, so it earns a Daily Session bonus
-  -- and any Rotation rewards like the Log button (a correction downward never
-  -- does).
-  if p_hours > v_current and p_session_bonus then
-    perform public.pay_session_bonus(auth.uid(), p_game, p_hours - v_current);
-    perform public.rotation_play_rewards(p_game);
-  end if;
 
   return v_total;
 end;
@@ -20555,42 +20593,22 @@ grant execute on function public.claim_achievement_rewards(uuid) to authenticate
 -- backfill.
 -- ---------------------------------------------------------------------------
 
--- Time logged on a Playing game: the Log button or the stopwatch. A correction
+-- Time logged on a Playing game: the Log button, the stopwatch, or a Played
+-- edit taking back (or giving back) play logged the same day. A correction
 -- down posts its negative change, which the feed nets against play on the
--- same local day (it can't reach back into an earlier day's line). Hours typed
--- into the Played fields are an edit, not play (issue 0b535cb2: filling in a
--- past playthrough read as playing it just now), so a typed edit posts only
--- how far it moves the day's net typed change below zero: a fill-in, a typo
--- fixed and hours moved between platforms (one editor save clears one bucket,
--- then sets another) post nothing, while typing a mistaken log back down still
--- takes it off. Only live play counts (is_live_play: no catch-up time). The
--- day's typed sum includes typed rows that never posted (a step over 24 hours,
--- or one made while the game wasn't Playing), so mixing those with smaller
--- typed steps the same day can still post or hide a few hours. A demo (wishlist) or a drop-in (finished) isn't Playing, so
+-- same local day (it can't reach back into an earlier day's line). Only live
+-- play counts (is_live_play): hours typed into the Played fields are catch-up
+-- apart from that take-back (log_playtime_event), so filling in a past
+-- playthrough never reads as playing it just now (issue 0b535cb2). A demo (wishlist) or a drop-in (finished) isn't Playing, so
 -- its time never posts here; a drop-in has its own once-a-day post.
 create or replace function public.emit_play_activity()
 returns trigger
 language plpgsql security definer set search_path = public
 as $$
-declare
-  v_hours real := new.hours;
-  v_tz    text;
-  v_typed real;
 begin
-  if new.via_editor then
-    -- The day's typed change, this row included (an AFTER trigger sees it).
-    v_tz := public.player_tz(new.user_id);
-    select coalesce(sum(hours), 0) into v_typed
-      from public.playtime_events
-     where user_id = new.user_id and game_id = new.game_id and via_editor
-       and (created_at at time zone v_tz)::date = (new.created_at at time zone v_tz)::date;
-    v_hours := least(0, v_typed) - least(0, v_typed - new.hours);
-    -- Float sums leave crumbs; anything under half a minute is nothing.
-    if abs(v_hours) < 1.0 / 120 then v_hours := 0; end if;
-  end if;
-  if v_hours <> 0 and public.is_live_play(new.source, new.hours) then
+  if new.hours <> 0 and public.is_live_play(new.source, new.hours) then
     insert into public.activity_events (actor, kind, game_id, game_title, detail)
-    select new.user_id, 'played', g.id, g.title, jsonb_build_object('hours', v_hours)
+    select new.user_id, 'played', g.id, g.title, jsonb_build_object('hours', new.hours)
       from public.games g
      where g.id = new.game_id and g.status = 'playing' and not g.private and not g.stealth;
   end if;

@@ -147,7 +147,10 @@ export function AboutPage() {
                 ? ` (${featureBonuses.dailySessionMinMinutes} minutes or more)`
                 : ""}
               , earns a small <strong className="text-ink">Daily Session</strong> bonus of{" "}
-              <Coin n={featureBonuses.dailySession} />. Went back to a game you already finished? Use{" "}
+              <Coin n={featureBonuses.dailySession} />. Hours you fill in on a game&apos;s{" "}
+              <strong className="text-ink">Played</strong> box, like an old playthrough, count
+              toward its total but not toward this week&apos;s play, goals or bonuses, and they
+              don&apos;t show on the activity feed. Went back to a game you already finished? Use{" "}
               <strong className="text-ink">Log a session</strong> on its card to log a drop-in
               without moving it; the time counts like any other play. Trying a{" "}
               <strong className="text-ink">demo</strong>? Mark the Wishlist game as one and it sits on
