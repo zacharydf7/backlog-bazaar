@@ -12636,6 +12636,11 @@ alter table public.playtime_events add column if not exists note    text;
 -- demo (issue 02759349): logged on a wishlist demo, so it earns nothing and
 -- counts toward no goal (challenge_metric), though totals and the recap keep it.
 alter table public.playtime_events add column if not exists demo    boolean not null default false;
+-- via_editor (issue 0b535cb2): hours typed into a game's Played fields
+-- (set_platform_playtime) rather than logged as play: a past playthrough
+-- filled in, a correction, or the starting hours typed when adding a game or
+-- attaching a copy. Additive; existing rows stay false.
+alter table public.playtime_events add column if not exists via_editor boolean not null default false;
 alter table public.playtime_events drop constraint if exists playtime_events_note_check;
 alter table public.playtime_events add constraint playtime_events_note_check
   check (note is null or char_length(note) <= 140);
@@ -12750,13 +12755,14 @@ begin
     end;
     insert into public.playtime_events
       (user_id, game_id, game_title, hours, played_after, platform, format, genres, developers, game_hours,
-       pact_id, session_id, source, in_rotation, drop_in, note, demo)
+       pact_id, session_id, source, in_rotation, drop_in, note, demo, via_editor)
     values (new.user_id, new.id, new.title, new.played_hours - old.played_hours, new.played_hours,
             v_platform, v_format, new.genres, new.developers, new.hours, v_pact, v_session, v_source,
             coalesce(new.in_rotation, false),
             coalesce(current_setting('app.play_drop_in', true), '') = '1',
             nullif(current_setting('app.play_note', true), ''),
-            new.status = 'wishlist' and coalesce(new.demo, false));
+            new.status = 'wishlist' and coalesce(new.demo, false),
+            v_explicit);
   end if;
   return new;
 end;
@@ -20536,20 +20542,42 @@ grant execute on function public.claim_achievement_rewards(uuid) to authenticate
 -- backfill.
 -- ---------------------------------------------------------------------------
 
--- Time logged on a Playing game: the Log button, the stopwatch, or a Played
--- correction. A correction down posts its negative change too, which the feed
--- nets against play on the same local day (it can't reach back into an
--- earlier day's line). Only live play counts (is_live_play: no
--- catch-up time). A demo (wishlist) or a drop-in (finished) isn't Playing, so
+-- Time logged on a Playing game: the Log button or the stopwatch. A correction
+-- down posts its negative change, which the feed nets against play on the
+-- same local day (it can't reach back into an earlier day's line). Hours typed
+-- into the Played fields are an edit, not play (issue 0b535cb2: filling in a
+-- past playthrough read as playing it just now), so a typed edit posts only
+-- how far it moves the day's net typed change below zero: a fill-in, a typo
+-- fixed and hours moved between platforms (one editor save clears one bucket,
+-- then sets another) post nothing, while typing a mistaken log back down still
+-- takes it off. Only live play counts (is_live_play: no catch-up time). The
+-- day's typed sum includes typed rows that never posted (a step over 24 hours,
+-- or one made while the game wasn't Playing), so mixing those with smaller
+-- typed steps the same day can still post or hide a few hours. A demo (wishlist) or a drop-in (finished) isn't Playing, so
 -- its time never posts here; a drop-in has its own once-a-day post.
 create or replace function public.emit_play_activity()
 returns trigger
 language plpgsql security definer set search_path = public
 as $$
+declare
+  v_hours real := new.hours;
+  v_tz    text;
+  v_typed real;
 begin
-  if new.hours <> 0 and public.is_live_play(new.source, new.hours) then
+  if new.via_editor then
+    -- The day's typed change, this row included (an AFTER trigger sees it).
+    v_tz := public.player_tz(new.user_id);
+    select coalesce(sum(hours), 0) into v_typed
+      from public.playtime_events
+     where user_id = new.user_id and game_id = new.game_id and via_editor
+       and (created_at at time zone v_tz)::date = (new.created_at at time zone v_tz)::date;
+    v_hours := least(0, v_typed) - least(0, v_typed - new.hours);
+    -- Float sums leave crumbs; anything under half a minute is nothing.
+    if abs(v_hours) < 1.0 / 120 then v_hours := 0; end if;
+  end if;
+  if v_hours <> 0 and public.is_live_play(new.source, new.hours) then
     insert into public.activity_events (actor, kind, game_id, game_title, detail)
-    select new.user_id, 'played', g.id, g.title, jsonb_build_object('hours', new.hours)
+    select new.user_id, 'played', g.id, g.title, jsonb_build_object('hours', v_hours)
       from public.games g
      where g.id = new.game_id and g.status = 'playing' and not g.private and not g.stealth;
   end if;

@@ -41,6 +41,7 @@ beforeAll(async () => {
       platform text, format text, genres jsonb, developers jsonb, game_hours real, pact_id uuid, session_id uuid,
       source text not null default 'live', in_rotation boolean not null default false,
       drop_in boolean not null default false, note text, demo boolean not null default false,
+      via_editor boolean not null default false,
       created_at timestamptz not null default now());
     create table public.co_op_pacts (id uuid primary key, status text, inviter_game uuid, invitee_game uuid,
       inviter_finished_at timestamptz);

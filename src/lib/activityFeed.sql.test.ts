@@ -59,6 +59,7 @@ beforeAll(async () => {
       platform text, format text, genres jsonb, developers jsonb, game_hours real, pact_id uuid, session_id uuid,
       source text not null default 'live', in_rotation boolean not null default false,
       drop_in boolean not null default false, note text, demo boolean not null default false,
+      via_editor boolean not null default false,
       created_at timestamptz not null default now());
     create table public.activity_events (id uuid primary key default gen_random_uuid(), actor uuid not null,
       kind text not null, game_id uuid references public.games (id) on delete set null, game_title text, detail jsonb not null default '{}'::jsonb,
@@ -173,6 +174,47 @@ describe("capture", () => {
       { kind: "played", game_title: "Monster Hunter Wilds", detail: { hours: 1.5 } },
       { kind: "played", game_title: "Monster Hunter Wilds", detail: { hours: -1 } },
     ]);
+  });
+
+  describe("hours typed into the Played fields (issue 0b535cb2)", () => {
+    const log = (h: number) =>
+      db.exec(`update public.games set played_hours = played_hours + ${h} where id = '${MH}'`);
+    // set_platform_playtime marks its writes explicit; this stands in for it.
+    async function typed(...steps: number[]) {
+      await db.exec(`set app.play_platform_explicit = 'true'`);
+      try {
+        for (const h of steps) await log(h);
+      } finally {
+        await db.exec(`reset app.play_platform_explicit`);
+      }
+    }
+    const day = async () => (await feed()).map((r) => r.detail.hours);
+
+    it("posts nothing for a past playthrough filled in, and marks it typed", async () => {
+      await typed(8);
+      expect(await posts()).toEqual([]);
+      expect((await db.query("select via_editor from public.playtime_events")).rows).toEqual([
+        { via_editor: true },
+      ]);
+    });
+
+    it("leaves logged play alone when a typed fill-in is fixed down", async () => {
+      await log(2);
+      await typed(8, -9.5);
+      expect(await day()).toEqual([0.5]);
+    });
+
+    it("leaves logged play alone when hours move between platforms", async () => {
+      await log(2);
+      await typed(-2, 3); // clear the logged bucket, then set the platform row
+      expect(await day()).toEqual([2]);
+    });
+
+    it("still takes a mistaken log back off when it's typed down", async () => {
+      await log(15);
+      await typed(-13.5);
+      expect(await day()).toEqual([1.5]);
+    });
   });
 
   it("nets a mistaken log against its correction on the feed", async () => {

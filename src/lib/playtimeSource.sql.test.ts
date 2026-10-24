@@ -38,6 +38,7 @@ beforeAll(async () => {
       platform text, format text, genres jsonb, developers jsonb, game_hours real, pact_id uuid, session_id uuid,
       source text not null default 'live', in_rotation boolean not null default false,
       drop_in boolean not null default false, note text, demo boolean not null default false,
+      via_editor boolean not null default false,
       created_at timestamptz not null default now());
     create table public.bonus_calls (hours real);
     create function public.rotation_play_rewards(p_game uuid) returns table (milestone integer, regular integer, checkin integer)
