@@ -9638,7 +9638,7 @@ $$;
 -- their own run. Both sides' playtime_events carry the pact id (via the
 -- app.play_pact GUC) so shared time stays reconstructable. The mirror clears
 -- the platform GUCs first: the partner's session is attributed from THEIR
--- copies (single-copy auto-detect), never Player 1's version choice. No coins
+-- copies (single-platform auto-detect), never Player 1's version choice. No coins
 -- move here, so the economy freeze isn't consulted.
 drop function if exists public.log_playtime(uuid, real);
 drop function if exists public.log_playtime(uuid, real, text);
@@ -12704,21 +12704,32 @@ begin
   end if;
   if new.played_hours is distinct from old.played_hours then
     -- Attribute the session to a version (platform + format): the one passed via
-    -- transaction-local GUCs, else auto-detected when the game is owned on exactly
-    -- one copy. Null when ambiguous (multiple copies, no choice given). When the
-    -- caller marks it "explicit" (set_platform_playtime, the per-version editor),
-    -- use the values verbatim — including a deliberate null for the Unspecified
-    -- bucket — and skip the single-copy auto-detect so a correction lands exactly
-    -- where intended.
+    -- transaction-local GUCs, else auto-detected when every copy you own is on
+    -- one platform — the case where the client asks nothing, since with
+    -- version tracking off a physical and a digital copy of one platform are one
+    -- choice (issue 78dab2e2). The format comes along only when those copies
+    -- agree on it. DLC and platform-less copies aren't somewhere you play, so
+    -- they don't count. Null when ambiguous (several platforms, no choice
+    -- given). When the caller marks it "explicit" (set_platform_playtime, the
+    -- per-version editor), use the values verbatim — including a deliberate
+    -- null for the Unspecified bucket — and skip the auto-detect so a
+    -- correction lands exactly where intended.
     v_explicit := coalesce(current_setting('app.play_platform_explicit', true), '') = 'true';
     v_platform := nullif(current_setting('app.play_platform', true), '');
     v_format   := nullif(current_setting('app.play_format', true), '');
     if not v_explicit
        and v_platform is null
-       and jsonb_typeof(new.copies) = 'array'
-       and jsonb_array_length(new.copies) = 1 then
-      v_platform := new.copies -> 0 ->> 'platform';
-      v_format   := new.copies -> 0 ->> 'format';
+       and jsonb_typeof(new.copies) = 'array' then
+      select case when count(distinct c.platform) = 1 then min(c.platform) end,
+             case when count(distinct c.platform) = 1
+                   and count(c.format) = count(*) and count(distinct c.format) = 1
+                  then min(c.format) end
+        into v_platform, v_format
+        from (select nullif(btrim(e ->> 'platform'), '') as platform,
+                     nullif(e ->> 'format', '') as format
+                from jsonb_array_elements(new.copies) e
+               where coalesce(e ->> 'format', '') <> 'dlc') c
+       where c.platform is not null;
     end if;
     -- Shared co-op time: log_playtime marks the transaction with the pact id
     -- so both the primary's and the mirrored partner's rows carry it.
@@ -13418,7 +13429,7 @@ begin
   end if;
 
   -- Attribute the correction explicitly to this version so the trigger records it
-  -- verbatim (no single-copy auto-detect, and a null stays null).
+  -- verbatim (no single-platform auto-detect, and a null stays null).
   perform set_config('app.play_platform_explicit', 'true', true);
   perform set_config('app.play_platform', coalesce(v_platform, ''), true);
   perform set_config('app.play_format', coalesce(v_format, ''), true);

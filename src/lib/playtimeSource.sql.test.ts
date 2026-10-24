@@ -5,7 +5,8 @@
 // is 'live', while catch-up is 'backfill' (owner reports, 2026-10-17) — the
 // starting time entered when a game is added or a copy attached (the
 // bonus-free set_platform_playtime call), and any single change over 24 hours
-// either way. Tables are trimmed; pay_session_bonus and auth.uid are stubbed.
+// either way. It also checks which version an unattributed session is
+// credited to. Tables are trimmed; pay_session_bonus and auth.uid are stubbed.
 import { readFileSync } from "node:fs";
 import { PGlite } from "@electric-sql/pglite";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
@@ -86,5 +87,43 @@ describe("playtime source", () => {
       { hours: 12, source: "backfill" },
     ]);
     expect((await db.query("select hours from public.bonus_calls")).rows).toEqual([{ hours: 2 }]);
+  });
+});
+
+describe("version auto-detect", () => {
+  async function logWithCopies(copies: object[]) {
+    await db.query("update public.games set copies = $1::jsonb where id = $2", [JSON.stringify(copies), G]);
+    await db.exec(`update public.games set played_hours = played_hours + 1 where id = '${G}'`);
+    return (await db.query<{ platform: string | null; format: string | null }>(
+      "select platform, format from public.playtime_events order by created_at desc limit 1",
+    )).rows[0];
+  }
+
+  it("credits the one platform you own in two formats (issue 78dab2e2)", async () => {
+    expect(
+      await logWithCopies([
+        { id: "a", platform: "PlayStation 4", format: "digital" },
+        { id: "b", platform: "PlayStation 4", format: "physical" },
+      ]),
+    ).toEqual({ platform: "PlayStation 4", format: null });
+  });
+
+  it("keeps the format when every copy agrees, ignoring DLC and platform-less copies", async () => {
+    expect(
+      await logWithCopies([
+        { id: "a", platform: "PC", format: "digital" },
+        { id: "b", platform: "PC", format: "dlc" },
+        { id: "c", format: "physical" },
+      ]),
+    ).toEqual({ platform: "PC", format: "digital" });
+  });
+
+  it("leaves time on two platforms unattributed when no choice is given", async () => {
+    expect(
+      await logWithCopies([
+        { id: "a", platform: "PC", format: "digital" },
+        { id: "b", platform: "Nintendo Switch", format: "digital" },
+      ]),
+    ).toEqual({ platform: null, format: null });
   });
 });

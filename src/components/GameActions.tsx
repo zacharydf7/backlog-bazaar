@@ -625,7 +625,7 @@ export function GameActions({
 
   function submitLog() {
     if (!(logParsed && logParsed > 0)) return;
-    // Single copy → let the server auto-detect the version; otherwise attribute to
+    // One loggable version → let the server auto-detect it; otherwise attribute to
     // the chosen one.
     const version = showVersionPicker ? selectedVersion : undefined;
     const dropIn = game.status === "finished";
