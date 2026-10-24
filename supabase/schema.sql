@@ -1505,6 +1505,22 @@ begin
     -- Imported from the wishlist into the collection: NOW it counts as "added"
     -- (a wishlist row got no Added milestone on insert). First time only; dated
     -- today, the real acquisition date the Fresh-pickup economy should read.
+    -- On a first arrival an Added step the milestone seed gave the wishlist
+    -- entry moves to today too (issue f7040bfd). Only a seed row nobody has
+    -- touched (the seed dates it the day it stamps it; editing a date changes
+    -- only occurred_on), and only when the status log shows the game was never
+    -- owned before: anything else is a real date and stays.
+    if old.status = 'wishlist'
+       and not exists (select 1 from public.game_status_events e
+                        where e.game_id = new.id and e.created_at < now()
+                          and (e.to_status in ('backlog', 'playing', 'finished')
+                               or e.from_status in ('backlog', 'playing', 'finished'))) then
+      update public.game_milestones m
+         set occurred_on = current_date
+       where m.game_id = new.id and m.kind = 'added' and m.source = 'backfill'
+         and m.occurred_on = (m.created_at at time zone 'UTC')::date
+         and m.occurred_on is distinct from current_date;
+    end if;
     if old.status = 'wishlist'
        and not exists (select 1 from public.game_milestones m
                         where m.game_id = new.id and m.kind = 'added') then
@@ -14124,8 +14140,10 @@ begin
       and g.user_id = p_user
       and (p_user = auth.uid() or not coalesce(g.private, false))
       -- A pre-order isn't added until it releases (issue f7040bfd); release
-      -- day re-dates its Added step (games_preorder_fulfilled_redate).
+      -- day re-dates its Added step (games_preorder_fulfilled_redate). Nor is
+      -- a wishlist entry until it's imported, which re-dates it too.
       and not (m.kind = 'added' and g.status = 'backlog' and g.preordered_at is not null)
+      and not (m.kind = 'added' and g.status = 'wishlist')
     order by m.occurred_on desc, m.created_at desc
     limit greatest(1, least(coalesce(p_limit, 30), 100));
 end;
@@ -15091,10 +15109,14 @@ where g.played_hours > 0
 -- LIVE status event. Dates are ::date in UTC — a rare off-by-one is exactly
 -- what the editable dates are for. At most one finish-kind row per game
 -- (historical retire/unretire cycles aren't reconstructable from columns).
+-- A wishlist entry isn't added yet (it earns its Added step on import), so the
+-- seed skips it: this file re-runs on every apply, and before 2026-10-24 each
+-- run stamped new wishlist entries as added (issue f7040bfd).
 insert into public.game_milestones (user_id, game_id, kind, occurred_on, source, created_at)
 select g.user_id, g.id, 'added', g.added_at::date, 'backfill', g.added_at
 from public.games g
-where not exists (select 1 from public.game_milestones m
+where g.status <> 'wishlist'
+  and not exists (select 1 from public.game_milestones m
                    where m.game_id = g.id and m.kind = 'added');
 
 insert into public.game_milestones (user_id, game_id, kind, occurred_on, source, created_at)

@@ -73,4 +73,11 @@ describe("list_profile_activity — pre-orders (issue f7040bfd)", () => {
     await db.exec(`update public.games set preordered_at = null where id = '${ZELDA}'`);
     expect(await timeline()).toContain("added:The Legend of Zelda: Ocarina of Time");
   });
+
+  it("leaves a wishlist entry's Added step out until it's imported", async () => {
+    await db.exec(`update public.games set status = 'wishlist', preordered_at = null where id = '${ZELDA}'`);
+    expect(await timeline()).toEqual(["added:Hades"]);
+    await db.exec(`update public.games set status = 'backlog' where id = '${ZELDA}'`);
+    expect(await timeline()).toContain("added:The Legend of Zelda: Ocarina of Time");
+  });
 });

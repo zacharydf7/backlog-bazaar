@@ -209,6 +209,12 @@ describe("localActivityFallback", () => {
     expect(localActivityFallback([{ ...preorder, preorderedAt: null }]).map((a) => a.kind)).toEqual(["added"]);
   });
 
+  it("leaves a wishlist entry out until it's imported (issue f7040bfd)", () => {
+    const wish = game({ id: "w", status: "wishlist" });
+    expect(localActivityFallback([wish])).toEqual([]);
+    expect(localActivityFallback([{ ...wish, status: "backlog" }]).map((a) => a.kind)).toEqual(["added"]);
+  });
+
   it("derives the acquisition chip from the game's copies, like the online feed", () => {
     const g = game({
       copies: [{ id: "c", platform: "PC", acquisition: "subscription", provider: "Game Pass" }],

@@ -148,8 +148,11 @@ function localRow(
 export function localActivityFallback(games: Game[]): ProfileActivity[] {
   const out: ProfileActivity[] = [];
   for (const g of games) {
-    // A pre-order isn't added until it releases (issue f7040bfd).
-    if (g.addedAt != null && !isPreordered(g)) out.push(localRow(g, "added", g.addedAt));
+    // A pre-order isn't added until it releases, nor a wishlist entry until
+    // it's imported (issue f7040bfd).
+    if (g.addedAt != null && !isPreordered(g) && g.status !== "wishlist") {
+      out.push(localRow(g, "added", g.addedAt));
+    }
     if (g.status === "finished" && g.finishedAt != null && g.finishTag !== "endless") {
       const kind =
         g.finishTag === "completed" ? "completed" : g.finishTag === "retired" ? "retired" : "beat";

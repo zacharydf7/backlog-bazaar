@@ -268,6 +268,60 @@ async function finishedAt(id: string): Promise<Date> {
   return res.rows[0].finished_at;
 }
 
+describe("capture_game_milestone — wishlist imports (issue f7040bfd)", () => {
+  const today = () => new Date().toISOString().slice(0, 10);
+  async function wishWithSeededAdded(): Promise<string> {
+    const id = await addGame("wishlist");
+    // What the milestone seed in schema.sql wrote for wishlist entries before
+    // it learned to skip them: dated the day it was stamped.
+    await db.query(
+      "insert into public.game_milestones (user_id, game_id, kind, occurred_on, source, created_at) values ($1, $2, 'added', '2026-07-05', 'backfill', '2026-07-05T12:00:00Z')",
+      [USER, id],
+    );
+    return id;
+  }
+
+  it("moves a seeded Added step to the import day", async () => {
+    const id = await wishWithSeededAdded();
+    await step("update public.games set status = 'backlog' where id = $1", [id]);
+    expect(await journey(id)).toEqual([`added@${today()}`]);
+  });
+
+  it("keeps an Added date the owner set by hand", async () => {
+    const id = await wishWithSeededAdded();
+    // As the Milestones editor saves it: only the date changes.
+    await db.query("update public.game_milestones set occurred_on = '2026-06-01' where game_id = $1", [id]);
+    await step("update public.games set status = 'backlog' where id = $1", [id]);
+    expect(await journey(id)).toEqual(["added@2026-06-01"]);
+  });
+
+  it("keeps the real Added date of a game owned before it went to the wishlist", async () => {
+    const id = await addGame("backlog");
+    await db.query(
+      "update public.game_milestones set occurred_on = '2026-05-01', source = 'backfill', created_at = '2026-05-01T12:00:00Z' where game_id = $1",
+      [id],
+    );
+    await step("update public.games set status = 'wishlist' where id = $1", [id]);
+    await step("update public.games set status = 'backlog' where id = $1", [id]);
+    expect(await journey(id)).toEqual(["added@2026-05-01"]);
+  });
+
+  it("the re-run milestone seed leaves wishlist entries without an Added step", async () => {
+    // schema.sql re-runs on every apply, so its one-time seed runs again too.
+    const head = "select g.user_id, g.id, 'added', g.added_at::date, 'backfill', g.added_at";
+    const at = schema.indexOf(head);
+    const seed =
+      "insert into public.game_milestones (user_id, game_id, kind, occurred_on, source, created_at) " +
+      schema.slice(at, schema.indexOf(";", at) + 1);
+    const wish = await addGame("wishlist");
+    const owned = await addGame("backlog");
+    await db.query("delete from public.game_milestones where game_id = $1", [owned]);
+    await db.exec(seed);
+    expect(await journey(wish)).toEqual([]);
+    expect(await journey(owned)).toHaveLength(1);
+  });
+});
+
 describe("abort_replay — cancelling a replay is not a clear", () => {
   it("logs no Beat or feed card, retracts the replay's Started, and restores the finish date", async () => {
     const id = await addGame();
