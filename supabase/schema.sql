@@ -16778,10 +16778,21 @@ $$;
 --
 -- p_include_me (issue 337e39ca) adds the viewer's own lines, read through the
 -- same privacy filters as a friend's, so it shows what friends see of you.
--- Dropped first: the added parameter would otherwise leave an overload.
+-- p_everyone (owner, 2026-10-24, issue 499f7c32) widens it to every player
+-- who hasn't opted out (hide_from_square, "only show my activity to friends")
+-- or been hidden by an admin, through the same filters; friends who opted out
+-- of strangers still show to their friends. A stranger's lines start at the
+-- Everyone view's launch: what was written while the feed was friends-only
+-- stays with friends (the Market Square's launch floor, same reason). Clears
+-- were never friends-only, so they keep the Square's own floor. A hidden
+-- medal's name stays with friends so strangers can't spoil the hunt; its row
+-- stays, so a day's medal line keeps one id (and one cheer count) for all.
+-- Dropped first: each added parameter would otherwise leave an overload.
 drop function if exists public.activity_feed_lines(uuid, timestamptz, timestamptz);
+drop function if exists public.activity_feed_lines(uuid, timestamptz, timestamptz, boolean);
 create or replace function public.activity_feed_lines(
-  p_viewer uuid, p_from timestamptz, p_before timestamptz, p_include_me boolean default false
+  p_viewer uuid, p_from timestamptz, p_before timestamptz, p_include_me boolean default false,
+  p_everyone boolean default false
 )
 returns table (
   id uuid, actor uuid, kind text, game_title text, detail jsonb, created_at timestamptz
@@ -16792,16 +16803,26 @@ as $$
 begin
   return query
   with friends as (
-    select f.fid, public.player_tz(f.fid) as tz
-      from (select case when requester = p_viewer then addressee else requester end as fid
+    select f.fid, bool_or(f.close) as close, public.player_tz(f.fid) as tz
+      from (select case when requester = p_viewer then addressee else requester end as fid,
+                   true as close
               from public.friendships
              where status = 'accepted' and p_viewer in (requester, addressee)
-            union
-            select p_viewer where p_include_me) f
+            union all
+            select p_viewer, true where p_include_me
+            union all
+            select p.id, false from public.profiles p
+             where p_everyone and p.id <> p_viewer and not p.hidden
+               and not coalesce((p.privacy->>'hide_from_square')::boolean, false)) f
+     group by f.fid
   ),
   visible as (
     select a.id, a.actor, a.kind, a.game_title, a.created_at,
-      case when coalesce((p.privacy->>'hide_financial_feed')::boolean, true)
+      case when not fr.close and a.kind = 'medal_earned' and exists (
+                  select 1 from public.achievements ach
+                   where ach.hidden and ach.name = a.detail->>'name')
+           then a.detail - 'name'
+           when coalesce((p.privacy->>'hide_financial_feed')::boolean, true)
            then a.detail - 'coins' else a.detail end as detail,
       a.game_id,
       (a.created_at at time zone fr.tz)::date as day
@@ -16810,6 +16831,9 @@ begin
     join public.profiles p on p.id = a.actor
     where a.created_at >= p_from - interval '26 hours'
       and a.created_at < coalesce(p_before, now() + interval '1 day') + interval '26 hours'
+      and (fr.close or a.created_at >= case when a.kind in ('bounty_claimed', 'co_op_completed')
+                                            then timestamptz '2026-07-18 00:00:00+00'
+                                            else timestamptz '2026-10-24 15:00:00+00' end)
       and not coalesce((p.privacy->>'appear_offline')::boolean, false)
       -- Hard privacy: a private profile broadcasts no milestones, even to
       -- friends (issue e3242526).
@@ -16853,17 +16877,19 @@ begin
       from days d where coalesce(d.hours, 0) <= 0 and d.note is not null
     union all
     select (array_agg(v.id order by v.created_at, v.id))[1], v.actor, 'medal_earned', null::text,
-      jsonb_build_object('medals', jsonb_agg(v.detail->>'name' order by v.created_at, v.id)),
+      jsonb_build_object('medals', jsonb_agg(v.detail->>'name' order by v.created_at, v.id)
+                                     filter (where v.detail ? 'name')),
       max(v.created_at)
       from visible v where v.kind = 'medal_earned'
      group by v.actor, v.day
+    having bool_or(v.detail ? 'name')
   )
   select l.id, l.actor, l.kind, l.game_title, l.detail, l.created_at
     from lines l
    where l.created_at >= p_from and (p_before is null or l.created_at < p_before);
 end;
 $$;
-revoke execute on function public.activity_feed_lines(uuid, timestamptz, timestamptz, boolean) from public, anon, authenticated;
+revoke execute on function public.activity_feed_lines(uuid, timestamptz, timestamptz, boolean, boolean) from public, anon, authenticated;
 
 -- The page scans a bounded window of history: the 7 days before p_before (or
 -- now), widened to 30 days, 180 days, then everything, until the window holds
@@ -16871,13 +16897,17 @@ revoke execute on function public.activity_feed_lines(uuid, timestamptz, timesta
 -- activity_feed_lines never splits a day across the window's edge. Each line
 -- carries the actor's title and cosmetics (owner, 2026-10-23); a hard-private
 -- actor never reaches the feed. p_include_me adds your own lines (the
--- Activity page's Show mine switch, issue 337e39ca). Dropped first: the
--- return shape changed, then the parameters.
+-- Activity page's Show mine switch, issue 337e39ca); p_everyone reads every
+-- player who shares with strangers, not just friends (the Everyone switch,
+-- issue 499f7c32). Dropped first: the return shape changed, then the
+-- parameters.
 drop function if exists public.list_activity_feed(timestamptz, integer);
+drop function if exists public.list_activity_feed(timestamptz, integer, boolean);
 create or replace function public.list_activity_feed(
   p_before     timestamptz default null,
   p_limit      integer default 30,
-  p_include_me boolean default false
+  p_include_me boolean default false,
+  p_everyone   boolean default false
 )
 returns table (
   id uuid, actor uuid, actor_name text, actor_avatar text,
@@ -16898,7 +16928,8 @@ begin
   if v_me is null then raise exception 'Not authenticated'; end if;
 
   foreach v_span in array array[interval '7 days', interval '30 days', interval '180 days'] loop
-    if (select count(*) from (select 1 from public.activity_feed_lines(v_me, v_top - v_span, p_before, p_include_me)
+    if (select count(*) from (select 1 from public.activity_feed_lines(v_me, v_top - v_span, p_before,
+                                                                         p_include_me, p_everyone)
                                limit v_limit) x) >= v_limit
        or not exists (
          select 1 from public.friendships f
@@ -16908,7 +16939,10 @@ begin
             and a.created_at < v_top - v_span
          union all
          select 1 from public.activity_events a
-          where p_include_me and a.actor = v_me and a.created_at < v_top - v_span) then
+          where p_include_me and a.actor = v_me and a.created_at < v_top - v_span
+         union all
+         select 1 from public.activity_events a
+          where p_everyone and a.created_at < v_top - v_span) then
       v_from := v_top - v_span;
       exit;
     end if;
@@ -16920,7 +16954,7 @@ begin
     (select count(*) from public.activity_cheers c where c.event_id = l.id),
     exists (select 1 from public.activity_cheers c where c.event_id = l.id and c.user_id = v_me),
     public.user_title_json(l.actor), public.user_cosmetics_json(l.actor)
-  from public.activity_feed_lines(v_me, v_from, p_before, p_include_me) l
+  from public.activity_feed_lines(v_me, v_from, p_before, p_include_me, p_everyone) l
   join public.profiles p on p.id = l.actor
   order by l.created_at desc, l.id desc
   limit v_limit;
@@ -16937,40 +16971,31 @@ declare
   v_actor   uuid;
   v_kind    text;
   v_created timestamptz;
-  v_game    uuid;
   v_name    text;
   v_label   text;
 begin
   if v_me is null then raise exception 'Not authenticated'; end if;
 
-  select actor, kind, created_at, game_id into v_actor, v_kind, v_created, v_game
+  select actor, kind, created_at into v_actor, v_kind, v_created
     from public.activity_events where id = p_event;
   if v_actor is null then raise exception 'Event not available'; end if;
   -- The actor and their friends may always cheer. Anyone else may cheer only
-  -- an event that's publicly visible in the Market Square's community feed —
-  -- the exact list_square_activity gates (kind, launch floor, and the actor's
-  -- privacy stack), so a private/opted-out player's events stay uncheerable
-  -- by strangers even if an event id leaks.
+  -- a line the Everyone feed would show them (issue 499f7c32), read through
+  -- activity_feed_lines itself so the two can't drift: a private or opted-out
+  -- player's events stay uncheerable by strangers even if an event id leaks.
+  -- Everything the Market Square's community feed shows passes this too. A
+  -- line's time is its newest row of that day, so the window is generous.
   if v_actor <> v_me and not exists (
     select 1 from public.friendships f
      where f.status = 'accepted'
        and ((f.requester = v_me and f.addressee = v_actor)
          or (f.requester = v_actor and f.addressee = v_me))
+  ) and not exists (
+    select 1 from public.activity_feed_lines(v_me, v_created - interval '2 days',
+                                             v_created + interval '2 days', false, true) l
+     where l.id = p_event
   ) then
-    if v_kind not in ('bounty_claimed', 'co_op_completed')
-      or v_created < timestamptz '2026-07-18 00:00:00+00'
-      or not public.clear_is_fresh(v_game, v_created)
-      or not exists (
-        select 1 from public.profiles p
-         where p.id = v_actor
-           and not p.hidden
-           and not coalesce((p.privacy->>'appear_offline')::boolean, false)
-           and not coalesce((p.privacy->>'private_profile')::boolean, false)
-           and not coalesce((p.privacy->>'hide_from_square')::boolean, false)
-      )
-    then
-      raise exception 'Event not available';
-    end if;
+    raise exception 'Event not available';
   end if;
 
   insert into public.activity_cheers (event_id, user_id) values (p_event, v_me)
@@ -17015,7 +17040,7 @@ revoke execute on function public.remove_friend(uuid)                 from publi
 revoke execute on function public.search_users(text)                  from public, anon;
 revoke execute on function public.list_friends()                      from public, anon;
 revoke execute on function public.list_friend_requests()              from public, anon;
-revoke execute on function public.list_activity_feed(timestamptz, integer, boolean) from public, anon;
+revoke execute on function public.list_activity_feed(timestamptz, integer, boolean, boolean) from public, anon;
 revoke execute on function public.cheer_activity(uuid)                from public, anon;
 revoke execute on function public.uncheer_activity(uuid)              from public, anon;
 
@@ -17026,7 +17051,7 @@ grant execute on function public.remove_friend(uuid)                  to authent
 grant execute on function public.search_users(text)                   to authenticated;
 grant execute on function public.list_friends()                       to authenticated;
 grant execute on function public.list_friend_requests()               to authenticated;
-grant execute on function public.list_activity_feed(timestamptz, integer, boolean) to authenticated;
+grant execute on function public.list_activity_feed(timestamptz, integer, boolean, boolean) to authenticated;
 grant execute on function public.cheer_activity(uuid)                 to authenticated;
 grant execute on function public.uncheer_activity(uuid)               to authenticated;
 

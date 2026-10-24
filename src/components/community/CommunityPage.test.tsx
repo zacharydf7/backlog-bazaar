@@ -80,6 +80,7 @@ function pageProps() {
 
 beforeEach(() => {
   localStorage.removeItem("bb:feed-show-mine");
+  localStorage.removeItem("bb:feed-everyone");
   act(() =>
     useStore.setState({
       userId: "me",
@@ -271,13 +272,26 @@ describe("Activity section", () => {
     const fetchFeed = vi.fn(async () => {});
     act(() => useStore.setState({ feed: [ev()], fetchFeed }));
     render(<CommunityPage view="community-activity" {...pageProps()} />);
-    expect(fetchFeed).toHaveBeenLastCalledWith(false);
+    expect(fetchFeed).toHaveBeenLastCalledWith(false, false);
     const toggle = screen.getByRole("button", { name: /Show mine/i });
     expect(toggle.getAttribute("aria-pressed")).toBe("false");
     fireEvent.click(toggle);
-    expect(fetchFeed).toHaveBeenLastCalledWith(true);
+    expect(fetchFeed).toHaveBeenLastCalledWith(true, false);
     expect(toggle.getAttribute("aria-pressed")).toBe("true");
     expect(localStorage.getItem("bb:feed-show-mine")).toBe("1");
+  });
+
+  it("switches between friends and every player, and remembers it (499f7c32)", () => {
+    const fetchFeed = vi.fn(async () => {});
+    act(() => useStore.setState({ feed: [ev()], fetchFeed }));
+    render(<CommunityPage view="community-activity" {...pageProps()} />);
+    const friends = screen.getByRole("button", { name: /^Friends$/ });
+    const everyone = screen.getByRole("button", { name: /^Everyone$/ });
+    expect(friends.getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(everyone);
+    expect(fetchFeed).toHaveBeenLastCalledWith(false, true);
+    expect(everyone.getAttribute("aria-pressed")).toBe("true");
+    expect(localStorage.getItem("bb:feed-everyone")).toBe("1");
   });
 
   it("offers Find friends from the empty state", () => {

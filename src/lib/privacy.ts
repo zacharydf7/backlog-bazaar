@@ -54,18 +54,20 @@ export function isCustomCoversHidden(privacy: Privacy | null | undefined): boole
   return Boolean(privacy?.[PRIVACY_KEYS.hideCustomCovers]);
 }
 
-/** True if the user keeps their clears out of the Market Square's community
- *  feed and Stall of the Week (the friends-only activity feed is unaffected).
- *  Default: SHARED — clears are visible community-wide unless opted out
- *  (agreed 2026-07-18). Enforced server-side in list_square_activity /
- *  square_spotlight / cheer_activity. */
+/** True if the user shows their activity to friends only: out of the
+ *  activity feed's Everyone view (issue 499f7c32), the Market Square's
+ *  community feed and Stall of the Week; friends still see it. Default:
+ *  SHARED, visible community-wide unless opted out (agreed 2026-07-18,
+ *  widened 2026-10-24). Enforced server-side in activity_feed_lines /
+ *  list_square_activity / square_spotlight / cheer_activity. */
 export function isHiddenFromSquare(privacy: Privacy | null | undefined): boolean {
   return Boolean(privacy?.[PRIVACY_KEYS.hideFromSquare]);
 }
 
 /** True if the user keeps their play sessions (drop-ins included) and progress
- *  notes off their friends' activity feed (starts, finishes and medals still show). Default:
- *  SHARED (owner, 2026-10-21). Enforced server-side in list_activity_feed. */
+ *  notes off the activity feed, for friends and everyone else (starts, finishes
+ *  and medals still show). Default: SHARED (owner, 2026-10-21). Enforced
+ *  server-side in list_activity_feed. */
 export function isPlayActivityHidden(privacy: Privacy | null | undefined): boolean {
   return Boolean(privacy?.[PRIVACY_KEYS.hidePlayActivity]);
 }

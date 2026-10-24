@@ -1134,7 +1134,9 @@ interface BazaarState {
   feed: ActivityEvent[];
   feedHasMore: boolean;
   feedLoadingMore: boolean;
-  feedIncludeMine: boolean; // the Show mine setting most recently requested
+  // The Show mine and Everyone settings most recently requested.
+  feedIncludeMine: boolean;
+  feedEveryone: boolean;
   // Market Square community sections (Phase 2). null = not loaded yet, so the
   // page can tell "empty" from "still fetching".
   squareFeed: ActivityEvent[] | null;
@@ -1925,7 +1927,7 @@ interface BazaarState {
   respondFriendRequest: (id: string, accept: boolean) => Promise<boolean>;
   cancelFriendRequest: (id: string) => Promise<boolean>;
   removeFriend: (userId: string) => Promise<boolean>;
-  fetchFeed: (includeMine?: boolean) => Promise<void>;
+  fetchFeed: (includeMine?: boolean, everyone?: boolean) => Promise<void>;
   loadMoreFeed: () => Promise<void>;
   fetchSquare: () => Promise<void>;
   loadMoreSquareFeed: () => Promise<void>;
@@ -2289,6 +2291,7 @@ export const useStore = create<BazaarState>((set, get) => ({
   feedHasMore: false,
   feedLoadingMore: false,
   feedIncludeMine: false,
+  feedEveryone: false,
   squareFeed: null,
   squareFeedHasMore: false,
   squareFeedLoadingMore: false,
@@ -11287,16 +11290,18 @@ export const useStore = create<BazaarState>((set, get) => ({
     return true;
   },
 
-  // includeMine adds your own lines (the Show mine switch). A later call wins:
-  // a reply for a switch setting that's since changed is dropped.
-  fetchFeed: async (includeMine = false) => {
+  // includeMine adds your own lines (the Show mine switch); everyone reads
+  // every player who shares with strangers (the Everyone switch). A later call
+  // wins: a reply for switch settings that have since changed is dropped.
+  fetchFeed: async (includeMine = false, everyone = false) => {
     if (!supabase) return;
-    set({ feedIncludeMine: includeMine });
+    set({ feedIncludeMine: includeMine, feedEveryone: everyone });
     const { data, error } = await supabase.rpc("list_activity_feed", {
       p_limit: FEED_PAGE,
       p_include_me: includeMine,
+      p_everyone: everyone,
     });
-    if (get().feedIncludeMine !== includeMine) return;
+    if (get().feedIncludeMine !== includeMine || get().feedEveryone !== everyone) return;
     if (error) {
       set({ error: error.message });
       return;
@@ -11308,7 +11313,7 @@ export const useStore = create<BazaarState>((set, get) => ({
   // Append the next page of older posts, keyset-paginated on the oldest loaded
   // post's timestamp. Dedupes by id and guards re-entrancy + the end of the list.
   loadMoreFeed: async () => {
-    const { feed, feedHasMore, feedLoadingMore, feedIncludeMine } = get();
+    const { feed, feedHasMore, feedLoadingMore, feedIncludeMine, feedEveryone } = get();
     if (!supabase || !feedHasMore || feedLoadingMore || feed.length === 0) return;
     set({ feedLoadingMore: true });
     const before = new Date(feed[feed.length - 1].createdAt).toISOString();
@@ -11316,12 +11321,14 @@ export const useStore = create<BazaarState>((set, get) => ({
       p_before: before,
       p_limit: FEED_PAGE,
       p_include_me: feedIncludeMine,
+      p_everyone: feedEveryone,
     });
     // The feed was replaced mid-load (the switch flipped): this page continues
     // the old list, so it would leave a gap. Compared by the cursor line's id,
     // since a cheer copies the list without replacing it.
     if (
       get().feedIncludeMine !== feedIncludeMine ||
+      get().feedEveryone !== feedEveryone ||
       get().feed[get().feed.length - 1]?.id !== feed[feed.length - 1].id
     ) {
       set({ feedLoadingMore: false });

@@ -11,6 +11,7 @@ import {
   Play,
   RotateCcw,
   StickyNote,
+  Globe,
   Trophy,
   UserRound,
   Users,
@@ -23,7 +24,12 @@ import { TitleBadge } from "../TitleBadge";
 import { EmptyState } from "./EmptyState";
 import { timeAgo } from "../../lib/time";
 import { activityHeadline, activityCoins } from "../../lib/social";
-import { loadFeedShowMine, saveFeedShowMine } from "../../lib/community";
+import {
+  loadFeedEveryone,
+  loadFeedShowMine,
+  saveFeedEveryone,
+  saveFeedShowMine,
+} from "../../lib/community";
 import type { ActivityKind } from "../../types";
 
 const KIND_ICONS: Record<ActivityKind, LucideIcon> = {
@@ -53,15 +59,37 @@ export function ActivitySection({ onFindFriends }: { onFindFriends: () => void }
     uncheerActivity,
   } = useStore();
 
-  // Show mine (issue 337e39ca): your own lines alongside your friends', as
-  // they see them. Remembered on this device.
+  // Friends or Everyone (issue 499f7c32): every player who shares with
+  // strangers. Show mine (issue 337e39ca): your own lines too, as others see
+  // them. Both remembered on this device.
+  const [everyone, setEveryone] = useState(loadFeedEveryone);
   const [showMine, setShowMine] = useState(loadFeedShowMine);
   useEffect(() => {
-    void fetchFeed(showMine);
-  }, [fetchFeed, showMine]);
+    void fetchFeed(showMine, everyone);
+  }, [fetchFeed, showMine, everyone]);
+
+  const scopeButton = (on: boolean, label: string, Icon: LucideIcon) => (
+    <button
+      onClick={() => {
+        setEveryone(on);
+        saveFeedEveryone(on);
+      }}
+      aria-pressed={everyone === on}
+      className={
+        "inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-sm transition " +
+        (everyone === on ? "bg-brand text-brand-fg" : "text-muted hover:text-ink")
+      }
+    >
+      <Icon size={14} /> {label}
+    </button>
+  );
 
   const showMineToggle = (
-    <div className="flex justify-end border-b border-line px-4 py-2">
+    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line px-4 py-2">
+      <div role="group" aria-label="Whose activity" className="inline-flex rounded-lg border border-line bg-panel p-0.5">
+        {scopeButton(false, "Friends", Users)}
+        {scopeButton(true, "Everyone", Globe)}
+      </div>
       <button
         onClick={() => {
           setShowMine(!showMine);
@@ -105,7 +133,7 @@ export function ActivitySection({ onFindFriends }: { onFindFriends: () => void }
         <EmptyState
           icon={Newspaper}
           title="No activity yet"
-          body="When your friends start, play or finish games, or earn medals, it shows up here."
+          body={`When ${everyone ? "players" : "your friends"} start, play or finish games, or earn medals, it shows up here.`}
           action={
             <button
               onClick={onFindFriends}

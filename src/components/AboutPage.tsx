@@ -717,9 +717,9 @@ export function AboutPage() {
               sorted by recent activity, most clears, or name. Tap any player — in the Square or on
               the Requests board — to visit their Bazaar, browse their boards, and search their
               library (read-only, in their own theme). Prefer to lurk? &ldquo;Appear offline&rdquo;
-              hides your presence, and &ldquo;Keep my clears out of the Market Square&rdquo; (both
-              in Account settings) keeps your finishes off the community feed — your friends&apos;
-              own activity feed still sees them.
+              hides your presence, and &ldquo;Only show my activity to friends&rdquo; (both in
+              Account settings) keeps your activity off the community feed and the activity
+              feed&apos;s Everyone view — your friends still see it.
             </p>
           </Section>
 
@@ -729,7 +729,11 @@ export function AboutPage() {
             players by name, accept requests, and see your friends&apos; coins and what
             they&apos;re playing. <strong className="text-ink">Activity</strong> is a feed of
             their milestones — games imported, new Game Families, and finishes — which you can{" "}
-            <strong className="text-ink">Cheer</strong>. <strong className="text-ink">Messages</strong>{" "}
+            <strong className="text-ink">Cheer</strong>. Switch it to{" "}
+            <strong className="text-ink">Everyone</strong> to see every player&apos;s activity, or
+            turn on <strong className="text-ink">Show mine</strong> to see what your friends see of
+            you.{" "}
+            <strong className="text-ink">Messages</strong>{" "}
             is a chat with each friend: reply, edit your last message, or type{" "}
             <strong className="text-ink">@</strong> to share a game card they can preview or add.
             Removing a chat just hides it — the history returns if you talk again. The bell in the

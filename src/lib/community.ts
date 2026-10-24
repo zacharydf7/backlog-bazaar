@@ -51,23 +51,32 @@ export function saveCommunitySection(v: CommunityView): void {
 }
 
 const FEED_MINE_PREF_KEY = "bb:feed-show-mine";
+const FEED_EVERYONE_PREF_KEY = "bb:feed-everyone";
 
-/** Whether the Activity feed shows your own lines too (issue 337e39ca),
- *  remembered on this device. Off when nothing's stored or localStorage is
- *  unavailable. */
-export function loadFeedShowMine(): boolean {
+/** An Activity feed switch remembered on this device. Off when nothing's
+ *  stored or localStorage is unavailable. */
+function loadSwitch(key: string): boolean {
   try {
-    return localStorage.getItem(FEED_MINE_PREF_KEY) === "1";
+    return localStorage.getItem(key) === "1";
   } catch {
     return false;
   }
 }
 
-/** Remember the Activity feed's Show mine switch for next time. */
-export function saveFeedShowMine(on: boolean): void {
+function saveSwitch(key: string, on: boolean): void {
   try {
-    localStorage.setItem(FEED_MINE_PREF_KEY, on ? "1" : "0");
+    localStorage.setItem(key, on ? "1" : "0");
   } catch {
     /* ignore */
   }
 }
+
+/** Whether the Activity feed shows your own lines too (issue 337e39ca). */
+export const loadFeedShowMine = () => loadSwitch(FEED_MINE_PREF_KEY);
+export const saveFeedShowMine = (on: boolean) =>
+  saveSwitch(FEED_MINE_PREF_KEY, on);
+
+/** Whether the Activity feed shows every player, not just friends (issue 499f7c32). */
+export const loadFeedEveryone = () => loadSwitch(FEED_EVERYONE_PREF_KEY);
+export const saveFeedEveryone = (on: boolean) =>
+  saveSwitch(FEED_EVERYONE_PREF_KEY, on);

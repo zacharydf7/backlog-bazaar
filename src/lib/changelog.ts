@@ -41,6 +41,21 @@ export interface Release {
 export const RELEASES: Release[] = [
   // ── October 2026 ──────────────────────────────────────────────────────────
   {
+    id: "2026-10-24-everyone-activity",
+    date: "2026-10-24",
+    title: "See activity from every player",
+    summary:
+      "Switch the Activity feed to Everyone to follow what players across the Bazaar start, play and finish, not just your friends.",
+    tag: "feature",
+    items: [
+      "Everyone shows starts, play time, notes, medals and clears from players who share them.",
+      "Show mine adds your own activity, as your friends see it.",
+      "You can cheer anything you see in the Everyone view.",
+      "Rather keep it to friends? Turn on Only show my activity to friends in Privacy.",
+    ],
+    link: { label: "Open Activity", view: "community-activity" },
+  },
+  {
     id: "2026-10-23-cosmetics-everywhere",
     date: "2026-10-23",
     title: "Your look follows you around",

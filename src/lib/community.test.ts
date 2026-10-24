@@ -6,6 +6,8 @@ import {
   saveCommunitySection,
   loadFeedShowMine,
   saveFeedShowMine,
+  loadFeedEveryone,
+  saveFeedEveryone,
 } from "./community";
 
 describe("COMMUNITY_VIEWS", () => {
@@ -58,6 +60,13 @@ describe("remembered Show mine switch", () => {
     saveFeedShowMine(true);
     expect(loadFeedShowMine()).toBe(true);
     saveFeedShowMine(false);
+    expect(loadFeedShowMine()).toBe(false);
+  });
+
+  it("remembers the Everyone switch on its own", () => {
+    expect(loadFeedEveryone()).toBe(false);
+    saveFeedEveryone(true);
+    expect(loadFeedEveryone()).toBe(true);
     expect(loadFeedShowMine()).toBe(false);
   });
 });

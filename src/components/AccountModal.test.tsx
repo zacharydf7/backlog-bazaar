@@ -59,11 +59,11 @@ describe("AccountModal Danger Zone", () => {
 });
 
 describe("AccountModal privacy", () => {
-  it("toggles sharing play sessions and notes with friends (shared by default)", () => {
+  it("toggles sharing play sessions and notes (shared by default)", () => {
     useStore.setState({ cloud: true });
     render(<AccountModal />);
     const box = screen.getByRole("checkbox", {
-      name: /Hide my play sessions and notes from friends/i,
+      name: /Hide my play sessions and notes/i,
     }) as HTMLInputElement;
     expect(box.checked).toBe(false);
     fireEvent.click(box);

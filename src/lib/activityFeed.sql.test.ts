@@ -47,7 +47,8 @@ beforeAll(async () => {
     create function auth.uid() returns uuid language sql
       as $$ select nullif(current_setting('test.uid', true), '')::uuid $$;
     create table public.profiles (id uuid primary key, display_name text, avatar_url text,
-      privacy jsonb not null default '{}'::jsonb);
+      privacy jsonb not null default '{}'::jsonb, hidden boolean not null default false);
+    create table public.notifications (user_id uuid, type text, title text, body text, link text);
     create table public.friendships (requester uuid, addressee uuid, status text);
     create table public.games (id uuid primary key, user_id uuid, title text, status text not null,
       played_hours real not null default 0, copies jsonb not null default '[]'::jsonb, genres jsonb,
@@ -70,7 +71,8 @@ beforeAll(async () => {
     create table public.user_time_zones (user_id uuid primary key, time_zone text not null);
     create table public.app_config (id integer primary key, rotation_reset_tz text);
     insert into public.app_config values (1, 'UTC');
-    create table public.achievements (id uuid primary key default gen_random_uuid(), name text);
+    create table public.achievements (id uuid primary key default gen_random_uuid(), name text,
+      hidden boolean not null default false);
     create table public.user_achievements (user_id uuid, achievement_id uuid,
       earned_at timestamptz not null default now(), primary key (user_id, achievement_id));
     -- The worn look's own rules are in socialCosmetics.sql.test.ts; these stand-ins
@@ -94,6 +96,7 @@ beforeAll(async () => {
     "emit_medal_activity",
     "activity_feed_lines",
     "list_activity_feed",
+    "cheer_activity",
   ]) {
     await db.exec(fn(name));
   }
@@ -148,6 +151,7 @@ async function post(actor: string, kind: string, at: string, detail: object = {}
 type FeedRow = {
   id: string;
   actor: string;
+  actor_name: string;
   kind: string;
   game_title: string | null;
   detail: Record<string, unknown>;
@@ -158,13 +162,14 @@ type FeedRow = {
   cosmetics: { frame: string };
 };
 
-async function feed(before: string | null = null, limit = 30, includeMe = false) {
+async function feed(before: string | null = null, limit = 30, includeMe = false, everyone = false) {
   await db.exec(`set test.uid = '${ME}'`);
   return (
-    await db.query<FeedRow>("select * from public.list_activity_feed($1, $2, $3)", [
+    await db.query<FeedRow>("select * from public.list_activity_feed($1, $2, $3, $4)", [
       before,
       limit,
       includeMe,
+      everyone,
     ])
   ).rows.map((r) => ({ ...r, cheer_count: Number(r.cheer_count) }));
 }
@@ -489,6 +494,69 @@ describe("list_activity_feed", () => {
     const longAgo = new Date(Date.now() - 60 * 86_400_000).toISOString();
     await post(ME, "medal_earned", longAgo, { name: "Night Owl" }, null);
     expect(await feed(null, 30, true)).toHaveLength(1);
+  });
+
+  // The Everyone view's launch: strangers' lines start here (issue 499f7c32).
+  const AFTER_LAUNCH = "2026-10-25T00:00:00Z";
+  const AT = (h: number) => `2026-10-24T${String(h).padStart(2, "0")}:30:00Z`;
+
+  it("shows every player who shares with strangers on Everyone (issue 499f7c32)", async () => {
+    const ZOE = "00000000-0000-4000-8000-0000000000a4";
+    await db.exec(`insert into public.profiles (id, display_name) values ('${ZOE}', 'Zoe')`);
+    await post(STRANGER, "medal_earned", AT(15), { name: "Night Owl" }, null);
+    await post(SORA, "medal_earned", AT(16), { name: "First Clear" }, null);
+    await post(ZOE, "medal_earned", AT(17), { name: "Collector" }, null);
+    const names = async (everyone: boolean) =>
+      (await feed(AFTER_LAUNCH, 30, false, everyone)).map((r) => r.actor_name);
+    expect(await names(false)).toEqual(["Sora"]);
+    expect(await names(true)).toEqual(["Zoe", "Sora", "Ana"]);
+    // Friends only: out of Everyone for strangers, still in a friend's feed.
+    await db.exec(`update public.profiles set privacy = '{"hide_from_square": true}' where id in ('${ZOE}', '${SORA}')`);
+    // Admin-hidden and private accounts never show.
+    await db.exec(`update public.profiles set hidden = true where id = '${STRANGER}'`);
+    expect(await names(true)).toEqual(["Sora"]);
+    await db.exec(`update public.profiles set hidden = false, privacy = '{"private_profile": true}' where id = '${STRANGER}'`);
+    expect(await names(true)).toEqual(["Sora"]);
+  });
+
+  it("keeps what strangers wrote before Everyone, and hidden medal names, to their friends", async () => {
+    await db.exec(`insert into public.achievements (name, hidden) values ('Ghost Run', true)`);
+    await post(STRANGER, "note", "2026-10-20T10:00:00Z", { note: "Written for friends" }, HADES);
+    const ghost = await post(STRANGER, "medal_earned", AT(15), { name: "Ghost Run" }, null);
+    await post(STRANGER, "medal_earned", AT(16), { name: "Night Owl" }, null);
+    const everyone = await feed(AFTER_LAUNCH, 30, false, true);
+    expect(everyone.map((r) => [r.kind, r.detail])).toEqual([["medal_earned", { medals: ["Night Owl"] }]]);
+    // The line keeps its id, so a stranger's cheer counts on the line friends see.
+    expect(everyone[0].id).toBe(ghost);
+    await db.query("select public.cheer_activity($1)", [ghost]);
+    // A friend still sees all of it.
+    await db.exec(`insert into public.friendships values ('${ME}', '${STRANGER}', 'accepted')`);
+    const friends = await feed(AFTER_LAUNCH, 30, false, true);
+    expect(friends.map((r) => r.kind).sort()).toEqual(["medal_earned", "note"]);
+    const medals = friends.find((r) => r.kind === "medal_earned");
+    expect(medals?.detail).toEqual({ medals: ["Ghost Run", "Night Owl"] });
+    expect(medals?.cheer_count).toBe(1);
+  });
+
+  it("still lets a stranger cheer an older clear the Market Square shows", async () => {
+    const clear = await post(STRANGER, "bounty_claimed", "2026-08-20T12:00:00Z", { finish_tag: "beaten" }, HADES);
+    await db.exec(`set test.uid = '${ME}'`);
+    await db.query("select public.cheer_activity($1)", [clear]);
+    expect((await db.query("select user_id from public.activity_cheers")).rows).toEqual([{ user_id: ME }]);
+  });
+
+  it("lets a stranger cheer what the Everyone feed shows, and nothing else", async () => {
+    const shared = await post(STRANGER, "medal_earned", AT(15), { name: "Night Owl" }, null);
+    await db.exec(`set test.uid = '${ME}'`);
+    await db.query("select public.cheer_activity($1)", [shared]);
+    expect((await db.query("select user_id from public.activity_cheers")).rows).toEqual([{ user_id: ME }]);
+    await db.exec(`update public.profiles set privacy = '{"hide_from_square": true}' where id = '${STRANGER}'`);
+    const kept = await post(STRANGER, "medal_earned", AT(16), { name: "Collector" }, null);
+    const old = await post(STRANGER, "medal_earned", "2026-10-20T10:00:00Z", { name: "First Clear" }, null);
+    await db.exec(`set test.uid = '${ME}'`);
+    await expect(db.query("select public.cheer_activity($1)", [kept])).rejects.toThrow(/Event not available/);
+    await db.exec(`update public.profiles set privacy = '{}' where id = '${STRANGER}'`);
+    await expect(db.query("select public.cheer_activity($1)", [old])).rejects.toThrow(/Event not available/);
   });
 
   it("keeps a private game's posts hidden after the game is deleted", async () => {

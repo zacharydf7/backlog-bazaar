@@ -38,7 +38,13 @@ const row = (id: string, actor: string) => ({
 
 beforeEach(() => {
   h.calls.length = 0;
-  useStore.setState({ feed: [], feedHasMore: false, feedLoadingMore: false, feedIncludeMine: false });
+  useStore.setState({
+    feed: [],
+    feedHasMore: false,
+    feedLoadingMore: false,
+    feedIncludeMine: false,
+    feedEveryone: false,
+  });
 });
 
 describe("activity feed: Show mine", () => {
@@ -80,6 +86,17 @@ describe("activity feed: Show mine", () => {
     h.calls[1].resolve([row("old", "sora")]);
     await more;
     expect(useStore.getState().feed).toHaveLength(31);
+  });
+
+  it("asks for every player's lines on Everyone, and drops a reply once it's switched off", async () => {
+    const everyone = useStore.getState().fetchFeed(false, true);
+    expect(h.calls[0].args).toMatchObject({ p_include_me: false, p_everyone: true });
+    const friends = useStore.getState().fetchFeed(false, false);
+    h.calls[1].resolve([row("f1", "sora")]);
+    await friends;
+    h.calls[0].resolve([row("s1", "stranger"), row("f1", "sora")]);
+    await everyone;
+    expect(useStore.getState().feed.map((e) => e.id)).toEqual(["f1"]);
   });
 
   it("drops a reply for a switch setting that's since changed", async () => {

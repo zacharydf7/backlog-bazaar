@@ -563,14 +563,14 @@ export function AccountModal() {
                   />
                 </label>
                 <p className="mt-1.5 text-[11px] text-subtle">
-                  When on, the coins you earn finishing a game are hidden from your friends&apos;
-                  activity feed (the milestone still shows). On by default.
+                  When on, the coins you earn finishing a game are hidden on the activity feed,
+                  from friends and everyone else (the milestone still shows). On by default.
                 </p>
 
                 <label className="mt-2 flex cursor-pointer items-center justify-between gap-3 rounded-xl border border-line bg-panel px-3 py-2.5 text-sm text-ink">
                   <span className="inline-flex items-center gap-2">
                     <Timer size={15} className="text-accent" />
-                    Hide my play sessions and notes from friends
+                    Hide my play sessions and notes
                   </span>
                   <input
                     type="checkbox"
@@ -580,15 +580,15 @@ export function AccountModal() {
                   />
                 </label>
                 <p className="mt-1.5 text-[11px] text-subtle">
-                  When on, your friends&apos; activity feed won&apos;t show your play sessions
-                  (including going back to a finished game) or your progress notes. Starting and
-                  finishing games and earning medals still show.
+                  When on, the activity feed won&apos;t show your play sessions (including going
+                  back to a finished game) or your progress notes, to friends or anyone else.
+                  Starting and finishing games and earning medals still show.
                 </p>
 
                 <label className="mt-2 flex cursor-pointer items-center justify-between gap-3 rounded-xl border border-line bg-panel px-3 py-2.5 text-sm text-ink">
                   <span className="inline-flex items-center gap-2">
                     <Tent size={15} className="text-accent" />
-                    Keep my clears out of the Market Square
+                    Only show my activity to friends
                   </span>
                   <input
                     type="checkbox"
@@ -598,9 +598,9 @@ export function AccountModal() {
                   />
                 </label>
                 <p className="mt-1.5 text-[11px] text-subtle">
-                  When on, your finished games don&apos;t appear in the Market Square&apos;s
-                  community feed or Stall of the Week. Your friends still see them in their own
-                  activity feed.
+                  When on, players who aren&apos;t your friends won&apos;t see your activity: not
+                  in the activity feed&apos;s Everyone view, the Market Square&apos;s community
+                  feed or Stall of the Week. Your friends still see it.
                 </p>
 
                 <label className="mt-2 flex cursor-pointer items-center justify-between gap-3 rounded-xl border border-line bg-panel px-3 py-2.5 text-sm text-ink">
